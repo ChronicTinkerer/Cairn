@@ -1,0 +1,30 @@
+## Interface: 120005
+## Title: Cairn
+## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
+## Author: ChronicTinkerer
+## Version: 0.1.0
+## X-Category: Library
+## X-License: MIT
+## SavedVariables: CairnLogSV
+## OptionalDeps:
+## DefaultState: enabled
+## LoadOnDemand: 0
+
+# LibStub is the universal addon-library loader. We vendor it because Cairn
+# uses it for both hybrid distribution modes (standalone here, embedded in
+# author addons via Libs/Cairn/).
+Libs\LibStub\LibStub.lua
+
+# Umbrella facade + /cairn slash router. Safe to load multiple times; each
+# module ships a copy.
+Cairn.lua
+
+# v0.1 modules. Each registers via LibStub as Cairn-<Name>-1.0 so they work
+# identically whether loaded from this standalone addon or embedded in another.
+Cairn-Events-1.0.lua
+Cairn-Log-1.0.lua
+Cairn-LogWindow-1.0.lua
+
+# Standalone-only: SavedVariables persistence + /cairn log subcommands.
+# Do NOT include this file when embedding Cairn in another addon.
+Cairn-Standalone-1.0.lua

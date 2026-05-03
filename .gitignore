@@ -14,8 +14,8 @@ $RECYCLE.BIN/
 *.iml
 *.code-workspace
 
-# VS Code: ignore most state, allow committed config
-.vscode/*
+# VS Code: never commit editor state to the public repo
+.vscode/
 
 # Lua build/bytecode
 *.luac

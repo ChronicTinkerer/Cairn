@@ -11,8 +11,8 @@ are designed to be useful on their own, including alongside Ace3 if you're
 already invested.
 
 **Status:** v0.1.0, early development. Shipping today: `Cairn.Events`,
-`Cairn.Log`, `Cairn.LogWindow`. Planned for v0.1: `Cairn.Addon`,
-`Cairn.DB`, `Cairn.Slash`, `Cairn.Settings`. See [Roadmap](#roadmap).
+`Cairn.Log`, `Cairn.LogWindow`, `Cairn.DB`. Planned for v0.1: `Cairn.Addon`,
+`Cairn.Slash`, `Cairn.Settings`. See [Roadmap](#roadmap).
 
 ---
 
@@ -75,6 +75,7 @@ MyAddon/
       Cairn.lua
       Cairn-Events-1.0.lua
       Cairn-Log-1.0.lua
+      Cairn-DB-1.0.lua
   Core.lua
 ```
 
@@ -83,11 +84,13 @@ In `MyAddon.toc`:
 ```
 ## Interface: 120005
 ## Title: MyAddon
+## SavedVariables: MyAddonDB
 
 Libs\LibStub\LibStub.lua
 Libs\Cairn\Cairn.lua
 Libs\Cairn\Cairn-Events-1.0.lua
 Libs\Cairn\Cairn-Log-1.0.lua
+Libs\Cairn\Cairn-DB-1.0.lua
 
 Core.lua
 ```
@@ -105,10 +108,14 @@ router).
 local addonName = ...
 
 local log = Cairn.Log(addonName)
+local db  = Cairn.DB.New("MyAddonDB", {
+    defaults = { profile = { scale = 1.0, enabled = true } },
+})
+
 log:Info("loaded version %s", "1.0.0")
 
 Cairn.Events:Subscribe("PLAYER_LOGIN", function()
-    log:Info("welcome back")
+    log:Info("welcome back, scale=%s", tostring(db.profile.scale))
 end, addonName)
 
 Cairn.Events:Subscribe("PLAYER_ENTERING_WORLD", function(isLogin, isReload)
@@ -117,9 +124,9 @@ Cairn.Events:Subscribe("PLAYER_ENTERING_WORLD", function(isLogin, isReload)
 end, addonName)
 ```
 
-That's a complete addon. Subscribe to events with closures, log with
-printf-style formatting, see your messages in chat AND in the
-`/cairn log` window.
+That's a complete addon with persistent settings. Subscribe to events
+with closures, log with printf-style formatting, persist user values
+across sessions with profile support.
 
 ---
 
@@ -266,6 +273,83 @@ into your addon and only want logging without the window, skip
 
 ---
 
+### `Cairn.DB` — SavedVariables with profiles
+
+Wraps a SavedVariables global with profile support, defaults, and change
+callbacks. Modeled on the parts of AceDB-3.0 that authors actually use,
+with fewer surprises and a smaller API.
+
+```lua
+-- 1. Add a SavedVariables line to your .toc:
+--    ## SavedVariables: MyAddonDB
+
+-- 2. Construct the db. The SV global doesn't exist yet, but Cairn.DB
+--    initializes lazily on first .profile or .global access.
+local db = Cairn.DB.New("MyAddonDB", {
+    defaults = {
+        profile = { scale = 1.0, enabled = true,
+                    colors = { r = 1, g = 1, b = 1 } },
+        global  = { dataVersion = 1 },
+    },
+    profileType = "char",  -- "char" (default) | "default"
+})
+
+-- 3. Read/write through .profile and .global AFTER your addon's
+--    ADDON_LOADED event. (The SV global is populated by then.)
+print(db.profile.scale)        -- 1.0 (from defaults on first run)
+db.profile.scale = 1.5
+db.global.dataVersion = 2
+```
+
+**Profile management:**
+
+```lua
+db:GetCurrentProfile()           -- "MyChar - MyRealm" or "Default"
+db:GetProfiles()                 -- sorted list of all profile names
+db:SetProfile("PvP")             -- switch (creates if missing)
+db:ResetProfile()                -- wipe current profile, reapply defaults
+db:DeleteProfile("OldOne")       -- can't delete the current profile
+db:CopyProfile("From", "To")     -- deep copy, To becomes a sibling profile
+
+-- Subscribe to profile changes (returns unsubscribe closure):
+local unsub = db:OnProfileChanged(function(newName, oldName)
+    -- refresh your UI here
+end, addonName)
+```
+
+**Profile types:**
+
+| `profileType` | Default profile name                   |
+|---------------|----------------------------------------|
+| `"char"`      | `"<character> - <realm>"` (default)    |
+| `"default"`   | `"Default"` (or `opts.defaultProfile`) |
+
+Authors can override per-character with `db:SetProfile("AnyName")` at
+runtime regardless of `profileType`. The profile pick for each character
+is stored in `_G[svName].profileKeys`.
+
+**Important defaults behavior:**
+
+Defaults are deep-copied into a profile when that profile is FIRST
+CREATED. Adding new keys to your defaults table later does NOT
+retroactively appear in existing profiles. Use `ResetProfile()` or a
+migration to push new defaults into existing data. This is a deliberate
+v0.1 trade-off (no nested-table `__index` surprises).
+
+**SavedVariables shape** (so you can inspect or migrate it):
+
+```lua
+_G.MyAddonDB = {
+    profileKeys = { ["MyChar - MyRealm"] = "PvP", ... },
+    profiles    = { ["Default"] = {...}, ["PvP"] = {...} },
+    global      = { dataVersion = 2 },
+}
+```
+
+`Cairn.DB(svName, opts)` is sugar for `Cairn.DB.New(svName, opts)`.
+
+---
+
 ## Slash commands
 
 Registered by the standalone Cairn addon (or any addon that loads
@@ -310,14 +394,14 @@ chat — one for `PLAYER_LOGIN`, one for `PLAYER_ENTERING_WORLD`.
 ## Roadmap
 
 **v0.1 in progress** (this release focuses on getting the loader
-pattern, slash router, and diagnostics right):
+pattern, slash router, diagnostics, and persistence right):
 
 - [x] `Cairn` umbrella facade + slash router
 - [x] `Cairn.Events`
 - [x] `Cairn.Log`
 - [x] `Cairn.LogWindow`
+- [x] `Cairn.DB` — SavedVariables with profiles, defaults
 - [ ] `Cairn.Addon` — addon bootstrapping (lifecycle hooks, registry)
-- [ ] `Cairn.DB` — SavedVariables with profiles, defaults, migrations
 - [ ] `Cairn.Slash` — slash router for any addon, not just /cairn
 - [ ] `Cairn.Settings` — declarative config schema, bridges to Blizzard
       Settings panel, registers Edit Mode anchors
@@ -348,6 +432,7 @@ Cairn/
   Cairn-Events-1.0.lua            Event subscription.
   Cairn-Log-1.0.lua               Leveled logger.
   Cairn-LogWindow-1.0.lua         UI viewer for the log buffer.
+  Cairn-DB-1.0.lua                SavedVariables wrapper with profiles.
   Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log subs.
                                   Standalone-only; do NOT embed.
   README.md                       This file.

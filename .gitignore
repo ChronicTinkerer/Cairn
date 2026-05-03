@@ -16,9 +16,6 @@ $RECYCLE.BIN/
 
 # VS Code: ignore most state, allow committed config
 .vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
-!.vscode/tasks.json
 
 # Lua build/bytecode
 *.luac

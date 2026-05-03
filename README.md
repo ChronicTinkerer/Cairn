@@ -14,8 +14,9 @@ already invested.
 `Cairn.LogWindow`, `Cairn.DB`, `Cairn.Settings`, `Cairn.Addon`,
 `Cairn.Slash`. v0.2 adds: `Cairn.EditMode` (LibEditMode wrapper),
 the `anchor` schema type in `Cairn.Settings`, `Cairn.Dashboard`
-(developer dashboard with copyable per-addon logs), and `Cairn.Locale`
-(i18n with locale fallback). See [Roadmap](#roadmap).
+(developer dashboard with copyable per-addon logs), `Cairn.Locale`
+(i18n with locale fallback), and `Cairn.Sequencer` (composable
+step runner). See [Roadmap](#roadmap).
 
 ---
 
@@ -408,6 +409,56 @@ on every key.
 
 ---
 
+### `Cairn.Sequencer` — composable step runner (v0.2)
+
+A small, generic step-runner. Each step is a function that returns
+truthy to advance and falsy to retry on the next tick. Sequencers carry
+optional reset and abort conditions and fire lifecycle callbacks. Useful
+for guide/quest steps, multi-stage tutorials, deploy-style preflight
+checks — anything ordered that you want to drive from a ticker.
+
+```lua
+local seq = Cairn.Sequencer.New({
+    function(s) return playerInZone("Westfall")  end,  -- truthy => advance
+    function(s) return questAccepted(123)        end,
+    function(s) return mobsKilled(8)             end,
+    function(s) return questTurnedIn(123)        end,
+}, {
+    resetWhen  = function() return playerLeftZone() end,
+    abortWhen  = function() return questAbandoned() end,
+    onStep     = function(seq, idx, fn) print("done step", idx) end,
+    onComplete = function(seq) print("guide done!") end,
+})
+
+-- Drive from any ticker (Cairn.Events, C_Timer.NewTicker, OnUpdate, etc).
+C_Timer.NewTicker(0.25, function() seq:Execute() end)
+```
+
+`:Execute()` checks `abortWhen` and `resetWhen` first, then runs the
+current step. `:Next()` is the raw advance with no condition checks.
+Step errors are pcall-trapped and logged via `Cairn.Log("Cairn.Sequencer")`
+so a single bad step doesn't kill the run.
+
+| Method                        | What it does                                    |
+| ----------------------------- | ----------------------------------------------- |
+| `Execute()`                   | Auto-checks abort/reset, then runs `Next`.      |
+| `Next()`                      | Run current step; advance on truthy. Returns advanced?. |
+| `Reset()`                     | Index back to 1; fires `onReset`.               |
+| `Abort()`                     | Jump past last step; fires `onAbort`.           |
+| `Finished()`                  | True once index passes the action list.         |
+| `Index()` / `Total()`         | Inspector helpers (1-based).                    |
+| `Current()`                   | The current step function (nil when finished).  |
+| `Progress()`                  | `(index - 1) / total`, 0..1.                    |
+| `Status()`                    | `"pending"`, `"running"`, `"complete"`, `"aborted"`. |
+| `SetActions(t)` / `Append(fn)`| Replace or extend the step list.                |
+| `OnStep`/`OnComplete`/`OnAbort`/`OnReset` | Subscribe; returns unsubscribe. |
+
+Aborted sequencers stay aborted until `:Reset()`. Subscribers compose
+with the inline option callbacks (both fire). `Cairn.Sequencer(actions, opts)`
+is sugar for `Cairn.Sequencer.New(...)`.
+
+---
+
 ## Composing with other libraries
 
 Cairn is plumbing, not a one-stop framework. It deliberately doesn't
@@ -537,6 +588,7 @@ driven by `Cairn.Settings`. EditMode-movable if LibEditMode is installed.
 - [ ] `text`, `color`, `keybind` schema types in `Cairn.Settings`
 - [ ] `Cairn.Comm` — addon-to-addon messaging
 - [x] `Cairn.Locale` — i18n with locale fallback
+- [x] `Cairn.Sequencer` — composable step runner
 
 **v0.3 stretch:**
 
@@ -565,6 +617,8 @@ Cairn/
   Cairn-Slash-1.0.lua             Generic slash router for any addon.
   Cairn-EditMode-1.0.lua          Optional LibEditMode wrapper (v0.2).
   Cairn-Dashboard-1.0.lua         Developer dashboard with copyable logs (v0.2).
+  Cairn-Locale-1.0.lua            Per-addon i18n with fallback (v0.2).
+  Cairn-Sequencer-1.0.lua         Composable step runner (v0.2).
   Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log + /cairn dash.
                                   Standalone-only; do NOT embed.
   README.md                       This file.

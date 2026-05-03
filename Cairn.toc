@@ -29,6 +29,7 @@ Cairn-Slash-1.0.lua
 Cairn-EditMode-1.0.lua
 Cairn-Dashboard-1.0.lua
 Cairn-Locale-1.0.lua
+Cairn-Sequencer-1.0.lua
 
 # Standalone-only: SavedVariables persistence + /cairn log + /cairn dash subs.
 # Do NOT include this file when embedding Cairn in another addon.

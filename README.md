@@ -10,10 +10,10 @@ a fresh alternative to Ace3 — not a successor, not a fork. The libraries
 are designed to be useful on their own, including alongside Ace3 if you're
 already invested.
 
-**Status:** v0.1.0, early development. Shipping today: `Cairn.Events`,
-`Cairn.Log`, `Cairn.LogWindow`, `Cairn.DB`, `Cairn.Settings`. Planned
-for v0.1: `Cairn.Addon`, `Cairn.Slash`. v0.2 will add EditMode anchor
-support to Settings. See [Roadmap](#roadmap).
+**Status:** v0.1.0, complete. Shipping today: `Cairn.Events`, `Cairn.Log`,
+`Cairn.LogWindow`, `Cairn.DB`, `Cairn.Settings`, `Cairn.Addon`,
+`Cairn.Slash`. v0.2 will add EditMode anchor support to Settings plus
+`Cairn.Comm`. See [Roadmap](#roadmap).
 
 ---
 
@@ -78,6 +78,8 @@ MyAddon/
       Cairn-Log-1.0.lua
       Cairn-DB-1.0.lua
       Cairn-Settings-1.0.lua
+      Cairn-Addon-1.0.lua
+      Cairn-Slash-1.0.lua
   Core.lua
 ```
 
@@ -92,28 +94,30 @@ router).
 ```lua
 -- MyAddon/Core.lua
 local addonName = ...
-local log = Cairn.Log(addonName)
+local addon     = Cairn.Addon.New(addonName)
+local log       = addon:Log()
 
-local db = Cairn.DB.New("MyAddonDB", {
+local db        = Cairn.DB.New("MyAddonDB", {
     defaults = { profile = { scale = 1.0, enabled = true } },
 })
 
-local settings = Cairn.Settings.New(addonName, db, {
+local settings  = Cairn.Settings.New(addonName, db, {
     { key = "enabled", type = "toggle", default = true,  label = "Enabled" },
     { key = "scale",   type = "range",  default = 1.0,
       min = 0.5, max = 2.0, step = 0.1, label = "Scale" },
 })
 
-log:Info("loaded version %s", "1.0.0")
+local slash     = Cairn.Slash.Register(addonName, "/myaddon")
+slash:Subcommand("config", function() settings:Open() end, "open settings")
+slash:Subcommand("reset",  function() db:ResetProfile() end, "reset profile")
 
-Cairn.Events:Subscribe("PLAYER_LOGIN", function()
-    log:Info("welcome back, scale=%s", tostring(db.profile.scale))
-end, addonName)
+function addon:OnInit()  log:Info("init: SVs ready") end
+function addon:OnLogin() log:Info("welcome back, scale=%s", tostring(db.profile.scale)) end
 ```
 
-That's a complete addon: persistent settings, a real Blizzard Settings
-panel entry, event subscription, and printf-style logging — under 20
-lines of code.
+That's a complete addon: lifecycle hooks, persistent settings, a real
+Blizzard Settings panel entry, slash commands, and printf-style
+logging — under 25 lines of code.
 
 ---
 
@@ -124,8 +128,7 @@ lines of code.
 The umbrella is a tiny lazy loader. Indexing `Cairn.Foo` calls
 `LibStub("Cairn-Foo-1.0", true)` under the hood and caches the result.
 If the module isn't loaded, indexing returns `nil` so you get a clean
-"attempt to call a nil value" at the call site rather than confusing
-errors deep inside Cairn.
+"attempt to call a nil value" at the call site.
 
 ```lua
 Cairn._VERSION                                      -- "0.1.0"
@@ -134,8 +137,8 @@ Cairn:RegisterSlashSub(name, fn, helpText)          -- add a /cairn <name> subco
 ```
 
 The slash router owns the single `SLASH_CAIRN1 = "/cairn"` registration.
-Modules call `Cairn:RegisterSlashSub(...)` to add subcommands without
-fighting each other for the slash slot.
+Modules call `Cairn:RegisterSlashSub(...)` so subcommands compose
+without fighting each other.
 
 ---
 
@@ -188,12 +191,12 @@ recent entries with filters. Open with `/cairn log`.
 
 ```lua
 Cairn.LogWindow:Toggle()
-Cairn.LogWindow:SetSourceFilter("MyAddon")  -- nil or "all" = no filter
+Cairn.LogWindow:SetSourceFilter("MyAddon")
 Cairn.LogWindow:SetMinLevel("DEBUG")
 Cairn.LogWindow:SetSearch("config")
 ```
 
-Requires `Cairn.Log` to be loaded.
+Requires `Cairn.Log`.
 
 ---
 
@@ -212,63 +215,46 @@ local db = Cairn.DB.New("MyAddonDB", {
     profileType = "char",  -- "char" (default) | "default"
 })
 
--- Read/write through .profile and .global AFTER ADDON_LOADED.
 print(db.profile.scale)
 db.profile.scale = 1.5
 
--- Profile management
 db:GetCurrentProfile()           -- "MyChar - MyRealm" or "Default"
 db:GetProfiles()                 -- sorted list of all profile names
 db:SetProfile("PvP")             -- switch (creates if missing)
-db:ResetProfile()                -- wipe current profile, reapply defaults
+db:ResetProfile()
 db:DeleteProfile("OldOne")       -- can't delete current
 db:CopyProfile("From", "To")     -- deep copy
 
-local unsub = db:OnProfileChanged(function(newName, oldName)
-    -- refresh your UI here
-end, addonName)
+local unsub = db:OnProfileChanged(function(newName, oldName) ... end, addonName)
 ```
 
 Defaults are deep-copied into a profile when that profile is FIRST
-CREATED. Adding new keys to your defaults later does NOT retroactively
-appear in existing profiles. Use `ResetProfile()` or a migration to push
-new defaults into existing data.
-
-`Cairn.DB(svName, opts)` is sugar for `Cairn.DB.New(svName, opts)`.
+CREATED. Use `ResetProfile()` to push new defaults into existing data.
 
 ---
 
 ### `Cairn.Settings` — declarative config + Blizzard panel bridge
 
-Take a flat schema, get a real entry in Blizzard's native Settings panel.
-Values persist through a `Cairn.DB` instance you provide, so settings,
-profiles, and SavedVariables share the same storage.
+Take a flat schema, get a real entry in Blizzard's native Settings
+panel. Values persist through a `Cairn.DB` instance you provide.
 
 ```lua
 local settings = Cairn.Settings.New(addonName, db, {
-    { key = "h_general",  type = "header",  label = "General" },
-    { key = "enabled",    type = "toggle",  default = true,  label = "Enabled" },
-
-    { key = "h_display",  type = "header",  label = "Display" },
-    { key = "scale",      type = "range",   default = 1.0,
+    { key = "h_general",  type = "header", label = "General" },
+    { key = "enabled",    type = "toggle", default = true, label = "Enabled" },
+    { key = "scale",      type = "range",  default = 1.0,
       min = 0.5, max = 2.0, step = 0.1,
       label = "Scale", tooltip = "How big the frame is",
       onChange = function(value, oldValue) MyAddon:Rescale(value) end },
-    { key = "anchor",     type = "dropdown", default = "TOPLEFT",
-      label = "Anchor",
-      choices = { TOPLEFT = "Top Left", TOPRIGHT = "Top Right",
-                  BOTTOMLEFT = "Bottom Left", BOTTOMRIGHT = "Bottom Right" } },
+    { key = "anchor",     type = "dropdown", default = "TOPLEFT", label = "Anchor",
+      choices = { TOPLEFT = "Top Left", TOPRIGHT = "Top Right" } },
 })
 
 settings:Open()                  -- opens Blizzard Settings to your addon
 settings:Get("scale")            -- 1.0
-settings:Set("scale", 1.5)       -- writes to db.profile.scale, fires onChange
-local unsub = settings:OnChange("scale", function(value, oldValue)
-    -- subscribe to a specific key (returns an unsubscribe closure)
-end, addonName)
+settings:Set("scale", 1.5)       -- writes to db.profile, fires onChange
+settings:OnChange("scale", fn, owner)  -- subscribe; returns unsubscribe
 ```
-
-**Schema entry types (v0.1):**
 
 | Type       | Required fields                    | Notes |
 |------------|------------------------------------|-------|
@@ -277,30 +263,68 @@ end, addonName)
 | `range`    | `default`, `label`, `min`, `max`   | Numeric slider; `step` defaults to 0.1 |
 | `dropdown` | `default`, `label`, `choices`      | `choices` is `{value = label, ...}` |
 
-**Common fields:** `key` (required, unique within the schema),
-`tooltip` (optional hover text), `onChange` (optional `function(value, oldValue)`).
-
-**Defaults are seeded into `db.profile` on `Settings.New`.** Only keys
-that are currently `nil` get the default written, so existing user values
-survive addon upgrades. To force-update an existing profile, call
-`db:ResetProfile()`.
-
-**Schema order is preserved.** Define entries in the order you want them
-to appear in the panel.
-
-**Classic / no-Settings fallback:** if the modern Blizzard Settings global
-isn't available, `Cairn.Settings.New` returns a stub that supports
-`Get`, `Set`, and `OnChange` but cannot render a panel; `Open()` warns
-without erroring. Your addon keeps working; users just don't get the
-panel.
+Defaults seed `db.profile` only for keys currently `nil`, so existing
+user values survive addon upgrades. Schema order is preserved in the
+panel. If Blizzard's modern Settings global isn't available (Classic),
+`New` returns a Get/Set/OnChange-only stub.
 
 **Planned for v0.2:** `text`, `color`, `keybind`, and `anchor` (the
-EditMode integration). Anchor-typed entries will auto-register the
-named frame with Edit Mode so users can drag it visually.
+EditMode integration).
 
 ---
 
-## Slash commands
+### `Cairn.Addon` — lifecycle helpers
+
+Removes the boilerplate of subscribing to ADDON_LOADED, PLAYER_LOGIN,
+PLAYER_ENTERING_WORLD, and PLAYER_LOGOUT.
+
+```lua
+local addon = Cairn.Addon.New("MyAddon")
+
+function addon:OnInit()    end  -- ADDON_LOADED for your addon (SVs ready)
+function addon:OnLogin()   end  -- PLAYER_LOGIN
+function addon:OnEnter(isLogin, isReload) end  -- PLAYER_ENTERING_WORLD
+function addon:OnLogout()  end  -- PLAYER_LOGOUT
+
+addon:Log()                     -- lazy Cairn.Log("MyAddon"), cached
+Cairn.Addon.Get("MyAddon")      -- registry lookup
+```
+
+Hooks that aren't defined are simply skipped. ADDON_LOADED is filtered
+to your addon name automatically. Errors in hooks are caught with
+`pcall` and routed to `geterrorhandler()`.
+
+Requires `Cairn.Events`.
+
+---
+
+### `Cairn.Slash` — generic slash router
+
+Slash commands for any addon, with subcommand routing, aliases,
+auto-help, and a quote-aware arg splitter. (The `/cairn` router in
+Cairn.lua is for Cairn itself; `Cairn.Slash` is for your addon.)
+
+```lua
+local s = Cairn.Slash.Register("MyAddon", "/myaddon", { aliases = { "/ma" } })
+
+s:Subcommand("config", function(rest) MyAddon:OpenConfig() end, "open config")
+s:Subcommand("reset",  function() MyAddon:Reset() end, "reset everything")
+s:Default(function(input) MyAddon:DefaultAction(input) end)
+
+s:Run("config")                  -- programmatic dispatch
+s:Aliases({ "/m", "/ma" })       -- replace alias list
+s:PrintHelp()                    -- print the auto-generated help
+local args = s:Args('hello "two words" three')   -- {"hello","two words","three"}
+Cairn.Slash.Get("MyAddon")       -- registry lookup
+```
+
+If the user types `/myaddon` with no subcommand and no `Default` is
+set, the auto-help fires. `/myaddon help` and `/myaddon ?` always print
+the auto-help.
+
+---
+
+## Slash commands (Cairn itself)
 
 Registered by the standalone Cairn addon (or any addon that loads
 `Cairn-Standalone-1.0.lua`, but you should not embed that file).
@@ -325,24 +349,22 @@ Modules can register additional subcommands via
 
 ## Demo & test addons
 
-`CairnTest` is a tiny smoke addon that exercises `Cairn.Events`,
-`Cairn.Log`, and `Cairn.DB`. It tracks `totalLogins` / `totalEnters`
-across sessions so you can verify persistence.
+`CairnTest` — exercises `Cairn.Events`, `Cairn.Log`, and `Cairn.DB`.
+Tracks `totalLogins` / `totalEnters` across sessions so you can verify
+persistence.
 
 ```
 /cairntest                      received counts + persistent totals
-/cairntest has                  Has() check for a few events
 /cairntest spam                 emit one log line at every level
-/cairntest unsub                unsubscribe all handlers (test teardown)
 /cairntest db                   show DB profile state
-/cairntest profile <name>       switch to a different DB profile
-/cairntest reset                reset current profile to defaults
+/cairntest profile <name>       switch DB profile
+/cairntest reset                reset profile to defaults
 ```
 
-`CairnSettingsDemo` adds a movable on-screen frame whose appearance
+`CairnSettingsDemo` — a movable on-screen frame whose appearance
 (visibility, scale, color theme) is driven by `Cairn.Settings`. Open
-the panel via Game Menu -> Options -> AddOns -> Cairn Settings Demo,
-or with `/csdemo`.
+the panel via Game Menu > Options > AddOns > Cairn Settings Demo, or
+with `/csdemo`.
 
 ```
 /csdemo                         open the settings panel
@@ -355,18 +377,18 @@ or with `/csdemo`.
 
 ## Roadmap
 
-**v0.1** (this release):
+**v0.1** (complete):
 
 - [x] `Cairn` umbrella facade + slash router
 - [x] `Cairn.Events`
 - [x] `Cairn.Log`
 - [x] `Cairn.LogWindow`
-- [x] `Cairn.DB` — SavedVariables with profiles, defaults
-- [x] `Cairn.Settings` — declarative schema, Blizzard panel bridge
-- [ ] `Cairn.Addon` — addon bootstrapping (lifecycle hooks, registry)
-- [ ] `Cairn.Slash` — slash router for any addon, not just /cairn
+- [x] `Cairn.DB`
+- [x] `Cairn.Settings`
+- [x] `Cairn.Addon`
+- [x] `Cairn.Slash`
 
-**v0.2 stretch:**
+**v0.2:**
 
 - `Cairn.Settings` — `text`, `color`, `keybind`, `anchor` (EditMode) types
 - `Cairn.Comm` — addon-to-addon messaging (AceComm replacement)
@@ -376,8 +398,8 @@ or with `/csdemo`.
 
 **Explicitly NOT planned:** widget toolkit (use Blizzard's frame APIs or
 roll your own — that's what every popular addon does), shared media
-library (LibSharedMedia exists and works), threading/scheduling library
-beyond a basic timer (Lua coroutines are fine).
+library (LibSharedMedia exists and works), threading/scheduling beyond
+a basic timer (Lua coroutines are fine).
 
 ---
 
@@ -395,6 +417,8 @@ Cairn/
   Cairn-LogWindow-1.0.lua         UI viewer for the log buffer.
   Cairn-DB-1.0.lua                SavedVariables wrapper with profiles.
   Cairn-Settings-1.0.lua          Declarative schema + Blizzard panel bridge.
+  Cairn-Addon-1.0.lua             Addon lifecycle helpers.
+  Cairn-Slash-1.0.lua             Generic slash router for any addon.
   Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log subs.
                                   Standalone-only; do NOT embed.
   README.md                       This file.

@@ -6,7 +6,8 @@ Declarative settings schema bridging to Blizzard's native Settings panel
 Midnight). Backed by a Cairn.DB instance the author provides.
 
 v0.1 schema types: toggle | range | dropdown | header
-Planned for v0.2: text, color, keybind, anchor (EditMode integration).
+v0.2 added:        anchor (EditMode integration via Cairn.EditMode + LibEditMode)
+Planned for v0.3:  text, color, keybind.
 
 Public API:
 
@@ -26,6 +27,12 @@ Public API:
 		  default = "TOPLEFT",
 		  choices = { TOPLEFT = "Top Left", TOPRIGHT = "Top Right",
 		              BOTTOMLEFT = "Bottom Left", BOTTOMRIGHT = "Bottom Right" } },
+		-- v0.2 anchor type (requires LibEditMode to do anything useful):
+		{ key = "framePos", type = "anchor", label = "Frame position",
+		  frame = MyAddonFrame,
+		  default = { point = "CENTER", x = 0, y = 0 },
+		  tooltip = "Adjust position via Edit Mode.",
+		  onChange = function() MyAddon:Reanchor() end },
 	})
 
 	settings:Open()                    -- open Blizzard Settings to this addon
@@ -35,28 +42,25 @@ Public API:
 
 Schema entry shape (common fields):
 	key      string  required, unique within this category
-	type     string  required, one of: toggle, range, dropdown, header
+	type     string  required, one of: toggle, range, dropdown, header, anchor
 	label    string  required, the user-facing label
 	default  any     required EXCEPT for type="header"; deep-copied into db.profile
+	                 for anchor type, default is { point = ..., x = ..., y = ... }
 	tooltip  string  optional, hover text
 	onChange function optional, fired after the value updates: fn(newValue, oldValue)
+	                 for anchor type, fires when EditMode commits position with no args
 
 Type-specific fields:
 	range:    min, max, step (defaults: 0, 1, 0.1)
 	dropdown: choices (table {value = label, ...})
-
-The lib reads/writes values through `db.profile[key]`, so everything
-persists via Cairn.DB profile rules (per-character or named profile,
-SavedVariables-backed). Defaults are seeded into the profile on
-Settings.New (only for keys not already present), so existing user values
-are preserved across upgrades.
+	anchor:   frame (Frame with a non-nil :GetName())
 
 If Blizzard's Settings global is unavailable (e.g., Classic builds),
 Settings.New returns a stub that supports Get/Set/OnChange but cannot
 render a panel. Open() prints a friendly warning.
 ]]
 
-local MAJOR, MINOR = "Cairn-Settings-1.0", 1
+local MAJOR, MINOR = "Cairn-Settings-1.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -71,6 +75,7 @@ local SUPPORTED_TYPES = {
 	range    = true,
 	dropdown = true,
 	header   = true,
+	anchor   = true,  -- v0.2; requires Cairn.EditMode + LibEditMode for full effect
 }
 
 -- ----- Helpers -----------------------------------------------------------
@@ -95,7 +100,7 @@ local function validateSchema(schema)
 			error("Cairn.Settings.New: duplicate schema key: " .. entry.key, 3)
 		end
 		seen[entry.key] = true
-		if entry.type ~= "header" and entry.default == nil then
+		if entry.type ~= "header" and entry.type ~= "anchor" and entry.default == nil then
 			error("Cairn.Settings.New: schema entry '" .. entry.key
 				.. "' requires a 'default' value", 3)
 		end
@@ -103,15 +108,28 @@ local function validateSchema(schema)
 			error("Cairn.Settings.New: dropdown entry '" .. entry.key
 				.. "' requires a 'choices' table", 3)
 		end
+		if entry.type == "anchor" then
+			if type(entry.frame) ~= "table" or type(entry.frame.GetName) ~= "function" then
+				error("Cairn.Settings.New: anchor entry '" .. entry.key
+					.. "' requires a 'frame' (a Frame with :GetName)", 3)
+			end
+			local fname = entry.frame:GetName()
+			if not fname or fname == "" then
+				error("Cairn.Settings.New: anchor entry '" .. entry.key
+					.. "' requires frame to have a name (CreateFrame with a name string)", 3)
+			end
+		end
 	end
 end
 
 local function seedDefaults(db, schema)
-	-- For each non-header entry, ensure db.profile[key] has a value. Only
-	-- write the default if the key is currently nil so existing user data
-	-- is preserved across addon upgrades.
+	-- For each non-header / non-anchor entry, ensure db.profile[key] has a
+	-- value. Only write the default if currently nil so user data survives
+	-- across upgrades. (Anchor positions are NOT stored in db.profile;
+	-- LibEditMode persists them in EditMode's own SavedVariables.)
 	for _, entry in ipairs(schema) do
-		if entry.type ~= "header" and db.profile[entry.key] == nil then
+		if entry.type ~= "header" and entry.type ~= "anchor"
+			and db.profile[entry.key] == nil then
 			db.profile[entry.key] = entry.default
 		end
 	end
@@ -184,7 +202,6 @@ function proto:Set(key, value) setValue(self, key, value, true) end
 function proto:GetCategoryID() return self._categoryID end
 function proto:GetCategory() return self._category end
 
--- Shared OnChange (works on both real and stub).
 local function onChange(self, key, fn, owner)
 	if type(key) ~= "string" then error("Cairn.Settings:OnChange: 'key' must be a string", 2) end
 	if type(fn) ~= "function" then error("Cairn.Settings:OnChange: 'fn' must be a function", 2) end
@@ -210,28 +227,41 @@ local function registerEntry(self, entry)
 		return
 	end
 
-	-- All non-header entries are "real" settings backed by db.profile.
+	if entry.type == "anchor" then
+		-- Render a section header with the label (and a hint in the tooltip).
+		if CreateSettingsListSectionHeaderInitializer and self._layout then
+			local headerLabel = (entry.label or key) .. "  (Edit Mode)"
+			local init = CreateSettingsListSectionHeaderInitializer(headerLabel)
+			self._layout:AddInitializer(init)
+		end
+
+		-- Hand off to Cairn.EditMode (no-ops if LibEditMode isn't loaded).
+		local EditMode = LibStub("Cairn-EditMode-1.0", true)
+		if EditMode then
+			local cb = entry.onChange and function() entry.onChange() end or nil
+			EditMode:Register(entry.frame, entry.default, cb, entry.label or key)
+		elseif logger() then
+			logger():Warn("anchor entry '%s' present but Cairn.EditMode module not loaded.", key)
+		end
+		return
+	end
+
+	-- All other (real) settings are backed by db.profile.
 	local variableName = "Cairn_" .. self._addonName .. "_" .. key
 
-	-- Determine VarType.
 	local varType
 	if entry.type == "toggle" then
 		varType = Settings.VarType.Boolean
 	elseif entry.type == "range" then
 		varType = Settings.VarType.Number
 	elseif entry.type == "dropdown" then
-		-- Dropdown values can be any type; use Number if default is numeric, else String.
 		varType = (type(entry.default) == "number") and Settings.VarType.Number or Settings.VarType.String
 	end
 
 	local setting = Settings.RegisterProxySetting(
 		self._category, variableName, varType, entry.label or key, entry.default,
 		function() return self._db.profile[key] end,
-		function(_, value)
-			-- The proxy setter is called by Blizzard on user change. Route
-			-- it through setValue so onChange + subscribers fire too.
-			setValue(self, key, value, true)
-		end
+		function(_, value) setValue(self, key, value, true) end
 	)
 
 	if entry.type == "toggle" then
@@ -245,7 +275,6 @@ local function registerEntry(self, entry)
 	elseif entry.type == "dropdown" then
 		Settings.CreateDropdown(self._category, setting, function()
 			local container = Settings.CreateControlTextContainer()
-			-- Pull a stable order: alphabetical by label.
 			local pairs_list = {}
 			for value, label in pairs(entry.choices) do
 				pairs_list[#pairs_list + 1] = { value = value, label = label }
@@ -269,7 +298,6 @@ function lib.New(addonName, db, schema)
 	validateSchema(schema)
 	seedDefaults(db, schema)
 
-	-- Index by key for O(1) onChange lookups.
 	local byKey = {}
 	for _, entry in ipairs(schema) do byKey[entry.key] = entry end
 
@@ -278,18 +306,28 @@ function lib.New(addonName, db, schema)
 		_db        = db,
 		_schema    = schema,
 		_byKey     = byKey,
-		_subs      = {},  -- key -> { {fn,owner}, ... }
+		_subs      = {},
 	}
 
-	-- If Blizzard's Settings API isn't available, return a stub.
 	if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnCategory) then
 		if logger() then
 			logger():Warn("Blizzard Settings API not available; returning Get/Set-only stub for %s.", addonName)
 		end
-		return setmetatable(self, stubProto)
+		setmetatable(self, stubProto)
+		-- Even in stub mode, anchor entries should still try to register
+		-- with Cairn.EditMode so EditMode-movable frames work.
+		local EditMode = LibStub("Cairn-EditMode-1.0", true)
+		if EditMode then
+			for _, entry in ipairs(schema) do
+				if entry.type == "anchor" then
+					local cb = entry.onChange and function() entry.onChange() end or nil
+					EditMode:Register(entry.frame, entry.default, cb, entry.label or entry.key)
+				end
+			end
+		end
+		return self
 	end
 
-	-- Register category + initializers.
 	local category, layout = Settings.RegisterVerticalLayoutCategory(addonName)
 	self._category   = category
 	self._layout     = layout

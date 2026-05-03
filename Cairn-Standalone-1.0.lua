@@ -13,8 +13,9 @@ persistence.
 
 local Log       = LibStub("Cairn-Log-1.0", true)
 local LogWindow = LibStub("Cairn-LogWindow-1.0", true)
+local Dashboard = LibStub("Cairn-Dashboard-1.0", true)
 
-if not Log then return end -- defensive: should always be loaded by now
+if not Log then return end
 
 -- ----- Slash subcommands -------------------------------------------------
 
@@ -91,6 +92,15 @@ Cairn:RegisterSlashSub("log", function(args)
 	print("|cFF7FBFFF[Cairn]|r unknown log subcommand: " .. sub ..
 		"  (try: clear, level, source, search, echo, stats)")
 end, "open log window or manage logging")
+
+-- /cairn dash, /cairn dashboard, /cairn dev all open the developer dashboard.
+local function openDashboard()
+	if Dashboard then Dashboard:Toggle()
+	else print("|cFF7FBFFF[Cairn]|r Dashboard module not loaded.") end
+end
+Cairn:RegisterSlashSub("dash",      openDashboard, "open developer dashboard")
+Cairn:RegisterSlashSub("dashboard", openDashboard, "alias for /cairn dash")
+Cairn:RegisterSlashSub("dev",       openDashboard, "alias for /cairn dash")
 
 -- ----- SavedVariables wiring (PLAYER_LOGOUT save, ADDON_LOADED restore) --
 

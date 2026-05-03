@@ -10,10 +10,11 @@ a fresh alternative to Ace3 — not a successor, not a fork. The libraries
 are designed to be useful on their own, including alongside Ace3 if you're
 already invested.
 
-**Status:** v0.1.0, complete. Shipping today: `Cairn.Events`, `Cairn.Log`,
+**Status:** v0.2.0-dev. v0.1.0 shipped: `Cairn.Events`, `Cairn.Log`,
 `Cairn.LogWindow`, `Cairn.DB`, `Cairn.Settings`, `Cairn.Addon`,
-`Cairn.Slash`. v0.2 will add EditMode anchor support to Settings plus
-`Cairn.Comm`. See [Roadmap](#roadmap).
+`Cairn.Slash`. v0.2 adds: `Cairn.EditMode` (LibEditMode wrapper),
+the `anchor` schema type in `Cairn.Settings`, and `Cairn.Dashboard`
+(developer dashboard with copyable per-addon logs). See [Roadmap](#roadmap).
 
 ---
 
@@ -21,23 +22,25 @@ already invested.
 
 Most popular WoW addons today don't actually use Ace3 wholesale.
 WeakAuras, Details!, BigWigs, DBM, Plater, MRT all rolled their own
-architecture. ElvUI uses three Ace3 libraries and ignores the rest. The
-common pattern is: cherry-pick what works, write the rest from scratch.
+architecture. ElvUI uses three Ace3 libraries and ignores the rest.
 
 Cairn is what that "rest from scratch" could look like if you started
 today, with these decisions baked in:
 
-- **Composable, not monolithic.** No required core, no mixin chain. Each
-  module is independently usable; the umbrella `Cairn` table just
+- **Composable, not monolithic.** No required core, no mixin chain.
+  Each module is independently usable; the umbrella `Cairn` table just
   resolves them on first access.
 - **Modern Lua patterns.** Closure handlers instead of mixin methods.
   Subscribe calls return an unsubscribe function.
 - **Plays well with Blizzard's modern UI.** `Cairn.Settings` writes
-  directly into the native Settings panel (no custom config window for
-  the simple case). EditMode anchor integration lands in v0.2.
+  directly into the native Settings panel. The `anchor` schema type
+  registers your frame with Edit Mode (via LibEditMode) so users can
+  drag it visually.
+- **Built-in dev tooling.** `Cairn.Dashboard` (`/cairn dash`) lists
+  every addon Cairn knows about with per-source log filtering and
+  copyable log dumps for bug reports.
 - **No widget toolkit.** Survey said most authors roll their own UI;
-  Cairn doesn't fight that. (`Cairn.LogWindow` is a focused exception
-  for diagnostics.)
+  Cairn doesn't fight that.
 
 ---
 
@@ -47,13 +50,12 @@ Cairn supports two distribution modes. Both expose the same `Cairn.X` API.
 
 ### Mode 1: Standalone (recommended for end users)
 
-Install Cairn as its own addon. Other addons that depend on Cairn list
-it as a `## Dependencies` line in their `.toc`.
-
 1. Copy the `Cairn/` folder into:
    `World of Warcraft\_retail_\Interface\AddOns\Cairn\`
 2. Make sure Cairn is enabled in your in-game AddOns list.
-3. Any addon that depends on Cairn loads after it automatically.
+3. Optionally install [LibEditMode](https://www.curseforge.com/wow/addons/libeditmode)
+   from CurseForge if you want EditMode integration to work.
+4. Any addon that depends on Cairn loads after it automatically.
 
 After login, type `/cairn` to see the available subcommands.
 
@@ -64,14 +66,11 @@ include them in your `.toc` BEFORE your own files. LibStub's
 version-deduplication means only the highest-version copy stays loaded
 even if multiple addons embed the same module.
 
-Example layout:
-
 ```
 MyAddon/
   MyAddon.toc
   Libs/
-    LibStub/
-      LibStub.lua
+    LibStub/LibStub.lua
     Cairn/
       Cairn.lua
       Cairn-Events-1.0.lua
@@ -80,6 +79,8 @@ MyAddon/
       Cairn-Settings-1.0.lua
       Cairn-Addon-1.0.lua
       Cairn-Slash-1.0.lua
+      Cairn-EditMode-1.0.lua    -- optional; needs LibEditMode installed
+      Cairn-Dashboard-1.0.lua   -- optional; only useful in standalone mode
   Core.lua
 ```
 
@@ -115,9 +116,9 @@ function addon:OnInit()  log:Info("init: SVs ready") end
 function addon:OnLogin() log:Info("welcome back, scale=%s", tostring(db.profile.scale)) end
 ```
 
-That's a complete addon: lifecycle hooks, persistent settings, a real
-Blizzard Settings panel entry, slash commands, and printf-style
-logging — under 25 lines of code.
+A complete addon: lifecycle hooks, persistent settings, a real Blizzard
+Settings panel entry, slash commands, and printf-style logging — under
+25 lines of code.
 
 ---
 
@@ -125,69 +126,54 @@ logging — under 25 lines of code.
 
 ### `Cairn` (umbrella facade)
 
-The umbrella is a tiny lazy loader. Indexing `Cairn.Foo` calls
-`LibStub("Cairn-Foo-1.0", true)` under the hood and caches the result.
-If the module isn't loaded, indexing returns `nil` so you get a clean
-"attempt to call a nil value" at the call site.
+Tiny lazy loader. Indexing `Cairn.Foo` calls `LibStub("Cairn-Foo-1.0", true)`
+and caches the result. If the module isn't loaded, returns `nil`.
 
 ```lua
 Cairn._VERSION                                      -- "0.1.0"
-Cairn._NAME                                         -- "Cairn"
 Cairn:RegisterSlashSub(name, fn, helpText)          -- add a /cairn <name> subcommand
 ```
-
-The slash router owns the single `SLASH_CAIRN1 = "/cairn"` registration.
-Modules call `Cairn:RegisterSlashSub(...)` so subcommands compose
-without fighting each other.
 
 ---
 
 ### `Cairn.Events` — event subscription
 
-Modern game-event subscription with closure handlers and owner-based
-mass unsubscribe. Multiple handlers per `(owner, event)` pair are
-allowed.
-
 ```lua
 local unsub = Cairn.Events:Subscribe(event, handler, owner)
-unsub()                                  -- remove just this handler
-Cairn.Events:UnsubscribeAll(owner)       -- remove all for an owner
-Cairn.Events:Has(event)                  -- true | false
+unsub()
+Cairn.Events:UnsubscribeAll(owner)
+Cairn.Events:Has(event)
 ```
 
-Handler signature: receives the event payload args (NOT the event name).
-Errors are caught with `pcall` and routed to `geterrorhandler()`.
+Handler receives the event payload args. Errors caught with `pcall` and
+routed to `geterrorhandler()`.
 
 ---
 
 ### `Cairn.Log` — leveled logging
-
-Per-source loggers, ring-buffer storage, optional chat echo, configurable
-persistence to SavedVariables.
 
 ```lua
 local log = Cairn.Log("MyAddon")
 log:Info("loaded v%s", "1.0")
 log:Warn("config key %q deprecated", k)
 log:Error("parse failed: %s", err)
-log:SetLevel("DEBUG")                    -- this source only
+log:SetLevel("DEBUG")
 
 Cairn.Log:SetGlobalLevel("WARN")
 Cairn.Log:SetChatEchoLevel("WARN")
 Cairn.Log:SetPersistence(1000)
 Cairn.Log:GetEntries(filterFn)
-Cairn.Log:OnNewEntry(fn, owner)          -- LogWindow uses this
+Cairn.Log:OnNewEntry(fn, owner)
 ```
 
-Levels (severity descending): `ERROR (1)`, `WARN (2)`, `INFO (3)`,
-`DEBUG (4)`, `TRACE (5)`. Default visibility is `INFO+`.
+Levels: `ERROR (1)`, `WARN (2)`, `INFO (3)`, `DEBUG (4)`, `TRACE (5)`.
+Default visibility `INFO+`.
 
 ---
 
-### `Cairn.LogWindow` — UI viewer
+### `Cairn.LogWindow` — log viewer
 
-Movable, resizable window that subscribes to `Cairn.Log` and shows
-recent entries with filters. Open with `/cairn log`.
+Open with `/cairn log`.
 
 ```lua
 Cairn.LogWindow:Toggle()
@@ -201,8 +187,6 @@ Requires `Cairn.Log`.
 ---
 
 ### `Cairn.DB` — SavedVariables with profiles
-
-Wraps a SavedVariables global with profile support and defaults.
 
 ```lua
 -- .toc:  ## SavedVariables: MyAddonDB
@@ -218,42 +202,43 @@ local db = Cairn.DB.New("MyAddonDB", {
 print(db.profile.scale)
 db.profile.scale = 1.5
 
-db:GetCurrentProfile()           -- "MyChar - MyRealm" or "Default"
-db:GetProfiles()                 -- sorted list of all profile names
-db:SetProfile("PvP")             -- switch (creates if missing)
+db:GetCurrentProfile()
+db:GetProfiles()
+db:SetProfile("PvP")
 db:ResetProfile()
-db:DeleteProfile("OldOne")       -- can't delete current
-db:CopyProfile("From", "To")     -- deep copy
+db:DeleteProfile("OldOne")
+db:CopyProfile("From", "To")
 
 local unsub = db:OnProfileChanged(function(newName, oldName) ... end, addonName)
 ```
 
-Defaults are deep-copied into a profile when that profile is FIRST
-CREATED. Use `ResetProfile()` to push new defaults into existing data.
+Defaults are deep-copied on profile creation. Use `ResetProfile()` to
+push new defaults into existing data.
 
 ---
 
 ### `Cairn.Settings` — declarative config + Blizzard panel bridge
 
-Take a flat schema, get a real entry in Blizzard's native Settings
-panel. Values persist through a `Cairn.DB` instance you provide.
-
 ```lua
 local settings = Cairn.Settings.New(addonName, db, {
-    { key = "h_general",  type = "header", label = "General" },
-    { key = "enabled",    type = "toggle", default = true, label = "Enabled" },
-    { key = "scale",      type = "range",  default = 1.0,
-      min = 0.5, max = 2.0, step = 0.1,
-      label = "Scale", tooltip = "How big the frame is",
+    { key = "h_general", type = "header", label = "General" },
+    { key = "enabled",   type = "toggle", default = true, label = "Enabled" },
+    { key = "scale",     type = "range",  default = 1.0,
+      min = 0.5, max = 2.0, step = 0.1, label = "Scale",
       onChange = function(value, oldValue) MyAddon:Rescale(value) end },
-    { key = "anchor",     type = "dropdown", default = "TOPLEFT", label = "Anchor",
+    { key = "anchor",    type = "dropdown", default = "TOPLEFT", label = "Anchor",
       choices = { TOPLEFT = "Top Left", TOPRIGHT = "Top Right" } },
+    -- v0.2: anchor type integrates with EditMode (requires LibEditMode)
+    { key = "framePos",  type = "anchor", label = "Frame position",
+      frame = MyAddonFrame,
+      default = { point = "CENTER", x = 0, y = 0 },
+      onChange = function() MyAddon:Reanchor() end },
 })
 
-settings:Open()                  -- opens Blizzard Settings to your addon
-settings:Get("scale")            -- 1.0
-settings:Set("scale", 1.5)       -- writes to db.profile, fires onChange
-settings:OnChange("scale", fn, owner)  -- subscribe; returns unsubscribe
+settings:Open()
+settings:Get("scale")
+settings:Set("scale", 1.5)
+settings:OnChange("scale", fn, owner)
 ```
 
 | Type       | Required fields                    | Notes |
@@ -262,21 +247,79 @@ settings:OnChange("scale", fn, owner)  -- subscribe; returns unsubscribe
 | `toggle`   | `default`, `label`                 | Boolean checkbox |
 | `range`    | `default`, `label`, `min`, `max`   | Numeric slider; `step` defaults to 0.1 |
 | `dropdown` | `default`, `label`, `choices`      | `choices` is `{value = label, ...}` |
+| `anchor`   | `frame` (named), `label`           | EditMode-movable; needs LibEditMode |
 
-Defaults seed `db.profile` only for keys currently `nil`, so existing
-user values survive addon upgrades. Schema order is preserved in the
-panel. If Blizzard's modern Settings global isn't available (Classic),
-`New` returns a Get/Set/OnChange-only stub.
+The `anchor` type does NOT seed `db.profile` — LibEditMode persists
+position via Blizzard's EditMode SavedVariables. Defaults seed
+`db.profile` only for keys currently `nil`. Schema order is preserved
+in the panel. If Blizzard's modern Settings global isn't available, `New`
+returns a Get/Set/OnChange-only stub.
 
-**Planned for v0.2:** `text`, `color`, `keybind`, and `anchor` (the
-EditMode integration).
+---
+
+### `Cairn.EditMode` — optional LibEditMode wrapper (v0.2)
+
+```lua
+Cairn.EditMode:IsAvailable()                          -- true if LibEditMode loaded
+Cairn.EditMode:Register(frame, defaults, callback, name)
+Cairn.EditMode:Open()                                 -- toggle Edit Mode panel
+```
+
+Frames must have a non-nil `:GetName()`. `defaults` is
+`{ point = "CENTER", x = 0, y = 0 }` (any subset). If LibEditMode isn't
+loaded, `Register` returns false; nothing else breaks.
+
+LibEditMode (https://github.com/p3lim-wow/LibEditMode) is the de-facto
+community wrapper. Cairn does not vendor it — install separately.
+
+---
+
+### `Cairn.Dashboard` — developer dashboard (v0.2)
+
+Per-addon log viewer with copy-to-clipboard support, plus an Info tab
+showing memory usage, lifecycle state, event subscription counts, slash
+commands, and log entry counts by level. Open with `/cairn dash`.
+
+```lua
+Cairn.Dashboard:Show()
+Cairn.Dashboard:Hide()
+Cairn.Dashboard:Toggle()
+Cairn.Dashboard:IsShown()
+Cairn.Dashboard:SelectSource(name)   -- "All" or any registered source
+Cairn.Dashboard:GetSources()         -- discovered sources, sorted, "All" first
+Cairn.Dashboard:Refresh()            -- usually automatic
+```
+
+Sources are auto-discovered: any addon that has called `Cairn.Log("X")`,
+`Cairn.Addon.New("X")`, or `Cairn.Slash.Register("X", ...)` shows up in
+the left pane. Selecting a source filters the Logs tab and populates
+the Info tab.
+
+The Logs tab has a level-cycling button, search box, Clear (clears the
+shared log buffer), and Copy (opens an EditBox popup with the current
+view's entries pre-selected and ready for Ctrl+C — the standard WoW
+pattern for clipboard copy).
+
+The Info tab shows, for the selected source: memory usage (via
+`GetAddOnMemoryUsage`, only meaningful for real addon names), lifecycle
+state if registered with `Cairn.Addon` (timestamps for OnInit / OnLogin /
+OnEnter / OnLogout), count of active event subscriptions for the owner,
+slash commands registered, current logger level, and entry counts by
+level for that source.
+
+Module-level helper, exposed for testing:
+
+```lua
+Cairn.Dashboard.FormatLogsForCopy(sourceName, entries)   -- plain-text dump
+```
+
+Requires `Cairn.Log`. Optionally uses `Cairn.Events`, `Cairn.Addon`,
+`Cairn.Slash` for richer Info-tab data; missing modules just hide their
+sections.
 
 ---
 
 ### `Cairn.Addon` — lifecycle helpers
-
-Removes the boilerplate of subscribing to ADDON_LOADED, PLAYER_LOGIN,
-PLAYER_ENTERING_WORLD, and PLAYER_LOGOUT.
 
 ```lua
 local addon = Cairn.Addon.New("MyAddon")
@@ -288,21 +331,20 @@ function addon:OnLogout()  end  -- PLAYER_LOGOUT
 
 addon:Log()                     -- lazy Cairn.Log("MyAddon"), cached
 Cairn.Addon.Get("MyAddon")      -- registry lookup
+
+-- v0.2 timestamp tracking (read by Cairn.Dashboard's Info tab):
+addon.initFiredAt                  -- epoch seconds, or nil if not yet fired
+addon.loginFiredAt
+addon.enterFiredAt
+addon.logoutFiredAt
 ```
 
-Hooks that aren't defined are simply skipped. ADDON_LOADED is filtered
-to your addon name automatically. Errors in hooks are caught with
-`pcall` and routed to `geterrorhandler()`.
-
-Requires `Cairn.Events`.
+Hooks that aren't defined are skipped. ADDON_LOADED is filtered to your
+addon name automatically. Errors caught with `pcall`. Requires `Cairn.Events`.
 
 ---
 
 ### `Cairn.Slash` — generic slash router
-
-Slash commands for any addon, with subcommand routing, aliases,
-auto-help, and a quote-aware arg splitter. (The `/cairn` router in
-Cairn.lua is for Cairn itself; `Cairn.Slash` is for your addon.)
 
 ```lua
 local s = Cairn.Slash.Register("MyAddon", "/myaddon", { aliases = { "/ma" } })
@@ -311,47 +353,104 @@ s:Subcommand("config", function(rest) MyAddon:OpenConfig() end, "open config")
 s:Subcommand("reset",  function() MyAddon:Reset() end, "reset everything")
 s:Default(function(input) MyAddon:DefaultAction(input) end)
 
-s:Run("config")                  -- programmatic dispatch
-s:Aliases({ "/m", "/ma" })       -- replace alias list
-s:PrintHelp()                    -- print the auto-generated help
-local args = s:Args('hello "two words" three')   -- {"hello","two words","three"}
-Cairn.Slash.Get("MyAddon")       -- registry lookup
+s:Run("config")
+s:Aliases({ "/m", "/ma" })
+s:PrintHelp()
+local args = s:Args('hello "two words"')   -- {"hello","two words"}
+Cairn.Slash.Get("MyAddon")
 ```
 
-If the user types `/myaddon` with no subcommand and no `Default` is
-set, the auto-help fires. `/myaddon help` and `/myaddon ?` always print
-the auto-help.
+`/myaddon help` and `/myaddon ?` always print auto-help.
+
+---
+
+## Composing with other libraries
+
+Cairn is plumbing, not a one-stop framework. It deliberately doesn't
+ship game data (quest databases, NPC tables, item info, etc.). For
+domain-specific work, depend on a specialized library alongside Cairn
+and let your addon compose them.
+
+The pattern: Cairn handles user-facing concerns (settings panel, slash
+commands, logging, persistence, lifecycle). The domain library handles
+its specialty (quest data, nameplate logic, raid encounters, whatever).
+Your addon's `Core.lua` wires them together.
+
+Example: a guide addon using `LibCodex` (quest database) with Cairn:
+
+```
+MyGuideAddon/
+  MyGuideAddon.toc
+  ## Dependencies: Cairn, LibCodex
+  Core.lua
+```
+
+```lua
+-- MyGuideAddon/Core.lua
+local addonName = ...
+local addon     = Cairn.Addon.New(addonName)
+local log       = addon:Log()
+local Codex     = LibStub("LibCodex-Quests-1.0")  -- domain lib
+
+local db        = Cairn.DB.New("MyGuideAddonDB", {
+    defaults = { profile = { autoAdvance = true, currentQuest = nil } },
+})
+
+local settings  = Cairn.Settings.New(addonName, db, {
+    { key = "autoAdvance", type = "toggle", default = true,
+      label = "Auto-advance to next quest" },
+})
+
+function addon:OnLogin()
+    local quest = Codex:GetQuest(db.profile.currentQuest)
+    if quest then log:Info("resumed at quest %s", quest.name) end
+end
+
+local slash = Cairn.Slash.Register(addonName, "/guide")
+slash:Subcommand("next", function()
+    local q = Codex:GetNextQuest(db.profile.currentQuest)
+    if q then db.profile.currentQuest = q.id; log:Info("now on %s", q.name) end
+end, "advance to next quest")
+slash:Default(function() settings:Open() end)
+```
+
+Cairn never knows or cares that LibCodex exists. LibCodex never knows
+or cares that Cairn exists. Your addon depends on both, calls into
+both, and they coexist without coupling. The Dashboard (`/cairn dash`)
+will pick up your addon's source automatically because it logged at
+load time.
+
+This pattern works the same for any domain library — `LibCodex` for
+quest data, `LibSharedMedia-3.0` for fonts/textures, your own internal
+data layer, third-party APIs you wrap. Cairn stays small and stable;
+the domain libs evolve independently.
 
 ---
 
 ## Slash commands (Cairn itself)
 
-Registered by the standalone Cairn addon (or any addon that loads
-`Cairn-Standalone-1.0.lua`, but you should not embed that file).
-
 ```
 /cairn                          show available subcommands
-/cairn help                     same
 /cairn log                      toggle log window
 /cairn log clear                empty log buffer
 /cairn log level <name>         set window min level + global level
-                                (TRACE | DEBUG | INFO | WARN | ERROR)
-/cairn log source <name|all>    filter window to one source (or all)
-/cairn log search <query>       substring search; empty clears
+/cairn log source <name|all>    filter window to one source
+/cairn log search <query>       substring search
 /cairn log echo <name>          set chat-echo level
 /cairn log stats                show buffer/level summary
+/cairn dash                     open developer dashboard
+/cairn dashboard                alias for /cairn dash
+/cairn dev                      alias for /cairn dash
 ```
 
-Modules can register additional subcommands via
-`Cairn:RegisterSlashSub("name", fn, "help text")`.
+Modules can add subcommands via `Cairn:RegisterSlashSub("name", fn, "help")`.
 
 ---
 
 ## Demo & test addons
 
-`CairnTest` — exercises `Cairn.Events`, `Cairn.Log`, and `Cairn.DB`.
-Tracks `totalLogins` / `totalEnters` across sessions so you can verify
-persistence.
+`CairnTest` — exercises Events, Log, DB. Tracks `totalLogins` /
+`totalEnters` across sessions.
 
 ```
 /cairntest                      received counts + persistent totals
@@ -361,15 +460,13 @@ persistence.
 /cairntest reset                reset profile to defaults
 ```
 
-`CairnSettingsDemo` — a movable on-screen frame whose appearance
-(visibility, scale, color theme) is driven by `Cairn.Settings`. Open
-the panel via Game Menu > Options > AddOns > Cairn Settings Demo, or
-with `/csdemo`.
+`CairnSettingsDemo` — a movable on-screen frame whose appearance is
+driven by `Cairn.Settings`. EditMode-movable if LibEditMode is installed.
 
 ```
 /csdemo                         open the settings panel
-/csdemo show                    show the demo frame
-/csdemo hide                    hide the demo frame
+/csdemo show / hide             toggle the demo frame
+/csdemo edit                    open Edit Mode panel
 /csdemo reset                   reset profile to defaults
 ```
 
@@ -377,7 +474,7 @@ with `/csdemo`.
 
 ## Roadmap
 
-**v0.1** (complete):
+**v0.1** (shipped):
 
 - [x] `Cairn` umbrella facade + slash router
 - [x] `Cairn.Events`
@@ -388,18 +485,23 @@ with `/csdemo`.
 - [x] `Cairn.Addon`
 - [x] `Cairn.Slash`
 
-**v0.2:**
+**v0.2** (in progress):
 
-- `Cairn.Settings` — `text`, `color`, `keybind`, `anchor` (EditMode) types
-- `Cairn.Comm` — addon-to-addon messaging (AceComm replacement)
-- `Cairn.Locale` — i18n helper
+- [x] `Cairn.EditMode` (LibEditMode wrapper)
+- [x] `anchor` schema type in `Cairn.Settings`
+- [x] `Cairn.Dashboard` (developer dashboard with copyable per-addon logs)
+- [ ] `text`, `color`, `keybind` schema types in `Cairn.Settings`
+- [ ] `Cairn.Comm` — addon-to-addon messaging
+- [ ] `Cairn.Locale` — i18n helper
+
+**v0.3 stretch:**
+
 - `Cairn.Hooks` — secure hooks helper
 - `Cairn.Timer` — scheduling
 
-**Explicitly NOT planned:** widget toolkit (use Blizzard's frame APIs or
-roll your own — that's what every popular addon does), shared media
-library (LibSharedMedia exists and works), threading/scheduling beyond
-a basic timer (Lua coroutines are fine).
+**Explicitly NOT planned:** widget toolkit, shared media library
+(LibSharedMedia exists), threading beyond a basic timer (Lua coroutines
+are fine).
 
 ---
 
@@ -408,9 +510,7 @@ a basic timer (Lua coroutines are fine).
 ```
 Cairn/
   Cairn.toc                       Manifest. Lists module files in load order.
-  Libs/
-    LibStub/
-      LibStub.lua                 Vendored standard LibStub. Public domain.
+  Libs/LibStub/LibStub.lua        Vendored standard LibStub. Public domain.
   Cairn.lua                       Umbrella facade + /cairn slash router.
   Cairn-Events-1.0.lua            Event subscription.
   Cairn-Log-1.0.lua               Leveled logger.
@@ -419,7 +519,9 @@ Cairn/
   Cairn-Settings-1.0.lua          Declarative schema + Blizzard panel bridge.
   Cairn-Addon-1.0.lua             Addon lifecycle helpers.
   Cairn-Slash-1.0.lua             Generic slash router for any addon.
-  Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log subs.
+  Cairn-EditMode-1.0.lua          Optional LibEditMode wrapper (v0.2).
+  Cairn-Dashboard-1.0.lua         Developer dashboard with copyable logs (v0.2).
+  Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log + /cairn dash.
                                   Standalone-only; do NOT embed.
   README.md                       This file.
   LICENSE                         MIT.

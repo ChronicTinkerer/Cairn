@@ -25,6 +25,7 @@ Cairn-Events-1.0.lua
 Cairn-Log-1.0.lua
 Cairn-LogWindow-1.0.lua
 Cairn-DB-1.0.lua
+Cairn-Settings-1.0.lua
 
 # Standalone-only: SavedVariables persistence + /cairn log subcommands.
 # Do NOT include this file when embedding Cairn in another addon.

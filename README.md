@@ -11,8 +11,9 @@ are designed to be useful on their own, including alongside Ace3 if you're
 already invested.
 
 **Status:** v0.1.0, early development. Shipping today: `Cairn.Events`,
-`Cairn.Log`, `Cairn.LogWindow`, `Cairn.DB`. Planned for v0.1: `Cairn.Addon`,
-`Cairn.Slash`, `Cairn.Settings`. See [Roadmap](#roadmap).
+`Cairn.Log`, `Cairn.LogWindow`, `Cairn.DB`, `Cairn.Settings`. Planned
+for v0.1: `Cairn.Addon`, `Cairn.Slash`. v0.2 will add EditMode anchor
+support to Settings. See [Roadmap](#roadmap).
 
 ---
 
@@ -31,9 +32,9 @@ today, with these decisions baked in:
   resolves them on first access.
 - **Modern Lua patterns.** Closure handlers instead of mixin methods.
   Subscribe calls return an unsubscribe function.
-- **Plays well with Blizzard's modern UI.** The flagship `Cairn.Settings`
-  module (planned, see roadmap) will bridge to the native Settings panel
-  and register frames with Edit Mode automatically.
+- **Plays well with Blizzard's modern UI.** `Cairn.Settings` writes
+  directly into the native Settings panel (no custom config window for
+  the simple case). EditMode anchor integration lands in v0.2.
 - **No widget toolkit.** Survey said most authors roll their own UI;
   Cairn doesn't fight that. (`Cairn.LogWindow` is a focused exception
   for diagnostics.)
@@ -76,23 +77,8 @@ MyAddon/
       Cairn-Events-1.0.lua
       Cairn-Log-1.0.lua
       Cairn-DB-1.0.lua
+      Cairn-Settings-1.0.lua
   Core.lua
-```
-
-In `MyAddon.toc`:
-
-```
-## Interface: 120005
-## Title: MyAddon
-## SavedVariables: MyAddonDB
-
-Libs\LibStub\LibStub.lua
-Libs\Cairn\Cairn.lua
-Libs\Cairn\Cairn-Events-1.0.lua
-Libs\Cairn\Cairn-Log-1.0.lua
-Libs\Cairn\Cairn-DB-1.0.lua
-
-Core.lua
 ```
 
 Do NOT embed `Cairn-Standalone-1.0.lua` — it's only meant for the
@@ -106,10 +92,16 @@ router).
 ```lua
 -- MyAddon/Core.lua
 local addonName = ...
-
 local log = Cairn.Log(addonName)
-local db  = Cairn.DB.New("MyAddonDB", {
+
+local db = Cairn.DB.New("MyAddonDB", {
     defaults = { profile = { scale = 1.0, enabled = true } },
+})
+
+local settings = Cairn.Settings.New(addonName, db, {
+    { key = "enabled", type = "toggle", default = true,  label = "Enabled" },
+    { key = "scale",   type = "range",  default = 1.0,
+      min = 0.5, max = 2.0, step = 0.1, label = "Scale" },
 })
 
 log:Info("loaded version %s", "1.0.0")
@@ -117,16 +109,11 @@ log:Info("loaded version %s", "1.0.0")
 Cairn.Events:Subscribe("PLAYER_LOGIN", function()
     log:Info("welcome back, scale=%s", tostring(db.profile.scale))
 end, addonName)
-
-Cairn.Events:Subscribe("PLAYER_ENTERING_WORLD", function(isLogin, isReload)
-    log:Debug("entering world  isLogin=%s  isReload=%s",
-        tostring(isLogin), tostring(isReload))
-end, addonName)
 ```
 
-That's a complete addon with persistent settings. Subscribe to events
-with closures, log with printf-style formatting, persist user values
-across sessions with profile support.
+That's a complete addon: persistent settings, a real Blizzard Settings
+panel entry, event subscription, and printf-style logging — under 20
+lines of code.
 
 ---
 
@@ -139,8 +126,6 @@ The umbrella is a tiny lazy loader. Indexing `Cairn.Foo` calls
 If the module isn't loaded, indexing returns `nil` so you get a clean
 "attempt to call a nil value" at the call site rather than confusing
 errors deep inside Cairn.
-
-Public methods on the umbrella:
 
 ```lua
 Cairn._VERSION                                      -- "0.1.0"
@@ -158,32 +143,17 @@ fighting each other for the slash slot.
 
 Modern game-event subscription with closure handlers and owner-based
 mass unsubscribe. Multiple handlers per `(owner, event)` pair are
-allowed (CallbackHandler-1.0 disallows that, which is one reason we
-don't use it directly).
+allowed.
 
 ```lua
--- Subscribe. Returns an unsubscribe closure.
 local unsub = Cairn.Events:Subscribe(event, handler, owner)
-
--- Owner is optional but recommended; pass your addon name. Used for
--- mass unsubscribe and as a debugging label.
-
--- Unsubscribe just this handler:
-unsub()
-
--- Unsubscribe everything for an owner (use in addon teardown):
-Cairn.Events:UnsubscribeAll(owner)
-
--- Check if any handler is registered:
-Cairn.Events:Has(event)   -- true | false
+unsub()                                  -- remove just this handler
+Cairn.Events:UnsubscribeAll(owner)       -- remove all for an owner
+Cairn.Events:Has(event)                  -- true | false
 ```
 
-Handler signature: receives the event payload args (NOT the event name —
-matches the modern WoW pattern where you typically know which event
-you subscribed to).
-
-Errors in one handler are caught with `pcall` and routed to
-`geterrorhandler()`; they don't abort the rest of the dispatch.
+Handler signature: receives the event payload args (NOT the event name).
+Errors are caught with `pcall` and routed to `geterrorhandler()`.
 
 ---
 
@@ -192,61 +162,22 @@ Errors in one handler are caught with `pcall` and routed to
 Per-source loggers, ring-buffer storage, optional chat echo, configurable
 persistence to SavedVariables.
 
-**Levels** (severity descending):
-
-| Level   | Number | Default visibility |
-|---------|--------|--------------------|
-| `ERROR` | 1      | shown, chat echo   |
-| `WARN`  | 2      | shown, chat echo   |
-| `INFO`  | 3      | shown, chat echo   |
-| `DEBUG` | 4      | hidden             |
-| `TRACE` | 5      | hidden             |
-
-**Per-source logger:**
-
 ```lua
-local log = Cairn.Log("MyAddon")    -- get or create logger for "MyAddon"
-
-log:Trace("very verbose: %d", n)
-log:Debug("subscribed to %d events", n)
-log:Info("loaded version %s", v)
-log:Warn("config key %q is deprecated", k)
+local log = Cairn.Log("MyAddon")
+log:Info("loaded v%s", "1.0")
+log:Warn("config key %q deprecated", k)
 log:Error("parse failed: %s", err)
+log:SetLevel("DEBUG")                    -- this source only
 
-log:SetLevel("DEBUG")               -- raise verbosity for THIS source only
-log:GetLevel()                      -- current effective level (number)
-log:ClearLevel()                    -- revert to global level
+Cairn.Log:SetGlobalLevel("WARN")
+Cairn.Log:SetChatEchoLevel("WARN")
+Cairn.Log:SetPersistence(1000)
+Cairn.Log:GetEntries(filterFn)
+Cairn.Log:OnNewEntry(fn, owner)          -- LogWindow uses this
 ```
 
-All level methods accept printf-style format args and use `string.format`
-under the hood. A malformed format string is caught — the message goes
-to the buffer with a `[LOG FORMAT ERROR]` suffix instead of crashing
-the logger.
-
-**Module-level controls:**
-
-```lua
-Cairn.Log:SetGlobalLevel("WARN")    -- default level for all sources
-Cairn.Log:SetChatEchoLevel("WARN")  -- only echo WARN+ to chat
-Cairn.Log:SetPersistence(1000)      -- save last N entries to SV (0 = off)
-
-Cairn.Log:Count()                   -- live entries in buffer
-Cairn.Log:Clear()                   -- empty buffer
-Cairn.Log:GetEntries(filterFn)      -- snapshot, oldest first
-
--- Subscribe to new entries (LogWindow uses this):
-local unsub = Cairn.Log:OnNewEntry(function(entry) ... end, owner)
-
--- SavedVariables hooks (the standalone Cairn addon wires these):
-local sv = Cairn.Log:DumpToSV()
-Cairn.Log:LoadFromSV(sv)
-```
-
-Each entry is a table:
-
-```lua
-{ ts = 1730000000, level = 3, source = "MyAddon", message = "loaded version 1.0" }
-```
+Levels (severity descending): `ERROR (1)`, `WARN (2)`, `INFO (3)`,
+`DEBUG (4)`, `TRACE (5)`. Default visibility is `INFO+`.
 
 ---
 
@@ -257,96 +188,115 @@ recent entries with filters. Open with `/cairn log`.
 
 ```lua
 Cairn.LogWindow:Toggle()
-Cairn.LogWindow:Show()
-Cairn.LogWindow:Hide()
-Cairn.LogWindow:IsShown()
-
-Cairn.LogWindow:SetSourceFilter("MyAddon")   -- nil or "all" = no filter
-Cairn.LogWindow:SetMinLevel("DEBUG")         -- show DEBUG and more severe
-Cairn.LogWindow:SetSearch("config")          -- substring; nil to clear
-Cairn.LogWindow:Refresh()                    -- usually automatic
+Cairn.LogWindow:SetSourceFilter("MyAddon")  -- nil or "all" = no filter
+Cairn.LogWindow:SetMinLevel("DEBUG")
+Cairn.LogWindow:SetSearch("config")
 ```
 
-`Cairn.LogWindow` requires `Cairn.Log` to be loaded. If you embed Cairn
-into your addon and only want logging without the window, skip
-`Cairn-LogWindow-1.0.lua` from your `.toc`.
+Requires `Cairn.Log` to be loaded.
 
 ---
 
 ### `Cairn.DB` — SavedVariables with profiles
 
-Wraps a SavedVariables global with profile support, defaults, and change
-callbacks. Modeled on the parts of AceDB-3.0 that authors actually use,
-with fewer surprises and a smaller API.
+Wraps a SavedVariables global with profile support and defaults.
 
 ```lua
--- 1. Add a SavedVariables line to your .toc:
---    ## SavedVariables: MyAddonDB
+-- .toc:  ## SavedVariables: MyAddonDB
 
--- 2. Construct the db. The SV global doesn't exist yet, but Cairn.DB
---    initializes lazily on first .profile or .global access.
 local db = Cairn.DB.New("MyAddonDB", {
     defaults = {
-        profile = { scale = 1.0, enabled = true,
-                    colors = { r = 1, g = 1, b = 1 } },
+        profile = { scale = 1.0, enabled = true },
         global  = { dataVersion = 1 },
     },
     profileType = "char",  -- "char" (default) | "default"
 })
 
--- 3. Read/write through .profile and .global AFTER your addon's
---    ADDON_LOADED event. (The SV global is populated by then.)
-print(db.profile.scale)        -- 1.0 (from defaults on first run)
+-- Read/write through .profile and .global AFTER ADDON_LOADED.
+print(db.profile.scale)
 db.profile.scale = 1.5
-db.global.dataVersion = 2
-```
 
-**Profile management:**
-
-```lua
+-- Profile management
 db:GetCurrentProfile()           -- "MyChar - MyRealm" or "Default"
 db:GetProfiles()                 -- sorted list of all profile names
 db:SetProfile("PvP")             -- switch (creates if missing)
 db:ResetProfile()                -- wipe current profile, reapply defaults
-db:DeleteProfile("OldOne")       -- can't delete the current profile
-db:CopyProfile("From", "To")     -- deep copy, To becomes a sibling profile
+db:DeleteProfile("OldOne")       -- can't delete current
+db:CopyProfile("From", "To")     -- deep copy
 
--- Subscribe to profile changes (returns unsubscribe closure):
 local unsub = db:OnProfileChanged(function(newName, oldName)
     -- refresh your UI here
 end, addonName)
 ```
 
-**Profile types:**
-
-| `profileType` | Default profile name                   |
-|---------------|----------------------------------------|
-| `"char"`      | `"<character> - <realm>"` (default)    |
-| `"default"`   | `"Default"` (or `opts.defaultProfile`) |
-
-Authors can override per-character with `db:SetProfile("AnyName")` at
-runtime regardless of `profileType`. The profile pick for each character
-is stored in `_G[svName].profileKeys`.
-
-**Important defaults behavior:**
-
 Defaults are deep-copied into a profile when that profile is FIRST
-CREATED. Adding new keys to your defaults table later does NOT
-retroactively appear in existing profiles. Use `ResetProfile()` or a
-migration to push new defaults into existing data. This is a deliberate
-v0.1 trade-off (no nested-table `__index` surprises).
-
-**SavedVariables shape** (so you can inspect or migrate it):
-
-```lua
-_G.MyAddonDB = {
-    profileKeys = { ["MyChar - MyRealm"] = "PvP", ... },
-    profiles    = { ["Default"] = {...}, ["PvP"] = {...} },
-    global      = { dataVersion = 2 },
-}
-```
+CREATED. Adding new keys to your defaults later does NOT retroactively
+appear in existing profiles. Use `ResetProfile()` or a migration to push
+new defaults into existing data.
 
 `Cairn.DB(svName, opts)` is sugar for `Cairn.DB.New(svName, opts)`.
+
+---
+
+### `Cairn.Settings` — declarative config + Blizzard panel bridge
+
+Take a flat schema, get a real entry in Blizzard's native Settings panel.
+Values persist through a `Cairn.DB` instance you provide, so settings,
+profiles, and SavedVariables share the same storage.
+
+```lua
+local settings = Cairn.Settings.New(addonName, db, {
+    { key = "h_general",  type = "header",  label = "General" },
+    { key = "enabled",    type = "toggle",  default = true,  label = "Enabled" },
+
+    { key = "h_display",  type = "header",  label = "Display" },
+    { key = "scale",      type = "range",   default = 1.0,
+      min = 0.5, max = 2.0, step = 0.1,
+      label = "Scale", tooltip = "How big the frame is",
+      onChange = function(value, oldValue) MyAddon:Rescale(value) end },
+    { key = "anchor",     type = "dropdown", default = "TOPLEFT",
+      label = "Anchor",
+      choices = { TOPLEFT = "Top Left", TOPRIGHT = "Top Right",
+                  BOTTOMLEFT = "Bottom Left", BOTTOMRIGHT = "Bottom Right" } },
+})
+
+settings:Open()                  -- opens Blizzard Settings to your addon
+settings:Get("scale")            -- 1.0
+settings:Set("scale", 1.5)       -- writes to db.profile.scale, fires onChange
+local unsub = settings:OnChange("scale", function(value, oldValue)
+    -- subscribe to a specific key (returns an unsubscribe closure)
+end, addonName)
+```
+
+**Schema entry types (v0.1):**
+
+| Type       | Required fields                    | Notes |
+|------------|------------------------------------|-------|
+| `header`   | `label`                            | Section header, not a setting |
+| `toggle`   | `default`, `label`                 | Boolean checkbox |
+| `range`    | `default`, `label`, `min`, `max`   | Numeric slider; `step` defaults to 0.1 |
+| `dropdown` | `default`, `label`, `choices`      | `choices` is `{value = label, ...}` |
+
+**Common fields:** `key` (required, unique within the schema),
+`tooltip` (optional hover text), `onChange` (optional `function(value, oldValue)`).
+
+**Defaults are seeded into `db.profile` on `Settings.New`.** Only keys
+that are currently `nil` get the default written, so existing user values
+survive addon upgrades. To force-update an existing profile, call
+`db:ResetProfile()`.
+
+**Schema order is preserved.** Define entries in the order you want them
+to appear in the panel.
+
+**Classic / no-Settings fallback:** if the modern Blizzard Settings global
+isn't available, `Cairn.Settings.New` returns a stub that supports
+`Get`, `Set`, and `OnChange` but cannot render a panel; `Open()` warns
+without erroring. Your addon keeps working; users just don't get the
+panel.
+
+**Planned for v0.2:** `text`, `color`, `keybind`, and `anchor` (the
+EditMode integration). Anchor-typed entries will auto-register the
+named frame with Edit Mode so users can drag it visually.
 
 ---
 
@@ -373,41 +323,52 @@ Modules can register additional subcommands via
 
 ---
 
-## CairnTest
+## Demo & test addons
 
-`CairnTest` is a deliberately-tiny addon that proves Cairn loads and
-dispatches in real WoW. It depends on the standalone Cairn addon and
-demonstrates `Cairn.Events` and `Cairn.Log` in ~50 lines.
-
-After login you should see two `[Cairn] [CairnTest INFO]` lines in
-chat — one for `PLAYER_LOGIN`, one for `PLAYER_ENTERING_WORLD`.
+`CairnTest` is a tiny smoke addon that exercises `Cairn.Events`,
+`Cairn.Log`, and `Cairn.DB`. It tracks `totalLogins` / `totalEnters`
+across sessions so you can verify persistence.
 
 ```
-/cairntest         -- show received event counts
-/cairntest has     -- check Has() for a few events
-/cairntest spam    -- emit one log line at every level
-/cairntest unsub   -- unsubscribe all handlers (for testing teardown)
+/cairntest                      received counts + persistent totals
+/cairntest has                  Has() check for a few events
+/cairntest spam                 emit one log line at every level
+/cairntest unsub                unsubscribe all handlers (test teardown)
+/cairntest db                   show DB profile state
+/cairntest profile <name>       switch to a different DB profile
+/cairntest reset                reset current profile to defaults
+```
+
+`CairnSettingsDemo` adds a movable on-screen frame whose appearance
+(visibility, scale, color theme) is driven by `Cairn.Settings`. Open
+the panel via Game Menu -> Options -> AddOns -> Cairn Settings Demo,
+or with `/csdemo`.
+
+```
+/csdemo                         open the settings panel
+/csdemo show                    show the demo frame
+/csdemo hide                    hide the demo frame
+/csdemo reset                   reset profile to defaults
 ```
 
 ---
 
 ## Roadmap
 
-**v0.1 in progress** (this release focuses on getting the loader
-pattern, slash router, diagnostics, and persistence right):
+**v0.1** (this release):
 
 - [x] `Cairn` umbrella facade + slash router
 - [x] `Cairn.Events`
 - [x] `Cairn.Log`
 - [x] `Cairn.LogWindow`
 - [x] `Cairn.DB` — SavedVariables with profiles, defaults
+- [x] `Cairn.Settings` — declarative schema, Blizzard panel bridge
 - [ ] `Cairn.Addon` — addon bootstrapping (lifecycle hooks, registry)
 - [ ] `Cairn.Slash` — slash router for any addon, not just /cairn
-- [ ] `Cairn.Settings` — declarative config schema, bridges to Blizzard
-      Settings panel, registers Edit Mode anchors
 
 **v0.2 stretch:**
 
+- `Cairn.Settings` — `text`, `color`, `keybind`, `anchor` (EditMode) types
 - `Cairn.Comm` — addon-to-addon messaging (AceComm replacement)
 - `Cairn.Locale` — i18n helper
 - `Cairn.Hooks` — secure hooks helper
@@ -433,9 +394,11 @@ Cairn/
   Cairn-Log-1.0.lua               Leveled logger.
   Cairn-LogWindow-1.0.lua         UI viewer for the log buffer.
   Cairn-DB-1.0.lua                SavedVariables wrapper with profiles.
+  Cairn-Settings-1.0.lua          Declarative schema + Blizzard panel bridge.
   Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log subs.
                                   Standalone-only; do NOT embed.
   README.md                       This file.
+  LICENSE                         MIT.
 ```
 
 ---

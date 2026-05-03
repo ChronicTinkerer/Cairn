@@ -13,8 +13,9 @@ already invested.
 **Status:** v0.2.0-dev. v0.1.0 shipped: `Cairn.Events`, `Cairn.Log`,
 `Cairn.LogWindow`, `Cairn.DB`, `Cairn.Settings`, `Cairn.Addon`,
 `Cairn.Slash`. v0.2 adds: `Cairn.EditMode` (LibEditMode wrapper),
-the `anchor` schema type in `Cairn.Settings`, and `Cairn.Dashboard`
-(developer dashboard with copyable per-addon logs). See [Roadmap](#roadmap).
+the `anchor` schema type in `Cairn.Settings`, `Cairn.Dashboard`
+(developer dashboard with copyable per-addon logs), and `Cairn.Locale`
+(i18n with locale fallback). See [Roadmap](#roadmap).
 
 ---
 
@@ -364,6 +365,49 @@ Cairn.Slash.Get("MyAddon")
 
 ---
 
+### `Cairn.Locale` — i18n (v0.2)
+
+Per-addon localization with locale fallback. Author registers per-locale
+string tables; Cairn picks the active locale from `GetLocale()` and
+falls back to a default locale (then to the key itself) for missing
+translations.
+
+```lua
+local L = Cairn.Locale.New("MyAddon", {
+    enUS = { hello = "Hello", welcome = "Welcome back, %s!" },
+    deDE = { hello = "Hallo", welcome = "Willkommen zurück, %s!" },
+    frFR = { hello = "Bonjour" },  -- partial; missing keys fall back to enUS
+}, { default = "enUS" })
+
+-- Three ways to read a string:
+print(L.hello)                   -- direct table access (recommended)
+print(L["hello"])
+print(L:Get("hello"))            -- explicit method form
+
+-- Format strings (printf on top of Get):
+print(L("welcome", playerName))  -- callable sugar
+print(L:Format("welcome", playerName))
+
+-- Introspection:
+L:GetLocale()                    -- active locale code
+L:GetDefault()                   -- fallback locale code
+L:Has("hello")                   -- true if active or default has it
+L:GetMissing()                   -- keys present in default but missing in
+                                  -- active (handy debug aid for translators)
+
+Cairn.Locale.Get("MyAddon")      -- registry lookup, nil if unregistered
+```
+
+Behavior on missing keys: active locale → default locale → key itself,
+plus a one-time warning per missing key via `Cairn.Log` (suppress with
+`opts.silent = true`). If the user's locale has no table at all, Cairn
+quietly switches the active locale to the default rather than warning
+on every key.
+
+`Cairn.Locale(name, locales, opts)` is sugar for `Cairn.Locale.New(...)`.
+
+---
+
 ## Composing with other libraries
 
 Cairn is plumbing, not a one-stop framework. It deliberately doesn't
@@ -492,7 +536,7 @@ driven by `Cairn.Settings`. EditMode-movable if LibEditMode is installed.
 - [x] `Cairn.Dashboard` (developer dashboard with copyable per-addon logs)
 - [ ] `text`, `color`, `keybind` schema types in `Cairn.Settings`
 - [ ] `Cairn.Comm` — addon-to-addon messaging
-- [ ] `Cairn.Locale` — i18n helper
+- [x] `Cairn.Locale` — i18n with locale fallback
 
 **v0.3 stretch:**
 

@@ -19,14 +19,20 @@ local GetSpellInfo, GetBonusBarOffset, GetDodgeChance			= GetSpellInfo, GetBonus
 local GetPrimaryTalentTree, GetCombatRatingBonus				= GetPrimaryTalentTree, GetCombatRatingBonus
 -- ~~| Button |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 local TYPE 		= "CheckBox"
-local VERSION 	= 1
--- ~~| Button StyleSheets |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+local VERSION 	= 3
+-- Cairn extension: Diesal's original CheckBox shipped a near-black inner
+-- color (#080808) which is invisible on a dark toolbar -- the unchecked
+-- state has no contrast against the surrounding frame and users can't
+-- find it to click. Lifted the inner color to #303030 (matches Button's
+-- frame-background dark grey) and brightened the outline so the
+-- checkbox reads as a clear square outline whether checked or not.
+-- Same fix philosophy as Button.lua VERSION 5.
 local styleSheet = {
 	['frame-shadow'] = {
 		type			= 'outline',
 		layer			= 'BORDER',
-		color			= '000000',
-		alpha 		= .17,
+		color			= '060606',
+		alpha 		= 1,
 		offset		= 0,
 	},
 	['frame-highlight'] = {
@@ -34,20 +40,20 @@ local styleSheet = {
 		layer			= 'BORDER',
 		gradient		= 'VERTICAL',
 		color			= 'ffffff',
-		alpha 		= 0,
-		alphaEnd		= .07,
+		alpha 		= 0.04,
+		alphaEnd		= .12,
 		offset		= -1,
 	},
 	['frame-innerShadow'] = {
 		type			= 'texture',
 		layer			= 'BORDER',
-		color			= '000000',
+		color			= '141414',
 		offset		= -2,
 	},
 	['frame-innerColor'] = {
 		type			= 'texture',
 		layer			= 'BORDER',
-		color			= '080808',
+		color			= '303030',
 		offset		= -3,
 	},
 }
@@ -144,10 +150,16 @@ local function Constructor()
 		if not self.settings.disabled then
 			self:SetChecked(not self.settings.checked)
 
+			-- PlaySound("igMainMenuOptionCheckBox*") is the upstream Diesal
+			-- form. Modern Retail (Midnight) treats string sound names as
+			-- invalid and may throw; if it throws here, OnValueChanged
+			-- never fires and the consumer's toggle silently fails. Wrap
+			-- in pcall and prefer numeric SOUNDKIT IDs. Same pattern as
+			-- Button.lua VERSION 5.
 			if self.settings.checked then
-				PlaySound("igMainMenuOptionCheckBoxOn")
+				pcall(PlaySound, SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or 856)
 			else
-				PlaySound("igMainMenuOptionCheckBoxOff")
+				pcall(PlaySound, SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF or 857)
 			end
 
 			self:FireEvent("OnValueChanged", self.settings.checked)

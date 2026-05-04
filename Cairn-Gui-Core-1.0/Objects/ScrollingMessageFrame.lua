@@ -16,7 +16,7 @@ local floor, ceil, min, max, abs, modf								= math.floor, math.ceil, math.min,
 local GetCursorPosition 												= GetCursorPosition
 -- ~~| ScrollingMessageFrame |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 local Type 		= 'ScrollingMessageFrame'
-local Version 	= 1
+local Version 	= 2
 -- ~~| ScrollingMessageFrame StyleSheets |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 local styleSheet = {		
 	['track-background'] = {					
@@ -141,10 +141,13 @@ local methods = {
 		self.settings.forceScrollBottom = Tools:Round(scroll) == Tools:Round(self.scrollFrame:GetVerticalScrollRange())
 		self.scrollFrame:SetVerticalScroll(scroll)
 	end,	
-	['AddMessage'] = function(self,msg)			
-		if not msg then return end	
-		self.scrollingMessageFrame:AddMessage(msg) 
-		ChatFrame1:AddMessage(self.scrollingMessageFrame:GetNumRegions()		)
+	['AddMessage'] = function(self,msg)
+		if not msg then return end
+		-- Upstream Diesal had a `ChatFrame1:AddMessage(...)` debug print here
+		-- that spammed the player's chat with the region count on every
+		-- AddMessage call. Removed in the Cairn port; uncomment locally if
+		-- you genuinely need to debug region accumulation.
+		self.scrollingMessageFrame:AddMessage(msg)
 	end,
 	['SetText'] = function(self,txt)			
 		-- self.editBox:SetText(txt or '')			

@@ -41,7 +41,7 @@ without the embed model. Cairn favors closure unhooks over owner-tracked
 unhook-all.
 ]]
 
-local MAJOR, MINOR = "Cairn-Hooks-1.0", 1
+local MAJOR, MINOR = "Cairn-Hooks-1.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -80,13 +80,22 @@ local function getOrInstall(target, name)
     lib._registry[key] = entry
 
     local dispatcher = dispatcherFor(entry)
+    -- Wrap hooksecurefunc in pcall: Midnight (Interface 120005) and modern
+    -- Retail forbid hooking certain protected globals (seterrorhandler,
+    -- TOGGLEGAMEMENU, etc.) and throw "X is forbidden for hooking" at the
+    -- call site. We still want the registry entry installed so direct
+    -- callers via Cairn.Hooks.Run can fire the dispatcher manually -- the
+    -- only thing we lose on a failure is the implicit pre/post hook trigger.
+    -- entry.hookInstalled records whether the engine accepted the hook.
     if target == nil or target == _G then
         if hooksecurefunc then
-            hooksecurefunc(name, dispatcher)
+            local ok = pcall(hooksecurefunc, name, dispatcher)
+            entry.hookInstalled = ok and true or false
         end
     else
         if hooksecurefunc then
-            hooksecurefunc(target, name, dispatcher)
+            local ok = pcall(hooksecurefunc, target, name, dispatcher)
+            entry.hookInstalled = ok and true or false
         end
     end
 

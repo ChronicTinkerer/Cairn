@@ -19,9 +19,25 @@ local GetSpellInfo, GetBonusBarOffset, GetDodgeChance			= GetSpellInfo, GetBonus
 local GetPrimaryTalentTree, GetCombatRatingBonus				= GetPrimaryTalentTree, GetCombatRatingBonus
 -- ~~| Button |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 local TYPE 		= "Button"
-local VERSION 	= 4
+local VERSION 	= 5
 -- ~~| Button StyleSheets |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- Cairn extension: Diesal's original Button shipped with text-only styling
+-- (no background, no border). That works in their own demos because the
+-- containing frame paints a backdrop, but in normal WoW addon usage you want
+-- the button to LOOK like a button. Add a basic frame-background +
+-- frame-outline so freshly-acquired buttons render visible chrome out of
+-- the box. Consumers can still override via SetStyle/AddStyleSheet.
 local styleSheet = {
+	['frame-background'] = {
+		type			= 'texture',
+		layer			= 'BACKGROUND',
+		color			= '202020',
+	},
+	['frame-outline'] = {
+		type			= 'outline',
+		layer			= 'BORDER',
+		color			= '060606',
+	},
 	['text-color'] = {
 		type			= 'Font',
 		color			= 'b8c2cc',
@@ -89,8 +105,13 @@ local function Constructor(name)
 	
 	frame:SetScript("OnClick", function(this,button,...)
 		Gui:OnMouse(this,button)
-		PlaySound("ACTIONBARBUTTONDOWN")
-		self:FireEvent("OnClick",button,...)	
+		-- PlaySound("ACTIONBARBUTTONDOWN") was the upstream Diesal call. Modern
+		-- Retail (Midnight, Interface 120005) treats the string-name form as
+		-- invalid and may throw; if it throws, the rest of OnClick (FireEvent)
+		-- never runs and the consumer's click handler silently fails. Wrap in
+		-- pcall so a sound failure can't take the click out.
+		pcall(PlaySound, SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION or 856)
+		self:FireEvent("OnClick",button,...)
 	end)
 	frame:SetScript("OnEnter", function(this)
 		self:FireEvent("OnEnter")	

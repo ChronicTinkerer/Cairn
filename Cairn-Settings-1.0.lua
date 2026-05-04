@@ -60,9 +60,13 @@ Settings.New returns a stub that supports Get/Set/OnChange but cannot
 render a panel. Open() prints a friendly warning.
 ]]
 
-local MAJOR, MINOR = "Cairn-Settings-1.0", 2
+local MAJOR, MINOR = "Cairn-Settings-1.0", 3
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
+
+-- Weak-keyed instances table so Forge_Registry / debug tools can enumerate
+-- live settings panels. Same pattern as Cairn-Callback.instances.
+lib.instances = lib.instances or setmetatable({}, { __mode = "k" })
 
 local Log = LibStub("Cairn-Log-1.0", true)
 local function logger()
@@ -353,6 +357,8 @@ function lib.New(addonName, db, schema)
 		_byKey     = byKey,
 		_subs      = {},
 	}
+	-- Track this instance for debug enumeration (Forge_Registry).
+	lib.instances[self] = addonName
 
 	if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnCategory) then
 		if logger() then

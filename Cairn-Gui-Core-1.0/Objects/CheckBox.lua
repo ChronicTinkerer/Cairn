@@ -19,7 +19,7 @@ local GetSpellInfo, GetBonusBarOffset, GetDodgeChance			= GetSpellInfo, GetBonus
 local GetPrimaryTalentTree, GetCombatRatingBonus				= GetPrimaryTalentTree, GetCombatRatingBonus
 -- ~~| Button |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 local TYPE 		= "CheckBox"
-local VERSION 	= 3
+local VERSION 	= 4
 -- Cairn extension: Diesal's original CheckBox shipped a near-black inner
 -- color (#080808) which is invisible on a dark toolbar -- the unchecked
 -- state has no contrast against the surrounding frame and users can't
@@ -57,10 +57,18 @@ local styleSheet = {
 		offset		= -3,
 	},
 }
+-- Cairn port bug: the original Diesal kit registered its icon atlas as
+-- 'DiesalGUIcons'; the bulk-rename made it 'CairnGUIcons' in Style's media
+-- registry but DIDN'T update the `texFile` strings here. Result: the
+-- Media.texture[texFile] lookup misses, the literal string "Guicons" is
+-- handed to SetTexture, WoW can't load it, and the check icon renders
+-- transparent -- the unchecked/checked states look identical. Fixed by
+-- updating texFile to match the registered name. Same fix needed in
+-- ComboBox, DropDown, ComboBoxItem, DropDownItem, Window, MenuItem.
 local checkStyle = {
 		type			= 'texture',
 		layer			= 'ARTWORK',
-		texFile		= 'Guicons',
+		texFile		= 'CairnGUIcons',
 		texCoord		= {10,5,16,256,128},
 		texColor		= 'ffff00',
 		offset		= {1,nil,2,nil},

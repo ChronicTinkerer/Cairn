@@ -140,7 +140,7 @@ local function Constructor()
 		offset 	= {1,nil,0,nil},
 		height	= 16,
 		width		= 16,
-		texFile	= 'Guicons',
+		texFile	= 'CairnGUIcons',
 		texColor	= 'ffff00',		
 		texCoord	= {10,5,16,256,128},		
 	})	
@@ -149,7 +149,7 @@ local function Constructor()
 		offset 	= {nil,2,-1,nil},
 		height	= 16,
 		width		= 16,
-		texFile	= 'Guicons',
+		texFile	= 'CairnGUIcons',
 		texColor	= 'ffff00',
 		texCoord	= {7,5,16,256,128},		
 	})		

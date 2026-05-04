@@ -17,8 +17,9 @@ the `anchor` schema type in `Cairn.Settings`, `Cairn.Locale`
 (i18n with locale fallback), `Cairn.Sequencer` (composable
 step runner), `Cairn.Hooks` (multi-callback hook helper),
 `Cairn.Timer` (owner-grouped timers), `Cairn.Comm` (addon-to-addon
-messaging), `Cairn.Callback` (registry-style callback dispatcher
-that backs the upstream-compatible CallbackHandler-1.0 shim), and
+messaging), `Cairn.Callback` (registry-style callback dispatcher,
+exposed at `LibStub("Cairn-Callback-1.0")` for direct internal use),
+and
 the `Cairn-Gui-*` widget family (Tools, Style, Core with 12 widgets,
 Menu — derived from the BSD-licensed Diesal libraries and modernized
 for Interface 120005). The v0.1-era `Cairn.Dashboard` was retired and
@@ -193,12 +194,55 @@ own registry).
 
 #### CallbackHandler-1.0 shim
 
-`Cairn/Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua` is a Cairn-
-authored shim that registers under the upstream LibStub name and proxies
-to Cairn-Callback. LibSharedMedia-3.0, LibActionButton, ElvUI, BigWigs,
-DBM, etc. all call `LibStub("CallbackHandler-1.0")` and get the Cairn
-implementation transparently. Cairn does NOT vendor the original WoWAce
-source.
+`Cairn/Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua` registers
+under the upstream LibStub name `CallbackHandler-1.0` so that
+LibSharedMedia-3.0, the Cairn-Gui-* widget family, and any other
+Ace3-style consumer that calls `LibStub("CallbackHandler-1.0")` finds
+a working implementation when no other addon supplies one. The body is
+a port of ElvUI's bundled MINOR=8 variant of upstream WoWAce
+CallbackHandler-1.0 (uses `securecallfunction` for dispatch — the
+modern Blizzard-blessed style). Cairn does NOT vendor the 2010-era
+WoWAce reference.
+
+Cairn-Callback-1.0 is a separate library, NOT the backing for this
+shim. The two are independent. The shim has its own `:New` /
+`:Fire` / RegisterCallback surface; Cairn-Callback is exposed at
+`LibStub("Cairn-Callback-1.0")` for code that wants the simple
+`:Subscribe / :Fire` API directly.
+
+##### MINOR strategy and the ElvUI caveat
+
+The shim registers at `MINOR=7`. That beats upstream WoWAce
+(`MINOR=6`) so we win LibStub when no other CallbackHandler-1.0 is
+loaded — the typical case for an addon that depends on Cairn alone.
+But it loses to ElvUI's bundled `MINOR=8`, so when ElvUI is in the
+user's environment ElvUI's CallbackHandler owns the dispatch chain
+and our shim body never executes.
+
+This is intentional. Empirically, having Cairn's `:New` win LibStub
+when ElvUI is present causes ElvUI's unitframe init to race
+catastrophically — Range.lua throws "self.unitframe is nil" repeatedly
+and ElvUI half-loads. The race reproduces even with our `:New` body
+byte-identical to ElvUI's, even with no Cairn extension code running
+inside `:New`. Root cause was never fully diagnosed; the safe ground
+rule is "when ElvUI is present, ElvUI's CallbackHandler must win."
+
+The MINOR=7 choice gives us:
+
+- **No ElvUI present**: our shim wins, dispatches every consumer's
+  callbacks, and Forge_Registry's "Callbacks" source enumerates
+  registries via the Cairn-Callback `instances` table (populated by a
+  hook at the end of our `:New`).
+- **ElvUI present**: ElvUI's MINOR=8 wins, our `:New` is never called,
+  Cairn-Callback's `instances` stays empty for shim-created registries.
+  Forge_Registry falls back to a lazy LibStub.libs scan that
+  duck-types each lib's fields for callback-registry shape
+  (`recurse` number + `events` table + `Fire` function) and surfaces
+  them.
+
+If you ever need to change the shim, test with ElvUI enabled before
+and after. Even a single weak-table write inside `:New` was enough to
+trigger the race in past attempts.
 
 ---
 
@@ -683,9 +727,11 @@ fonts (`Standard0755.ttf`, `FFF Intelligent Thin Condensed.ttf`). The
 proprietary Calibri Bold font that shipped upstream was dropped.
 
 The `CallbackHandler-1.0` and `LibSharedMedia-3.0` deps that the
-Diesal libraries reference are handled in `Cairn/Libs/`: a Cairn-authored
-shim for CallbackHandler-1.0 (proxies to `Cairn.Callback`), and an
-unmodified vendored copy of LibSharedMedia-3.0 (LGPL v2.1).
+Diesal libraries reference are handled in `Cairn/Libs/`: a Cairn-shipped
+CallbackHandler-1.0 ported from ElvUI's MINOR=8 variant (registered at
+MINOR=7 so it loses to ElvUI's bundled copy when ElvUI is present — see
+the CallbackHandler-1.0 shim section above for why), and an unmodified
+vendored copy of LibSharedMedia-3.0 (LGPL v2.1).
 
 ---
 

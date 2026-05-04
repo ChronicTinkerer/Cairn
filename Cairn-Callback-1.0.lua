@@ -1,11 +1,21 @@
 --[[ Cairn-Callback-1.0
     A registry-style callback dispatcher.
 
-    Cairn-Callback is the canonical implementation that backs the
-    CallbackHandler-1.0 LibStub shim (see Libs/CallbackHandler-1.0/) so any
-    third-party library expecting upstream CallbackHandler-1.0 (notably
-    LibSharedMedia-3.0 and the Diesal-derived Cairn-Gui-* family) keeps
-    working without vendoring upstream code.
+    Originally written as the backing for the CallbackHandler-1.0 LibStub
+    shim, but that proxy pattern was retired (see
+    `Cairn/Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua` header for
+    the full history -- short version: subtle dispatch differences from
+    upstream broke ElvUI). Today the shim is a port of ElvUI's MINOR=8
+    body and is independent of this module. Cairn-Callback survives as
+    a standalone library for code that wants the simple
+    `:Subscribe / :Fire` API directly without going through the
+    upstream-style `:New(target, RegisterName, ...)` ceremony.
+
+    The `instances` table on this lib is populated by the
+    CallbackHandler-1.0 shim's `:New` hook (when our shim wins LibStub).
+    Forge_Registry's "Callbacks" source reads from it, with a
+    LibStub.libs scan fallback for the case where ElvUI's bundled
+    CallbackHandler wins instead.
 
     --- API -----------------------------------------------------------------
 
@@ -26,15 +36,21 @@
 
     --- Provenance ----------------------------------------------------------
     Cairn-Callback is original Cairn code, not a port of CallbackHandler-1.0.
-    Its semantics are intentionally compatible with the upstream so that the
-    accompanying shim can present an upstream-equivalent API.
+    Its dispatch convention happens to match upstream
+    (subscribers receive `(eventname, ...trailing)`), but it is no longer
+    used as the backing for the LibStub shim.
 
     Cairn-Callback-1.0 (c) 2026 ChronicTinkerer. MIT license.
 ]]
 
-local MAJOR, MINOR = "Cairn-Callback-1.0", 2
+local MAJOR, MINOR = "Cairn-Callback-1.0", 3
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
+
+-- Weak-keyed instances table so Forge_Registry / debug tools can enumerate
+-- live registries. Weak keys mean a registry that's no longer referenced
+-- elsewhere is garbage-collected naturally; we don't pin it.
+lib.instances = lib.instances or setmetatable({}, { __mode = "k" })
 
 -- Auto-vivifying nested-table metatable.
 local meta = { __index = function(t, k) local v = {} t[k] = v return v end }
@@ -52,14 +68,17 @@ local Registry = {}
 Registry.__index = Registry
 
 -- Build a fresh registry object.
-function lib.New()
-    return setmetatable({
+function lib.New(label)
+    local reg = setmetatable({
         events  = setmetatable({}, meta),
         queue   = nil,            -- inserts during Fire land here, applied after
         recurse = 0,
         onUsed  = nil,
         onUnused = nil,
+        label   = label,          -- optional human-readable tag for debug tools
     }, Registry)
+    lib.instances[reg] = label or true
+    return reg
 end
 
 -- Add or replace the callback bound to (eventname, key).

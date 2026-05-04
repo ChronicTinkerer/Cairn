@@ -2,7 +2,7 @@
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
-## Version: 2605050745
+## Version: 2605051800
 ## X-Category: Library
 ## X-License: MIT
 ## SavedVariables: CairnLogSV
@@ -13,13 +13,17 @@
 # LibStub is the universal addon-library loader.
 Libs\LibStub\LibStub.lua
 
-# Cairn-Callback is the real callback-registry implementation. The
-# CallbackHandler-1.0 shim below registers under the upstream LibStub name and
-# delegates to this module, so LibSharedMedia-3.0 and Diesal-derived widgets
-# (Cairn-Gui-*) keep working without vendoring upstream WoWAce code.
+# Cairn-Callback: standalone callback-registry library, exposed at
+# LibStub("Cairn-Callback-1.0"). NOT the backing for the CallbackHandler-1.0
+# shim below -- the two are independent (see shim header for history). The
+# `instances` table here is populated by the shim's :New hook so
+# Forge_Registry can enumerate live registries.
 Cairn-Callback-1.0.lua
 
-# CallbackHandler-1.0 shim (proxies to Cairn-Callback-1.0; see file header).
+# CallbackHandler-1.0: a port of ElvUI's MINOR=8 variant, registered at
+# MINOR=7 so it loses to ElvUI's bundled copy when ElvUI is present and
+# wins against upstream WoWAce (MINOR=6) otherwise. See the file header
+# for the full ElvUI-race rationale.
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 
 # LibSharedMedia-3.0: LGPL v2.1; font/texture/sound registry. Vendored as-is

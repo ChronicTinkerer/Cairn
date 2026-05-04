@@ -125,7 +125,7 @@ local function Constructor()
 		offset 	= {2,nil,0,nil},
 		height	= 16,
 		width		= 16,
-		texFile	= 'Guicons',
+		texFile	= 'CairnGUIcons',
 		texColor	= 'ffff00',		
 		texCoord	= {10,5,16,256,128},
 	})

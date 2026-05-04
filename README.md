@@ -218,6 +218,27 @@ local unsub = db:OnProfileChanged(function(newName, oldName) ... end, addonName)
 Defaults are deep-copied on profile creation. Use `ResetProfile()` to
 push new defaults into existing data.
 
+**Init timing — do not touch `.profile` / `.global` at file scope.**
+WoW loads SavedVariables *after* your addon's `.lua` files execute, but
+*before* `ADDON_LOADED` fires. Reading `db.profile` at file scope causes
+the lib to lazy-init while `_G[svName]` is still nil; it builds an empty
+table, pins the wrapper to it, and WoW then overwrites `_G[svName]` with
+the on-disk data — leaving your wrapper orphaned. Symptom: settings
+appear to save but vanish after `/reload`. Defer the first access
+to `ADDON_LOADED` (or `Cairn.Addon`'s `OnInit`):
+
+```lua
+local db = Cairn.DB.New("MyAddonDB", { defaults = {...} })
+ns.db = db
+-- Do NOT read db.profile here.
+
+local addon = Cairn.Addon.New("MyAddon")
+function addon:OnInit()
+    local _ = db.profile          -- safe: SVs are loaded
+    if db.profile.foo == nil then db.profile.foo = {} end
+end
+```
+
 ---
 
 ### `Cairn.Settings` — declarative config + Blizzard panel bridge

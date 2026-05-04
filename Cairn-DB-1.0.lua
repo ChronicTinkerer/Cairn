@@ -42,6 +42,32 @@ Important defaults behavior:
 	migration to push new defaults into existing data. This is a
 	deliberate v0.1 trade-off (no nested-table __index surprises).
 
+CRITICAL - do not access .profile or .global at file scope:
+	WoW loads SavedVariables AFTER your addon's .lua files execute, but
+	BEFORE ADDON_LOADED fires. If you touch db.profile / db.global at
+	file scope, init() runs while _G[svName] is still nil. The lib then
+	creates a fresh empty table, assigns it to _G[svName], and pins the
+	wrapper to it via rawset. WoW then OVERWRITES _G[svName] with the
+	loaded data, leaving your wrapper pointing at an orphaned table.
+	Symptoms: settings appear to save but vanish on /reload; identity
+	check `db.profile == _G[svName].profiles[current]` returns false.
+
+	Safe pattern - defer init to ADDON_LOADED (or Cairn.Addon's OnInit):
+
+		local db = Cairn.DB.New("MyAddonDB", { defaults = {...} })
+		ns.db = db
+		-- Do NOT touch db.profile here.
+
+		local addon = Cairn.Addon.New("MyAddon")
+		function addon:OnInit()
+		    local _ = db.profile          -- safe: SVs are loaded
+		    -- Force-init any missing keys (defaults aren't retroactive):
+		    if db.profile.foo == nil then db.profile.foo = {} end
+		end
+
+	If you don't use Cairn.Addon, register an ADDON_LOADED handler
+	yourself and do the same thing there.
+
 SavedVariables shape (so you can inspect or migrate it):
 	_G[svName] = {
 		profileKeys = { [charKey] = profileName, ... },

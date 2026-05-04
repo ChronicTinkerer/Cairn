@@ -261,6 +261,11 @@ end
 
 -- ----- Constructor -------------------------------------------------------
 
+-- Registry of every DB instance created in this session. Persisted across
+-- LibStub upgrades so Forge_Profiles (and any other consumer) can discover
+-- which addons have profiles without each one having to register itself.
+lib.instances = lib.instances or {}    -- array of DB instances
+
 function lib.New(svName, opts)
 	if type(svName) ~= "string" or svName == "" then
 		error("Cairn.DB.New: svName must be a non-empty string (the SavedVariables global name)", 2)
@@ -277,7 +282,24 @@ function lib.New(svName, opts)
 		_initialized  = false,
 		_profileSubs  = {},
 	}
-	return setmetatable(self, instanceMeta)
+	setmetatable(self, instanceMeta)
+	-- Register so consumers can enumerate later. Idempotent if the same
+	-- svName already exists (later New replaces the earlier handle).
+	for i, existing in ipairs(lib.instances) do
+		if existing._svName == svName then
+			lib.instances[i] = self
+			return self
+		end
+	end
+	lib.instances[#lib.instances + 1] = self
+	return self
+end
+
+-- Returns an array of every DB instance created this session.
+function lib.GetAllInstances()
+	local out = {}
+	for i, db in ipairs(lib.instances) do out[i] = db end
+	return out
 end
 
 -- Allow Cairn.DB("MyAddonDB", opts) as sugar for Cairn.DB.New("MyAddonDB", opts).

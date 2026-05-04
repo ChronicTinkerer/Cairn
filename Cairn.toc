@@ -2,7 +2,7 @@
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
-## Version: 2605041400
+## Version: 2605041800
 ## X-Category: Library
 ## X-License: MIT
 ## SavedVariables: CairnLogSV
@@ -30,6 +30,8 @@ Cairn-EditMode-1.0.lua
 Cairn-Locale-1.0.lua
 Cairn-Hooks-1.0.lua
 Cairn-Sequencer-1.0.lua
+Cairn-Timer-1.0.lua
+Cairn-Comm-1.0.lua
 
 # Standalone-only: SavedVariables persistence + /cairn log subcommands.
 # Do NOT include this file when embedding Cairn in another addon.

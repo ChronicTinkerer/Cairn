@@ -527,6 +527,97 @@ single broken hook won't kill the dispatch chain.
 
 ---
 
+### `Cairn.Timer` — owner-grouped timers + named replacement
+
+A thin layer over WoW's `C_Timer` that adds two things addons typically
+need but have to roll themselves: **cancel-all-by-owner** and **named
+timers** (replace-if-exists, useful for debounce).
+
+```lua
+local T = Cairn.Timer
+
+-- One-shot.
+local h = T:After(2.0, function() print("two seconds later") end, "MyAddon")
+
+-- Repeating. iterations nil = forever.
+T:NewTicker(0.5, function() poll() end, "MyAddon", 10)
+
+-- Debounce: every call replaces the previous "save" timer, so doSave()
+-- only fires once 1s after the LAST event.
+local function onConfigChanged()
+    T:Schedule("save", 1.0, function() doSave() end, "MyAddon")
+end
+
+-- Cancel.
+T:Cancel(h)
+T:CancelByName("save")
+T:CancelAll("MyAddon")    -- nuke every timer this owner started
+
+-- Inspect.
+T:CountByOwner("MyAddon")
+T:GetByName("save")
+
+-- Sugar: Cairn.Timer(seconds, fn, owner) is :After(...).
+```
+
+| Method                              | What it does                                       |
+| ----------------------------------- | -------------------------------------------------- |
+| `After(seconds, fn, owner)`         | One-shot. Returns a handle.                        |
+| `NewTicker(seconds, fn, owner, n)`  | Repeating. `n` iterations (nil = forever).         |
+| `Schedule(name, seconds, fn, owner)`| One-shot, replaces any existing timer with `name`. |
+| `Cancel(handle)`                    | Cancel a single handle.                            |
+| `CancelByName(name)`                | Cancel a named timer.                              |
+| `CancelAll(owner)`                  | Cancel every live handle for an owner.             |
+| `CountByOwner(owner)`               | Number of live handles for an owner.               |
+| `GetByName(name)`                   | Look up a named handle.                            |
+| `HandlesFor(owner)`                 | Snapshot array of an owner's live handles.         |
+
+Callback errors are pcall-trapped and routed through `geterrorhandler()`
+so a single bad timer doesn't kill its peers.
+
+---
+
+### `Cairn.Comm` — addon-to-addon messaging
+
+Thin wrapper over `CHAT_MSG_ADDON` / `C_ChatInfo.SendAddonMessage`. Each
+addon picks a prefix (max 16 chars) and subscribes to incoming messages on
+that prefix. Supports `PARTY` / `RAID` / `INSTANCE_CHAT` / `GUILD` /
+`WHISPER` channels plus a `SendBroadcast` that auto-picks the best one.
+
+```lua
+local C = Cairn.Comm
+
+-- Subscribe. Returns an unsubscribe closure.
+local unsub = C:Subscribe("MYADDON", function(msg, channel, sender)
+    print(sender, "via", channel, ":", msg)
+end, "MyAddon")
+
+-- Send.
+C:Send("MYADDON", "hello", "PARTY")
+C:Send("MYADDON", "ping", "WHISPER", "Steven-Area52")
+
+-- Broadcast: in raid -> RAID, in party -> PARTY, else guild, else nil.
+C:SendBroadcast("MYADDON", "hello world")
+
+-- Cleanup.
+unsub()
+C:UnsubscribeAll("MyAddon")
+```
+
+| Method                                          | What it does                                  |
+| ----------------------------------------------- | --------------------------------------------- |
+| `Subscribe(prefix, fn, owner)`                  | Listen on `prefix`. Returns unsub closure.    |
+| `UnsubscribeAll(owner)`                         | Cancel every subscription owned by `owner`.   |
+| `Send(prefix, message, channel, target)`        | Send. `target` only used for `WHISPER`.       |
+| `SendBroadcast(prefix, message)`                | Auto-pick channel and send.                   |
+| `GetBroadcastChannel()`                         | What `SendBroadcast` would use right now.     |
+| `IsRegistered(prefix)` / `CountSubscribers(p)`  | Inspect.                                      |
+
+WoW caps each message at 255 chars — payload chunking is the caller's
+problem in v0.2. Handler errors run under `pcall`.
+
+---
+
 ## Composing with other libraries
 
 Cairn is plumbing, not a one-stop framework. It deliberately doesn't
@@ -652,16 +743,16 @@ driven by `Cairn.Settings`. EditMode-movable if LibEditMode is installed.
 
 - [x] `Cairn.EditMode` (LibEditMode wrapper)
 - [x] `anchor` schema type in `Cairn.Settings`
-- [x] `Cairn.Dashboard` (developer dashboard with copyable per-addon logs)
 - [ ] `text`, `color`, `keybind` schema types in `Cairn.Settings`
-- [ ] `Cairn.Comm` — addon-to-addon messaging
+- [x] `Cairn.Comm` — addon-to-addon messaging
 - [x] `Cairn.Locale` — i18n with locale fallback
 - [x] `Cairn.Sequencer` — composable step runner
 - [x] `Cairn.Hooks` — multi-callback hook helper
+- [x] `Cairn.Timer` — owner-grouped timers + named replacement
 
 **v0.3 stretch:**
 
-- `Cairn.Timer` — scheduling
+- (none currently planned)
 
 **Explicitly NOT planned:** widget toolkit, shared media library
 (LibSharedMedia exists), threading beyond a basic timer (Lua coroutines
@@ -684,11 +775,12 @@ Cairn/
   Cairn-Addon-1.0.lua             Addon lifecycle helpers.
   Cairn-Slash-1.0.lua             Generic slash router for any addon.
   Cairn-EditMode-1.0.lua          Optional LibEditMode wrapper (v0.2).
-  Cairn-Dashboard-1.0.lua         Developer dashboard with copyable logs (v0.2).
   Cairn-Locale-1.0.lua            Per-addon i18n with fallback (v0.2).
   Cairn-Sequencer-1.0.lua         Composable step runner (v0.2).
   Cairn-Hooks-1.0.lua             Multi-callback hook helper (v0.2).
-  Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log + /cairn dash.
+  Cairn-Timer-1.0.lua              Owner-grouped timers + named replacement (v0.2).
+  Cairn-Comm-1.0.lua               Addon-to-addon messaging via CHAT_MSG_ADDON (v0.2).
+  Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log subcommands.
                                   Standalone-only; do NOT embed.
   README.md                       This file.
   LICENSE                         MIT.

@@ -15,8 +15,9 @@ already invested.
 `Cairn.Slash`. v0.2 adds: `Cairn.EditMode` (LibEditMode wrapper),
 the `anchor` schema type in `Cairn.Settings`, `Cairn.Dashboard`
 (developer dashboard with copyable per-addon logs), `Cairn.Locale`
-(i18n with locale fallback), and `Cairn.Sequencer` (composable
-step runner). See [Roadmap](#roadmap).
+(i18n with locale fallback), `Cairn.Sequencer` (composable
+step runner), and `Cairn.Hooks` (multi-callback hook helper). See
+[Roadmap](#roadmap).
 
 ---
 
@@ -459,6 +460,52 @@ is sugar for `Cairn.Sequencer.New(...)`.
 
 ---
 
+### `Cairn.Hooks` — multi-callback hook helper (v0.2)
+
+A small wrapper around `hooksecurefunc` that lets multiple addons hook the
+same function without stomping each other. Cairn installs one underlying
+secure hook per `(target, name)` and dispatches to all active callbacks.
+Returns an unhook closure that flips the callback inactive (the underlying
+secure hook stays for the session, since `hooksecurefunc` cannot be undone).
+
+```lua
+local Hooks = Cairn.Hooks
+
+-- Post-hook a global function (two-arg form).
+local unhook = Hooks.Post("seterrorhandler", function(newHandler)
+    -- runs after seterrorhandler(newHandler), with the same args
+end)
+
+-- Post-hook a method on a frame or table (three-arg form).
+Hooks.Post(SomeFrame, "Show", function(self) print("shown") end)
+
+-- Sugar alias of the three-arg form.
+Hooks.Method(SomeFrame, "Show", function(self) ... end)
+
+-- Inspect.
+Hooks.Has(_G, "seterrorhandler")    -- true once we have a hook on it
+Hooks.Count(SomeFrame, "Show")      -- active callbacks (excluding unhooked)
+
+unhook()                            -- mark our callback inactive
+```
+
+| Method                  | What it does                                          |
+| ----------------------- | ----------------------------------------------------- |
+| `Post(name, fn)`        | Post-hook a global. Returns unhook closure.           |
+| `Post(target, name, fn)`| Post-hook a method on `target`. Returns unhook closure.|
+| `Method(target, name, fn)` | Sugar for the three-arg `Post`.                    |
+| `Has(target, name)`     | True if at least one active callback exists.         |
+| `Count(target, name)`   | Number of active callbacks.                          |
+
+Pre-hooks are intentionally not included in v0.2; secure pre-hooking is
+risky and unsecure pre-hooks will land in v0.3 as `Cairn.Hooks.Pre` if
+demand is there. Step-error guard: each callback runs in `pcall`, so a
+single broken hook won't kill the dispatch chain.
+
+`Cairn.Hooks(...)` is sugar for `Cairn.Hooks.Post(...)`.
+
+---
+
 ## Composing with other libraries
 
 Cairn is plumbing, not a one-stop framework. It deliberately doesn't
@@ -589,10 +636,10 @@ driven by `Cairn.Settings`. EditMode-movable if LibEditMode is installed.
 - [ ] `Cairn.Comm` — addon-to-addon messaging
 - [x] `Cairn.Locale` — i18n with locale fallback
 - [x] `Cairn.Sequencer` — composable step runner
+- [x] `Cairn.Hooks` — multi-callback hook helper
 
 **v0.3 stretch:**
 
-- `Cairn.Hooks` — secure hooks helper
 - `Cairn.Timer` — scheduling
 
 **Explicitly NOT planned:** widget toolkit, shared media library
@@ -619,6 +666,7 @@ Cairn/
   Cairn-Dashboard-1.0.lua         Developer dashboard with copyable logs (v0.2).
   Cairn-Locale-1.0.lua            Per-addon i18n with fallback (v0.2).
   Cairn-Sequencer-1.0.lua         Composable step runner (v0.2).
+  Cairn-Hooks-1.0.lua             Multi-callback hook helper (v0.2).
   Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log + /cairn dash.
                                   Standalone-only; do NOT embed.
   README.md                       This file.

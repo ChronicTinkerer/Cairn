@@ -76,7 +76,11 @@ local SUPPORTED_TYPES = {
 	dropdown = true,
 	header   = true,
 	anchor   = true,  -- v0.2; requires Cairn.EditMode + LibEditMode for full effect
+	text     = true,  -- v0.2; popup EditBox launched from a row button
+	color    = true,  -- v0.2; ColorPickerFrame launched from a row button
+	keybind  = true,  -- v0.2; modifier+key capture launched from a row button
 }
+
 
 -- ----- Helpers -----------------------------------------------------------
 
@@ -107,6 +111,23 @@ local function validateSchema(schema)
 		if entry.type == "dropdown" and type(entry.choices) ~= "table" then
 			error("Cairn.Settings.New: dropdown entry '" .. entry.key
 				.. "' requires a 'choices' table", 3)
+		end
+		if entry.type == "text" and type(entry.default) ~= "string" then
+			error("Cairn.Settings.New: text entry '" .. entry.key
+				.. "' requires a string 'default'", 3)
+		end
+		if entry.type == "color" then
+			-- default = { r, g, b, a } each 0..1
+			local d = entry.default
+			if type(d) ~= "table" or type(d[1]) ~= "number" or type(d[2]) ~= "number"
+				or type(d[3]) ~= "number" then
+				error("Cairn.Settings.New: color entry '" .. entry.key
+					.. "' requires a default = {r, g, b[, a]} (each 0..1)", 3)
+			end
+		end
+		if entry.type == "keybind" and type(entry.default) ~= "string" then
+			error("Cairn.Settings.New: keybind entry '" .. entry.key
+				.. "' requires a string 'default' (e.g. \"CTRL-SHIFT-X\" or \"\")", 3)
 		end
 		if entry.type == "anchor" then
 			if type(entry.frame) ~= "table" or type(entry.frame.GetName) ~= "function" then
@@ -202,6 +223,19 @@ function proto:Set(key, value) setValue(self, key, value, true) end
 function proto:GetCategoryID() return self._categoryID end
 function proto:GetCategory() return self._category end
 
+-- Open a standalone Cairn.Gui-rendered panel for this schema. Independent
+-- of Blizzard's Settings UI - works for every schema type including those
+-- the Blizzard panel can't render on this client (text/color/keybind).
+function proto:OpenStandalone()
+    local Panel = LibStub("Cairn-SettingsPanel-1.0", true)
+    if not Panel then
+        if logger() then logger():Warn(":OpenStandalone called but Cairn-SettingsPanel-1.0 isn't loaded.") end
+        return nil
+    end
+    return Panel.OpenFor(self)
+end
+stubProto.OpenStandalone = proto.OpenStandalone
+
 local function onChange(self, key, fn, owner)
 	if type(key) ~= "string" then error("Cairn.Settings:OnChange: 'key' must be a string", 2) end
 	if type(fn) ~= "function" then error("Cairn.Settings:OnChange: 'fn' must be a function", 2) end
@@ -263,6 +297,17 @@ local function registerEntry(self, entry)
 		function() return self._db.profile[key] end,
 		function(_, value) setValue(self, key, value, true) end
 	)
+
+	-- text / color / keybind are STORAGE-ONLY schema types. The schema
+	-- validates them, defaults seed them, Get/Set/OnChange work normally,
+	-- but no Blizzard panel widget is rendered. Addon authors render the
+	-- visual themselves (their own panel, slash command, EditBox popup,
+	-- ColorPickerFrame, key-capture modal - whatever fits the addon).
+	-- This was a deliberate v0.2 decision after Midnight's Settings API
+	-- changes broke the panel-button paths we tried.
+	if entry.type == "text" or entry.type == "color" or entry.type == "keybind" then
+		return
+	end
 
 	if entry.type == "toggle" then
 		Settings.CreateCheckbox(self._category, setting, entry.tooltip)

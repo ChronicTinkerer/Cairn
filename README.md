@@ -272,6 +272,11 @@ settings:OnChange("scale", fn, owner)
 | `range`    | `default`, `label`, `min`, `max`   | Numeric slider; `step` defaults to 0.1 |
 | `dropdown` | `default`, `label`, `choices`      | `choices` is `{value = label, ...}` |
 | `anchor`   | `frame` (named), `label`           | EditMode-movable; needs LibEditMode |
+| `text`     | `default` (string), `label`        | **Storage-only.** Schema validates and seeds defaults; `Get`/`Set`/`OnChange` work. No Blizzard panel widget — addon owns the UI (popup EditBox, slash, custom panel). |
+| `color`    | `default = {r,g,b[,a]}`, `label`   | **Storage-only.** Same contract as `text`. Addon launches `ColorPickerFrame` (or whatever) and writes via `Set`. |
+| `keybind`  | `default` (string), `label`        | **Storage-only.** Same contract as `text`. Stores whatever string the addon writes — `"CTRL-SHIFT-X"`, key codes, etc. |
+
+**Why three schema types are storage-only:** Cairn.Settings's job for these is to validate the schema, seed defaults into `db.profile`, and route `Set` through the `onChange` / subscriber pipeline. Rendering a button row in the Blizzard Settings panel turned out to require APIs that aren't available across all client patches; rather than ship a brittle integration, Cairn keeps a clean contract — the schema is the data layer, the addon wires whatever UI fits.
 
 The `anchor` type does NOT seed `db.profile` — LibEditMode persists
 position via Blizzard's EditMode SavedVariables. Defaults seed
@@ -577,6 +582,72 @@ so a single bad timer doesn't kill its peers.
 
 ---
 
+### `Cairn.Gui` — small widget kit (v0.2)
+
+A focused widget kit Cairn ships so addons aren't held hostage to Blizzard's
+Settings/AddOn UI APIs (which churn between patches). Built on raw `CreateFrame`
++ a handful of base-game templates (`BackdropTemplate`, `UIPanelButtonTemplate`,
+`OptionsSliderTemplate`, `UIDropDownMenuTemplate`, `BasicFrameTemplateWithInset`).
+No third-party UI library dependency.
+
+```lua
+local Gui = Cairn.Gui
+
+local panel = Gui:Panel(UIParent, { title = "MyAddon" })
+panel:SetSize(400, 300); panel:SetPoint("CENTER")
+
+local box = Gui:VBox(panel, { padding = 8, gap = 4 })
+box:SetPoint("TOPLEFT", 8, -28); box:SetPoint("BOTTOMRIGHT", -8, 8)
+
+box:Add(Gui:Header(panel, "Display"))
+box:Add(Gui:Checkbox(panel, { label = "Enabled", value = true }))
+                :OnChange(function(v) print("enabled =", v) end)
+box:Add(Gui:Slider(panel, { label = "Scale", min = 0.5, max = 2, step = 0.05, value = 1 }))
+box:Add(Gui:ColorSwatch(panel, { label = "Accent", value = { 1, 0.5, 0, 1 } }))
+box:Layout()
+```
+
+Every value-bearing widget exposes a uniform `:Get() / :Set(v) / :OnChange(fn)`.
+Errors inside `OnChange` callbacks are pcall-trapped and routed through
+`geterrorhandler()`.
+
+| Widget                   | Purpose                                          |
+| ------------------------ | ------------------------------------------------ |
+| `Panel(parent, opts)`    | Styled container; optional `opts.title`.         |
+| `VBox / HBox`            | Auto-arrange children; `:Add(child, opts)`.      |
+| `Header(parent, text)`   | Section heading, accent-colored.                 |
+| `Label(parent, text)`    | Wrappable text.                                  |
+| `Button`, `Checkbox`     | Standard controls.                               |
+| `EditBox`, `Slider`      | Text + number inputs.                            |
+| `Dropdown`               | `{value = label}` choice picker.                 |
+| `ColorSwatch`            | Click → `ColorPickerFrame`. RGBA.                |
+| `KeybindButton`          | Click → next-key capture; `"CTRL-SHIFT-X"` form. |
+
+v0.1 ships with the widgets above; v0.2 / v0.3 will add Splitter, virtualized
+ScrollList, Tabs, ContextMenu, Modal/Dialog, Tree, Progress, IconGrid, and a
+Tooltip helper.
+
+---
+
+### `Cairn.SettingsPanel` — Cairn-Gui renderer for Cairn.Settings (v0.2)
+
+Standalone panel that renders any `Cairn.Settings` schema using `Cairn.Gui`.
+Independent of Blizzard's Settings UI — works for every schema type including
+`text`, `color`, and `keybind` which the Blizzard panel can't render uniformly.
+
+```lua
+local settings = Cairn.Settings.New(addonName, db, schema)
+
+settings:Open()             -- Blizzard panel (existing types only)
+settings:OpenStandalone()   -- Cairn.Gui panel (every schema type)
+```
+
+Both paths coexist — the addon picks per-call. Existing addons need no change;
+new addons can pick either based on whether they want native-UI integration or
+a fully owned panel.
+
+---
+
 ### `Cairn.Comm` — addon-to-addon messaging
 
 Thin wrapper over `CHAT_MSG_ADDON` / `C_ChatInfo.SendAddonMessage`. Each
@@ -743,7 +814,7 @@ driven by `Cairn.Settings`. EditMode-movable if LibEditMode is installed.
 
 - [x] `Cairn.EditMode` (LibEditMode wrapper)
 - [x] `anchor` schema type in `Cairn.Settings`
-- [ ] `text`, `color`, `keybind` schema types in `Cairn.Settings`
+- [x] `text`, `color`, `keybind` schema types in `Cairn.Settings`
 - [x] `Cairn.Comm` — addon-to-addon messaging
 - [x] `Cairn.Locale` — i18n with locale fallback
 - [x] `Cairn.Sequencer` — composable step runner
@@ -780,6 +851,8 @@ Cairn/
   Cairn-Hooks-1.0.lua             Multi-callback hook helper (v0.2).
   Cairn-Timer-1.0.lua              Owner-grouped timers + named replacement (v0.2).
   Cairn-Comm-1.0.lua               Addon-to-addon messaging via CHAT_MSG_ADDON (v0.2).
+  Cairn-Gui-1.0.lua                 Widget kit (Panel/VBox/Button/EditBox/...) (v0.2).
+  Cairn-SettingsPanel-1.0.lua       Cairn.Gui renderer for Cairn.Settings schemas (v0.2).
   Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log subcommands.
                                   Standalone-only; do NOT embed.
   README.md                       This file.

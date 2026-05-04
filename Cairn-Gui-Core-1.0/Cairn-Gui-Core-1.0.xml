@@ -1,0 +1,17 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+	<Script file="Cairn-Gui-Core-1.0.lua"/>	
+	<!-- Objects -->
+	<Script file="Objects\Window.lua"/>	
+	<Script file="Objects\ScrollFrame.lua"/>
+	<Script file="Objects\ScrollingEditBox.lua"/>
+	<Script file="Objects\ScrollingMessageFrame.lua"/>
+	<Script file="Objects\CheckBox.lua"/>	
+	<Script file="Objects\Button.lua"/>	
+	<Script file="Objects\Spinner.lua"/>
+	<Script file="Objects\Input.lua"/>		
+	<Script file="Objects\DropDown.lua"/>
+	<Script file="Objects\DropDownItem.lua"/>
+	<Script file="Objects\ComboBox.lua"/>
+	<Script file="Objects\ComboBoxItem.lua"/>			
+</Ui>

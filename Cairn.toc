@@ -2,7 +2,7 @@
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
-## Version: 2605041800
+## Version: 2605050115
 ## X-Category: Library
 ## X-License: MIT
 ## SavedVariables: CairnLogSV
@@ -12,6 +12,21 @@
 
 # LibStub is the universal addon-library loader.
 Libs\LibStub\LibStub.lua
+
+# Cairn-Callback is the real callback-registry implementation. The
+# CallbackHandler-1.0 shim below registers under the upstream LibStub name and
+# delegates to this module, so LibSharedMedia-3.0 and Diesal-derived widgets
+# (Cairn-Gui-*) keep working without vendoring upstream WoWAce code.
+Cairn-Callback-1.0.lua
+
+# CallbackHandler-1.0 shim (proxies to Cairn-Callback-1.0; see file header).
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+
+# LibSharedMedia-3.0: LGPL v2.1; font/texture/sound registry. Vendored as-is
+# to avoid LGPL modification clauses, and because LSM's whole point is the
+# cross-addon shared registry. LibStub auto-wins the highest revision if
+# another addon embeds a newer copy.
+Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
 
 # Umbrella facade + /cairn slash router.
 Cairn.lua
@@ -32,6 +47,19 @@ Cairn-Hooks-1.0.lua
 Cairn-Sequencer-1.0.lua
 Cairn-Timer-1.0.lua
 Cairn-Comm-1.0.lua
+Cairn-Gui-1.0.lua
+Cairn-SettingsPanel-1.0.lua
+
+# Cairn-Gui-* family derived from Diesal libraries (BSD 3-clause).
+# Tools is the foundation utility module; Style brings textures, outlines,
+# fonts, and media registration. Core is the widget framework with 12
+# widgets (Window, Button, CheckBox, Input, ScrollFrame, Spinner,
+# DropDown, ComboBox, etc.). Menu adds context-menu widgets on top of Core.
+# See Diesal/ATTRIBUTION.md for provenance.
+Cairn-Gui-Tools-1.0.lua
+Cairn-Gui-Style-1.0\Cairn-Gui-Style-1.0.lua
+Cairn-Gui-Core-1.0\Cairn-Gui-Core-1.0.xml
+Cairn-Gui-Menu-1.0\Cairn-Gui-Menu-1.0.xml
 
 # Standalone-only: SavedVariables persistence + /cairn log subcommands.
 # Do NOT include this file when embedding Cairn in another addon.

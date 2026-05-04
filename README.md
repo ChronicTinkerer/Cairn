@@ -13,11 +13,16 @@ already invested.
 **Status:** v0.2.0-dev. v0.1.0 shipped: `Cairn.Events`, `Cairn.Log`,
 `Cairn.LogWindow`, `Cairn.DB`, `Cairn.Settings`, `Cairn.Addon`,
 `Cairn.Slash`. v0.2 adds: `Cairn.EditMode` (LibEditMode wrapper),
-the `anchor` schema type in `Cairn.Settings`, `Cairn.Dashboard`
-(developer dashboard with copyable per-addon logs), `Cairn.Locale`
+the `anchor` schema type in `Cairn.Settings`, `Cairn.Locale`
 (i18n with locale fallback), `Cairn.Sequencer` (composable
-step runner), and `Cairn.Hooks` (multi-callback hook helper). See
-[Roadmap](#roadmap).
+step runner), `Cairn.Hooks` (multi-callback hook helper),
+`Cairn.Timer` (owner-grouped timers), `Cairn.Comm` (addon-to-addon
+messaging), `Cairn.Callback` (registry-style callback dispatcher
+that backs the upstream-compatible CallbackHandler-1.0 shim), and
+the `Cairn-Gui-*` widget family (Tools, Style, Core with 12 widgets,
+Menu — derived from the BSD-licensed Diesal libraries and modernized
+for Interface 120005). The v0.1-era `Cairn.Dashboard` was retired and
+replaced by the standalone Forge_Logs addon. See [Roadmap](#roadmap).
 
 ---
 
@@ -39,11 +44,14 @@ today, with these decisions baked in:
   directly into the native Settings panel. The `anchor` schema type
   registers your frame with Edit Mode (via LibEditMode) so users can
   drag it visually.
-- **Built-in dev tooling.** `Cairn.Dashboard` (`/cairn dash`) lists
-  every addon Cairn knows about with per-source log filtering and
-  copyable log dumps for bug reports.
-- **No widget toolkit.** Survey said most authors roll their own UI;
-  Cairn doesn't fight that.
+- **Built-in dev tooling lives in [Forge](../Forge/).** Cairn focuses on
+  the libraries; Forge ships the developer UI (per-source log viewer,
+  Lua REPL, addon manager, etc.). Authors who want bug reporting and a
+  log dashboard install Forge alongside Cairn.
+- **Widget toolkit available.** The `Cairn-Gui-*` family (Tools, Style,
+  Core, Menu) is a 14-widget kit derived from the BSD-licensed Diesal
+  libraries and modernized for Interface 120005. Optional — if you'd
+  rather roll your own UI, leave it out.
 
 ---
 
@@ -150,6 +158,47 @@ Cairn.Events:Has(event)
 
 Handler receives the event payload args. Errors caught with `pcall` and
 routed to `geterrorhandler()`.
+
+---
+
+### `Cairn.Callback` — registry-style callback dispatcher (v0.2)
+
+A general-purpose callback registry. Different from `Cairn.Events` (which
+wraps Blizzard's WoW-event system); `Cairn.Callback` is for **library-
+to-consumer messaging** — your library declares events its consumers can
+subscribe to.
+
+```lua
+local Callback = LibStub("Cairn-Callback-1.0")
+local reg = Callback.New()
+
+reg:Subscribe(eventname, key, fn)  -- key acts as "self": one fn per (event, key)
+reg:Unsubscribe(eventname, key)
+reg:UnsubscribeAll(key)
+reg:Fire(eventname, ...)           -- subscribers get (eventname, ...trailing)
+
+reg:SetOnUsed(fn)    -- fn(reg, eventname) on first subscriber for an event
+reg:SetOnUnused(fn)  -- fn(reg, eventname) on last subscriber removed
+```
+
+Subscribers receive `(eventname, ...trailingArgs)`, matching the
+upstream WoWAce CallbackHandler-1.0 dispatch convention. Subscribes
+during `Fire` are queued and applied after dispatch returns. Errors in
+subscribers are pcall-trapped and routed through `geterrorhandler()`.
+
+**Why both Events and Callback?** Events is for "WoW fired SPELL_CAST"
+(one subscriber list per event name, owned globally). Callback is for
+"my library has a custom event" (each library/object instantiates its
+own registry).
+
+#### CallbackHandler-1.0 shim
+
+`Cairn/Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua` is a Cairn-
+authored shim that registers under the upstream LibStub name and proxies
+to Cairn-Callback. LibSharedMedia-3.0, LibActionButton, ElvUI, BigWigs,
+DBM, etc. all call `LibStub("CallbackHandler-1.0")` and get the Cairn
+implementation transparently. Cairn does NOT vendor the original WoWAce
+source.
 
 ---
 
@@ -303,48 +352,16 @@ community wrapper. Cairn does not vendor it — install separately.
 
 ---
 
-### `Cairn.Dashboard` — developer dashboard (v0.2)
+### `Cairn.Dashboard` — retired (replaced by Forge_Logs)
 
-Per-addon log viewer with copy-to-clipboard support, plus an Info tab
-showing memory usage, lifecycle state, event subscription counts, slash
-commands, and log entry counts by level. Open with `/cairn dash`.
+The v0.1-era `Cairn.Dashboard` was retired during v0.2 development. The
+log-viewer + copyable log dump features moved into the standalone
+**Forge_Logs** sub-addon (part of the Forge developer toolset). The
+`/cairn dash` slash now redirects to `/forge logs` if Forge is loaded.
 
-```lua
-Cairn.Dashboard:Show()
-Cairn.Dashboard:Hide()
-Cairn.Dashboard:Toggle()
-Cairn.Dashboard:IsShown()
-Cairn.Dashboard:SelectSource(name)   -- "All" or any registered source
-Cairn.Dashboard:GetSources()         -- discovered sources, sorted, "All" first
-Cairn.Dashboard:Refresh()            -- usually automatic
-```
-
-Sources are auto-discovered: any addon that has called `Cairn.Log("X")`,
-`Cairn.Addon.New("X")`, or `Cairn.Slash.Register("X", ...)` shows up in
-the left pane. Selecting a source filters the Logs tab and populates
-the Info tab.
-
-The Logs tab has a level-cycling button, search box, Clear (clears the
-shared log buffer), and Copy (opens an EditBox popup with the current
-view's entries pre-selected and ready for Ctrl+C — the standard WoW
-pattern for clipboard copy).
-
-The Info tab shows, for the selected source: memory usage (via
-`GetAddOnMemoryUsage`, only meaningful for real addon names), lifecycle
-state if registered with `Cairn.Addon` (timestamps for OnInit / OnLogin /
-OnEnter / OnLogout), count of active event subscriptions for the owner,
-slash commands registered, current logger level, and entry counts by
-level for that source.
-
-Module-level helper, exposed for testing:
-
-```lua
-Cairn.Dashboard.FormatLogsForCopy(sourceName, entries)   -- plain-text dump
-```
-
-Requires `Cairn.Log`. Optionally uses `Cairn.Events`, `Cairn.Addon`,
-`Cairn.Slash` for richer Info-tab data; missing modules just hide their
-sections.
+Authors who want the old dashboard's behavior should install Forge
+alongside Cairn. The split keeps Cairn focused on libraries and Forge
+focused on developer UI.
 
 ---
 
@@ -623,9 +640,52 @@ Errors inside `OnChange` callbacks are pcall-trapped and routed through
 | `ColorSwatch`            | Click → `ColorPickerFrame`. RGBA.                |
 | `KeybindButton`          | Click → next-key capture; `"CTRL-SHIFT-X"` form. |
 
-v0.1 ships with the widgets above; v0.2 / v0.3 will add Splitter, virtualized
-ScrollList, Tabs, ContextMenu, Modal/Dialog, Tree, Progress, IconGrid, and a
-Tooltip helper.
+v0.1 ships with the widgets above. The next major widget effort is
+not v0.2/v0.3 of the hand-rolled kit but the **Cairn-Gui-* family**
+(see below), a richer 14-widget set ported from the BSD-licensed Diesal
+libraries.
+
+---
+
+### `Cairn-Gui-*` — Diesal-derived widget family (v0.2)
+
+A more substantial widget kit than the v0.1 hand-rolled `Cairn.Gui`,
+forked from the [Diesal](https://code.google.com/p/diesallibs/) library
+collection (BSD 3-clause, original author: diesal2010, last upstream
+2014) and modernized for Interface 120005. Four LibStub libraries:
+
+| Library                     | Purpose                                            |
+| --------------------------- | -------------------------------------------------- |
+| `Cairn-Gui-Tools-1.0`       | Color/coords/table helpers, embed framework.       |
+| `Cairn-Gui-Style-1.0`       | Texture / outline / FontString styling + Media.    |
+| `Cairn-Gui-Core-1.0`        | Widget framework + 12 widgets via XML manifest.    |
+| `Cairn-Gui-Menu-1.0`        | Context-menu lib (Menu, MenuItem) on top of Core.  |
+
+The 12 Core widgets: `Window`, `Button`, `CheckBox`, `Input`, `Spinner`,
+`ScrollFrame`, `ScrollingEditBox`, `ScrollingMessageFrame`, `DropDown`
+(registers as `"Dropdown"`), `DropDownItem`, `ComboBox`, `ComboBoxItem`.
+
+```lua
+local Gui = LibStub("Cairn-Gui-Core-1.0")
+
+local w = Gui:Create("Window")
+w:SetPoint("CENTER")
+w:SetWidth(400); w:SetHeight(300)
+w:Show()
+```
+
+Provenance and modification details are documented in
+[`Diesal/ATTRIBUTION.md`](../Diesal/ATTRIBUTION.md). All Diesal-derived
+files retain the original copyright + BSD license text alongside a
+"Modified for Cairn by ChronicTinkerer (2026)" header. Bundled assets:
+two `.tga` texture sheets (Diesal originals, BSD), and two free-license
+fonts (`Standard0755.ttf`, `FFF Intelligent Thin Condensed.ttf`). The
+proprietary Calibri Bold font that shipped upstream was dropped.
+
+The `CallbackHandler-1.0` and `LibSharedMedia-3.0` deps that the
+Diesal libraries reference are handled in `Cairn/Libs/`: a Cairn-authored
+shim for CallbackHandler-1.0 (proxies to `Cairn.Callback`), and an
+unmodified vendored copy of LibSharedMedia-3.0 (LGPL v2.1).
 
 ---
 

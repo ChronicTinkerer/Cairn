@@ -93,14 +93,14 @@ Cairn:RegisterSlashSub("log", function(args)
 		"  (try: clear, level, source, search, echo, stats)")
 end, "open log window or manage logging")
 
--- /cairn dash, /cairn dashboard, /cairn dev all open the developer dashboard.
-local function openDashboard()
-	if Dashboard then Dashboard:Toggle()
-	else print("|cFF7FBFFF[Cairn]|r Dashboard module not loaded.") end
+-- The developer dashboard moved out of Cairn into the Forge dev-tools
+-- suite. /cairn dash now points the user at /forge logs.
+local function dashRedirect()
+	print("|cFF7FBFFF[Cairn]|r The developer dashboard moved to Forge_Logs. Use |cffd87f3a/forge logs|r.")
 end
-Cairn:RegisterSlashSub("dash",      openDashboard, "open developer dashboard")
-Cairn:RegisterSlashSub("dashboard", openDashboard, "alias for /cairn dash")
-Cairn:RegisterSlashSub("dev",       openDashboard, "alias for /cairn dash")
+Cairn:RegisterSlashSub("dash",      dashRedirect, "(moved) /forge logs")
+Cairn:RegisterSlashSub("dashboard", dashRedirect, "(moved) /forge logs")
+Cairn:RegisterSlashSub("dev",       dashRedirect, "(moved) /forge logs")
 
 -- ----- SavedVariables wiring (PLAYER_LOGOUT save, ADDON_LOADED restore) --
 

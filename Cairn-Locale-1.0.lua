@@ -51,12 +51,44 @@ end
 
 lib.registry = lib.registry or {}
 
+-- ----- Dev override -----------------------------------------------------
+-- Setting an override forces every Cairn.Locale instance (existing and
+-- future) to behave as though GetLocale() returned the override code. Used
+-- by Forge's dev tooling to test localizations without restarting the
+-- client in a different language. nil clears the override.
+
+local _override = nil
+
 local function detectLocale()
+	if _override then return _override end
 	if GetLocale then
 		local ok, code = pcall(GetLocale)
 		if ok and type(code) == "string" and code ~= "" then return code end
 	end
 	return "enUS"
+end
+
+function lib.SetOverride(code)
+	if code ~= nil and (type(code) ~= "string" or code == "") then
+		error("Cairn.Locale.SetOverride: code must be a non-empty string or nil", 2)
+	end
+	_override = code
+	-- Refresh every registered instance so subsequent L["..."] reads
+	-- resolve through the new locale. If the requested locale has no
+	-- table, fall through to default (matches the New() behavior).
+	local resolved = detectLocale()
+	for _, inst in pairs(lib.registry) do
+		if inst._tables[resolved] then
+			inst._locale = resolved
+		else
+			inst._locale = inst._default
+		end
+		inst._warned = {}
+	end
+end
+
+function lib.GetOverride()
+	return _override
 end
 
 -- ----- Locale instance prototype ----------------------------------------

@@ -1,4 +1,4 @@
-## Interface: 120005
+## Interface: 120005, 50503, 20505, 11508, 120007
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
@@ -67,6 +67,35 @@ Cairn-Gui-Tools-1.0.lua
 Cairn-Gui-Style-1.0\Cairn-Gui-Style-1.0.lua
 Cairn-Gui-Core-1.0\Cairn-Gui-Core-1.0.xml
 Cairn-Gui-Menu-1.0\Cairn-Gui-Menu-1.0.xml
+
+# Cairn-Gui-2.0: parallel v2 widget library. Different LibStub MAJOR so it
+# coexists with Cairn-Gui-1.0; consumers pick which one to depend on.
+# See Cairn-Gui-2.0/ARCHITECTURE.md for the locked design (local-only file).
+# Load order matters: lib registration first, then Mixins (Base must exist
+# before Core/Acquire references it), then Core surface APIs.
+Cairn-Gui-2.0\Cairn-Gui-2.0.lua
+Cairn-Gui-2.0\Mixins\Base.lua
+Cairn-Gui-2.0\Core\Acquire.lua
+Cairn-Gui-2.0\Core\Theme.lua
+Cairn-Gui-2.0\Core\Events.lua
+Cairn-Gui-2.0\Core\Primitives.lua
+Cairn-Gui-2.0\Core\Layout.lua
+# Built-in layout strategies. Each registers itself against the Layout
+# registry. Register order doesn't matter; just load after Layout.lua.
+Cairn-Gui-2.0\Core\Layouts\Manual.lua
+Cairn-Gui-2.0\Core\Layouts\Fill.lua
+Cairn-Gui-2.0\Core\Layouts\Stack.lua
+
+# Cairn-Gui-Widgets-Standard-1.0: bundled widget set built on Cairn-Gui-2.0
+# Core. Separate LibStub MAJOR per Decision 11 so consumers can swap in
+# alternative bundles. Bundle anchor must load before any Widgets/*.lua file.
+Cairn-Gui-Widgets-Standard-1.0\Cairn-Gui-Widgets-Standard-1.0.lua
+Cairn-Gui-Widgets-Standard-1.0\Widgets\Button.lua
+
+# Cairn-Gui-Theme-Default-1.0: default visual theme. Auto-activates on load.
+# Consumers can replace with an alternative theme bundle without touching
+# Core or any widget. Per Decision 11.
+Cairn-Gui-Theme-Default-1.0\Cairn-Gui-Theme-Default-1.0.lua
 
 # Standalone-only: SavedVariables persistence + /cairn log subcommands.
 # Do NOT include this file when embedding Cairn in another addon.

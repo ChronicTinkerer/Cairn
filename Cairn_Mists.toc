@@ -2,7 +2,7 @@
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
-## Version: 1
+## Version: 2
 ## X-Category: Library
 ## X-License: MIT
 ## X-Curse-Project-ID: 1532175

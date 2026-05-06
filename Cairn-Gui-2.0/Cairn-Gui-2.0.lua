@@ -80,7 +80,7 @@ lib._pool         = lib._pool         or {}  -- name -> array of released cairn 
 lib.Dev = lib.Dev or false
 
 -- ----- Bookkeeping for the architecture's "RequireCore" contract -------
--- Bundles (Cairn-Gui-Widgets-Standard-1.0, Cairn-Gui-Theme-Default-1.0,
+-- Bundles (Cairn-Gui-Widgets-Standard-2.0, Cairn-Gui-Theme-Default-2.0,
 -- etc.) call lib:RequireCore(MAJOR, MINOR) at load and abort with a
 -- chat warning if the running Core is too old. Stubbed for Day 1; full
 -- implementation lands when bundles ship.

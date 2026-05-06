@@ -109,20 +109,19 @@ MyAddon/
     LibStub/LibStub.lua
     Cairn/
       Cairn.lua
-      Cairn-Events-1.0.lua
-      Cairn-Log-1.0.lua
-      Cairn-DB-1.0.lua
-      Cairn-Settings-1.0.lua
-      Cairn-Addon-1.0.lua
-      Cairn-Slash-1.0.lua
-      Cairn-EditMode-1.0.lua    -- optional; needs LibEditMode installed
-      Cairn-Dashboard-1.0.lua   -- optional; only useful in standalone mode
+      CairnEvents/Cairn-Events-1.0.lua
+      CairnLog/Cairn-Log-1.0.lua
+      CairnDB/Cairn-DB-1.0.lua
+      CairnSettings/Cairn-Settings-1.0.lua
+      CairnAddon/Cairn-Addon-1.0.lua
+      CairnSlash/Cairn-Slash-1.0.lua
+      CairnEditMode/Cairn-EditMode-1.0.lua    -- optional; needs LibEditMode
   Core.lua
 ```
 
-Do NOT embed `Cairn-Standalone-1.0.lua` — it's only meant for the
-standalone Cairn addon (it wires SavedVariables and the `/cairn` slash
-router).
+Do NOT embed `CairnStandalone/Cairn-Standalone-1.0.lua` — it's only
+meant for the standalone Cairn addon (it wires SavedVariables and the
+`/cairn` slash router).
 
 ---
 
@@ -973,24 +972,33 @@ Cairn/
                                   All five share the same load order.
   CHANGELOG.md                    Release notes (Keep a Changelog format).
   Libs/LibStub/LibStub.lua        Vendored standard LibStub. Public domain.
-  Cairn.lua                       Umbrella facade + /cairn slash router.
-  Cairn-Events-1.0.lua            Event subscription.
-  Cairn-Log-1.0.lua               Leveled logger.
-  Cairn-LogWindow-1.0.lua         UI viewer for the log buffer.
-  Cairn-DB-1.0.lua                SavedVariables wrapper with profiles.
-  Cairn-Settings-1.0.lua          Declarative schema + Blizzard panel bridge.
-  Cairn-Addon-1.0.lua             Addon lifecycle helpers.
-  Cairn-Slash-1.0.lua             Generic slash router for any addon.
-  Cairn-EditMode-1.0.lua          Optional LibEditMode wrapper (v0.2).
-  Cairn-Locale-1.0.lua            Per-addon i18n with fallback (v0.2).
-  Cairn-Sequencer-1.0.lua         Composable step runner (v0.2).
-  Cairn-Hooks-1.0.lua             Multi-callback hook helper (v0.2).
-  Cairn-Timer-1.0.lua              Owner-grouped timers + named replacement (v0.2).
-  Cairn-Comm-1.0.lua               Addon-to-addon messaging via CHAT_MSG_ADDON (v0.2).
-  Cairn-Gui-1.0.lua                 Widget kit (Panel/VBox/Button/EditBox/...) (v0.2).
-  Cairn-SettingsPanel-1.0.lua       Cairn.Gui renderer for Cairn.Settings schemas (v0.2).
-  Cairn-Standalone-1.0.lua        SavedVariables wiring + /cairn log subcommands.
-                                  Standalone-only; do NOT embed.
+  Cairn.lua                                  Umbrella facade + /cairn slash router.
+  CairnEvents/Cairn-Events-1.0.lua           Event subscription.
+  CairnLog/Cairn-Log-1.0.lua                 Leveled logger.
+  CairnLogWindow/Cairn-LogWindow-1.0.lua     UI viewer for the log buffer.
+  CairnDB/Cairn-DB-1.0.lua                   SavedVariables wrapper with profiles.
+  CairnSettings/Cairn-Settings-1.0.lua       Declarative schema + Blizzard panel bridge.
+  CairnAddon/Cairn-Addon-1.0.lua             Addon lifecycle helpers.
+  CairnSlash/Cairn-Slash-1.0.lua             Generic slash router for any addon.
+  CairnEditMode/Cairn-EditMode-1.0.lua       Optional LibEditMode wrapper (v0.2).
+  CairnLocale/Cairn-Locale-1.0.lua           Per-addon i18n with fallback (v0.2).
+  CairnSequencer/Cairn-Sequencer-1.0.lua     Composable step runner (v0.2).
+  CairnHooks/Cairn-Hooks-1.0.lua             Multi-callback hook helper (v0.2).
+  CairnTimer/Cairn-Timer-1.0.lua             Owner-grouped timers + named replacement (v0.2).
+  CairnComm/Cairn-Comm-1.0.lua               Addon-to-addon messaging via CHAT_MSG_ADDON (v0.2).
+  Cairn-Gui-1.0/                             Diesal-derived widget family (v1).
+    Cairn-Gui-1.0.lua                          Widget kit base.
+    Cairn-Gui-Tools-1.0/...                    Foundation utilities.
+    Cairn-Gui-Style-1.0/...                    Textures, outlines, fonts, media registration.
+    Cairn-Gui-Core-1.0/...                     12 widgets (Window, Button, CheckBox, ...).
+    Cairn-Gui-Menu-1.0/...                     Context-menu widgets on top of Core.
+  Cairn-Gui-2.0/                             v2 widget library + bundles.
+    Cairn-Gui-2.0.lua, Core/, Mixins/          Engine, primitives, layout, animation, theme.
+    Cairn-Gui-Widgets-Standard-2.0/...         Standard widget bundle (Button, Label, ...).
+    Cairn-Gui-Theme-Default-2.0/...            Default visual theme.
+  CairnSettingsPanel/Cairn-SettingsPanel-1.0.lua  Cairn.Gui renderer for Cairn.Settings schemas (v0.2).
+  CairnStandalone/Cairn-Standalone-1.0.lua   SavedVariables wiring + /cairn log subcommands.
+                                             Standalone-only; do NOT embed.
   README.md                       This file.
   LICENSE                         MIT.
 ```

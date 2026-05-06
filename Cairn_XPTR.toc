@@ -2,7 +2,7 @@
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
-## Version: 2
+## Version: 3
 ## X-Category: Library
 ## X-License: MIT
 ## X-Curse-Project-ID: 1532175
@@ -30,92 +30,61 @@
 # LibStub is the universal addon-library loader.
 Libs\LibStub\LibStub.lua
 
-# Cairn-Callback: standalone callback-registry library, exposed at
-# LibStub("Cairn-Callback-1.0"). NOT the backing for the CallbackHandler-1.0
-# shim below -- the two are independent (see shim header for history). The
-# `instances` table here is populated by the shim's :New hook so
-# Forge_Registry can enumerate live registries.
-Cairn-Callback-1.0.lua
-
-# CallbackHandler-1.0: a port of ElvUI's MINOR=8 variant, registered at
-# MINOR=7 so it loses to ElvUI's bundled copy when ElvUI is present and
-# wins against upstream WoWAce (MINOR=6) otherwise. See the file header
-# for the full ElvUI-race rationale.
+CairnCallback\Cairn-Callback-1.0.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
-
-# LibSharedMedia-3.0: LGPL v2.1; font/texture/sound registry. Vendored as-is
-# to avoid LGPL modification clauses, and because LSM's whole point is the
-# cross-addon shared registry. LibStub auto-wins the highest revision if
-# another addon embeds a newer copy.
 Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
 
 # Umbrella facade + /cairn slash router.
 Cairn.lua
 
-# v0.1 modules.
-Cairn-Events-1.0.lua
-Cairn-Log-1.0.lua
-Cairn-LogWindow-1.0.lua
-Cairn-DB-1.0.lua
-Cairn-Settings-1.0.lua
-Cairn-Addon-1.0.lua
-Cairn-Slash-1.0.lua
+# v0.1 modules. Each library lives in its own folder.
+CairnEvents\Cairn-Events-1.0.lua
+CairnLog\Cairn-Log-1.0.lua
+CairnLogWindow\Cairn-LogWindow-1.0.lua
+CairnDB\Cairn-DB-1.0.lua
+CairnSettings\Cairn-Settings-1.0.lua
+CairnAddon\Cairn-Addon-1.0.lua
+CairnSlash\Cairn-Slash-1.0.lua
 
 # v0.2 modules.
-Cairn-EditMode-1.0.lua
-Cairn-Locale-1.0.lua
-Cairn-Hooks-1.0.lua
-Cairn-Sequencer-1.0.lua
-Cairn-Timer-1.0.lua
-Cairn-Comm-1.0.lua
-Cairn-Gui-1.0.lua
-Cairn-SettingsPanel-1.0.lua
+CairnEditMode\Cairn-EditMode-1.0.lua
+CairnLocale\Cairn-Locale-1.0.lua
+CairnHooks\Cairn-Hooks-1.0.lua
+CairnSequencer\Cairn-Sequencer-1.0.lua
+CairnTimer\Cairn-Timer-1.0.lua
+CairnComm\Cairn-Comm-1.0.lua
+CairnSettingsPanel\Cairn-SettingsPanel-1.0.lua
 
-# Cairn-Gui-* family derived from Diesal libraries (BSD 3-clause).
-# Tools is the foundation utility module; Style brings textures, outlines,
-# fonts, and media registration. Core is the widget framework with 12
-# widgets (Window, Button, CheckBox, Input, ScrollFrame, Spinner,
-# DropDown, ComboBox, etc.). Menu adds context-menu widgets on top of Core.
-# See Diesal/ATTRIBUTION.md for provenance.
-Cairn-Gui-Tools-1.0.lua
-Cairn-Gui-Style-1.0\Cairn-Gui-Style-1.0.lua
-Cairn-Gui-Core-1.0\Cairn-Gui-Core-1.0.xml
-Cairn-Gui-Menu-1.0\Cairn-Gui-Menu-1.0.xml
+# Cairn-Gui-1.0 family derived from Diesal libraries (BSD 3-clause).
+Cairn-Gui-1.0\Cairn-Gui-1.0.lua
+Cairn-Gui-1.0\Cairn-Gui-Tools-1.0\Cairn-Gui-Tools-1.0.lua
+Cairn-Gui-1.0\Cairn-Gui-Style-1.0\Cairn-Gui-Style-1.0.lua
+Cairn-Gui-1.0\Cairn-Gui-Core-1.0\Cairn-Gui-Core-1.0.xml
+Cairn-Gui-1.0\Cairn-Gui-Menu-1.0\Cairn-Gui-Menu-1.0.xml
 
-# Cairn-Gui-2.0: parallel v2 widget library. Different LibStub MAJOR so it
-# coexists with Cairn-Gui-1.0; consumers pick which one to depend on.
-# See Cairn-Gui-2.0/ARCHITECTURE.md for the locked design (local-only file).
-# Load order matters: lib registration first, then Mixins (Base must exist
-# before Core/Acquire references it), then Core surface APIs.
+# Cairn-Gui-2.0: parallel v2 widget library.
 Cairn-Gui-2.0\Cairn-Gui-2.0.lua
 Cairn-Gui-2.0\Mixins\Base.lua
 Cairn-Gui-2.0\Core\Acquire.lua
 Cairn-Gui-2.0\Core\Theme.lua
 Cairn-Gui-2.0\Core\Events.lua
 Cairn-Gui-2.0\Core\Primitives.lua
+Cairn-Gui-2.0\Core\Animation.lua
 Cairn-Gui-2.0\Core\Layout.lua
-# Built-in layout strategies. Each registers itself against the Layout
-# registry. Register order doesn't matter; just load after Layout.lua.
 Cairn-Gui-2.0\Core\Layouts\Manual.lua
 Cairn-Gui-2.0\Core\Layouts\Fill.lua
 Cairn-Gui-2.0\Core\Layouts\Stack.lua
 
-# Cairn-Gui-Widgets-Standard-1.0: bundled widget set built on Cairn-Gui-2.0
-# Core. Separate LibStub MAJOR per Decision 11 so consumers can swap in
-# alternative bundles. Bundle anchor must load before any Widgets/*.lua file.
-Cairn-Gui-Widgets-Standard-1.0\Cairn-Gui-Widgets-Standard-1.0.lua
-# Container is a building block for Window; load it before Window.
-Cairn-Gui-Widgets-Standard-1.0\Widgets\Container.lua
-Cairn-Gui-Widgets-Standard-1.0\Widgets\Button.lua
-Cairn-Gui-Widgets-Standard-1.0\Widgets\Label.lua
-# Window depends on Container, Label, and Button being registered.
-Cairn-Gui-Widgets-Standard-1.0\Widgets\Window.lua
+# Cairn-Gui-Widgets-Standard-2.0: v2 widget bundle.
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Cairn-Gui-Widgets-Standard-2.0.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Container.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Button.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Label.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Window.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Checkbox.lua
 
-# Cairn-Gui-Theme-Default-1.0: default visual theme. Auto-activates on load.
-# Consumers can replace with an alternative theme bundle without touching
-# Core or any widget. Per Decision 11.
-Cairn-Gui-Theme-Default-1.0\Cairn-Gui-Theme-Default-1.0.lua
+# Cairn-Gui-Theme-Default-2.0: default visual theme.
+Cairn-Gui-2.0\Cairn-Gui-Theme-Default-2.0\Cairn-Gui-Theme-Default-2.0.lua
 
-# Standalone-only: SavedVariables persistence + /cairn log subcommands.
-# Do NOT include this file when embedding Cairn in another addon.
-Cairn-Standalone-1.0.lua
+# Standalone-only.
+CairnStandalone\Cairn-Standalone-1.0.lua

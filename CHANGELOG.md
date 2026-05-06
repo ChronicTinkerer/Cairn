@@ -8,7 +8,67 @@ run) on 2026-05-06. Higher integers are newer than any YYMMDDHHMM stamp.
 The format is loosely based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [3] — Cairn-Gui-2.0 Days 14 + 15B + source layout migration (2026-05-06)
+
+Big release. Bundles three feature days, two bug fixes, and a full source-tree reorganization. Driven by the Cairn-Gui-2.0 ARCHITECTURE.md plan plus a known-bug cleanup.
+
+Headline highlights:
+
+- **Cairn-Gui-2.0 Day 14 (Icon + Checkbox):** new `DrawIcon` primitive with atlas-first / file-path fallback, state-variant texture and color specs, `SetPrimitiveShown` helper. New `Checkbox` widget on top of it.
+- **Cairn-Gui-2.0 Day 15B (Animation engine + transition pre-wire):** new `Core/Animation.lua` with `Animate` / `CancelAnimations` API, four built-in easings, custom-easing registration. Per-widget OnUpdate parented to the widget frame so Blizzard auto-pauses ticking on Hide. The Primitives state machine animates state-variant color changes when a spec carries a `transition` token; every Button variant now fades on hover/press.
+- **Bugfix: pool-recycle state leak.** Acquire's pool path resets `_visualState` / `_hovering` / `_pressing` / `_disabled` and restores `frame:SetEnabled(true)` so a recycled widget paints at default and responds to clicks.
+- **Source layout: per-module folders.** All 18 previously-flat libraries moved into per-module folders. The v1 GUI family collapsed under `Cairn-Gui-1.0/`; the v2 GUI family collapsed under `Cairn-Gui-2.0/`. The two v2 bundles renamed from `*-1.0` to `*-2.0` to align bundle MAJORs with the Core they target.
+- **142 in-game / Python assertions** across 5 test suites all passing at release time.
+
+### Changed
+
+- **Source layout: per-module folders.** Every Cairn library now lives in
+  its own folder, replacing the previous mixed layout where some libs
+  were flat `.lua` files at the repo root and some were already foldered.
+  Folder naming uses the `CairnX/` short form (drops the LibStub-MAJOR
+  version suffix); existing already-foldered libraries keep their longer
+  `Cairn-X-1.0/` names. The umbrella facade `Cairn.lua` stays at the root.
+  - 16 flat libraries moved into `CairnCallback/`, `CairnEvents/`,
+    `CairnLog/`, `CairnLogWindow/`, `CairnDB/`, `CairnSettings/`,
+    `CairnAddon/`, `CairnSlash/`, `CairnEditMode/`, `CairnLocale/`,
+    `CairnHooks/`, `CairnSequencer/`, `CairnTimer/`, `CairnComm/`,
+    `CairnSettingsPanel/`, `CairnStandalone/`. The file inside each
+    folder keeps its LibStub-MAJOR-style name (e.g.,
+    `CairnEvents/Cairn-Events-1.0.lua`).
+  - **Cairn-Gui-1.0 family collapsed under a single container.** The v1
+    base file plus its components (Tools, Style, Core, Menu) all live
+    under `Cairn-Gui-1.0/` now, with each component in its own folder.
+    Source-tree cohesion for the Diesal-derived family.
+  - **Cairn-Gui-2.0 family collapsed under a single container.** The v2
+    bundles (`Cairn-Gui-Widgets-Standard-*`, `Cairn-Gui-Theme-Default-*`)
+    moved under `Cairn-Gui-2.0/` to mirror the v1 structure visually.
+
+- **Bundle MAJOR rename: 1.0 → 2.0** for the two v2 bundles, fixing the
+  longstanding naming mismatch where bundles built on Cairn-Gui-2.0 Core
+  were nonetheless named `*-1.0`. Both bundles always called
+  `LibStub("Cairn-Gui-2.0", true)` and hard-failed without the v2 Core,
+  so the on-disk and code-referenced MAJORs now line up.
+  - `Cairn-Gui-Widgets-Standard-1.0` → `Cairn-Gui-Widgets-Standard-2.0`.
+    MINOR resets to 1; previous MINOR history (Days 8-15B) preserved in
+    the file header as "history under previous MAJOR".
+  - `Cairn-Gui-Theme-Default-1.0` → `Cairn-Gui-Theme-Default-2.0`. Same
+    pattern: MINOR resets to 1 with previous-MAJOR history preserved.
+  - All 5 widget consumers (`Button.lua`, `Label.lua`, `Container.lua`,
+    `Window.lua`, `Checkbox.lua`) updated to call
+    `LibStub("Cairn-Gui-Widgets-Standard-2.0", true)`.
+
+- **All 5 TOCs rewritten** to reflect the new layout: `Cairn.toc`
+  (Retail), `Cairn_Mists.toc`, `Cairn_TBC.toc`, `Cairn_Vanilla.toc`,
+  `Cairn_XPTR.toc`. The 4 flavor TOCs were lagging behind Retail (missing
+  `Animation.lua` and `Checkbox.lua` from the [Unreleased] features
+  above); they're now fully in sync.
+
+- **No public API changes from this migration.** Consumers using
+  `LibStub("Cairn-X-1.0")` keep working — only the on-disk paths
+  changed. The bundle rename DOES change `LibStub` lookup names for
+  `Cairn-Gui-Widgets-Standard-*` and `Cairn-Gui-Theme-Default-*`;
+  consumers (rare; the bundles are usually consumed via Core) need to
+  switch from `-1.0` to `-2.0`.
 
 ### Fixed
 

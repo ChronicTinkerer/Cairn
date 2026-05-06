@@ -1,5 +1,5 @@
 --[[
-Cairn-Gui-Widgets-Standard-1.0 / Widgets / Label
+Cairn-Gui-Widgets-Standard-2.0 / Widgets / Label
 
 A static text widget. The simplest widget in the bundle: a Frame with a
 single FontString filling its bounds. No primitives, no events, no
@@ -56,7 +56,7 @@ when text changes (call layout's RelayoutNow if container needs a
 recompute after a long-text update).
 ]]
 
-local Bundle = LibStub("Cairn-Gui-Widgets-Standard-1.0", true)
+local Bundle = LibStub("Cairn-Gui-Widgets-Standard-2.0", true)
 if not Bundle then return end
 
 local Core = Bundle._core

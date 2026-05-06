@@ -1,5 +1,5 @@
 --[[
-Cairn-Gui-Widgets-Standard-1.0 / Widgets / Button
+Cairn-Gui-Widgets-Standard-2.0 / Widgets / Button
 
 The pilot widget. Pulls together everything Core (Cairn-Gui-2.0) ships:
 mixin namespace, Acquire/Release lifecycle, parent/child registry,
@@ -52,7 +52,7 @@ Status: Day 11 ships variants. Future days bring icon support, tooltip,
 loading state, and badge support.
 ]]
 
-local Bundle = LibStub("Cairn-Gui-Widgets-Standard-1.0", true)
+local Bundle = LibStub("Cairn-Gui-Widgets-Standard-2.0", true)
 if not Bundle then return end
 
 local Core = Bundle._core

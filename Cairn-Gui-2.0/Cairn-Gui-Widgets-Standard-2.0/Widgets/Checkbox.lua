@@ -1,5 +1,5 @@
 --[[
-Cairn-Gui-Widgets-Standard-1.0 / Widgets / Checkbox
+Cairn-Gui-Widgets-Standard-2.0 / Widgets / Checkbox
 
 Boolean toggle. A row containing a 16x16 box on the left and a label
 on the right; the whole row is clickable, with subtle hover/press
@@ -54,7 +54,7 @@ Status: Day 14 v1. Future enhancements: variant set (e.g. switch-style),
 indeterminate state, keyboard-focus ring.
 ]]
 
-local Bundle = LibStub("Cairn-Gui-Widgets-Standard-1.0", true)
+local Bundle = LibStub("Cairn-Gui-Widgets-Standard-2.0", true)
 if not Bundle then return end
 
 local Core = Bundle._core

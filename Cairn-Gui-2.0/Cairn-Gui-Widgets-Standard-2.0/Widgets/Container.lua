@@ -1,5 +1,5 @@
 --[[
-Cairn-Gui-Widgets-Standard-1.0 / Widgets / Container
+Cairn-Gui-Widgets-Standard-2.0 / Widgets / Container
 
 A bare Cairn-aware Frame for grouping. The minimal "I want to put
 widgets in a thing" widget. Optional bg / border so it can stand on
@@ -28,7 +28,7 @@ Status: Day 13. Used by Window for its title bar and content area as
 well as by external consumers who want a generic grouping primitive.
 ]]
 
-local Bundle = LibStub("Cairn-Gui-Widgets-Standard-1.0", true)
+local Bundle = LibStub("Cairn-Gui-Widgets-Standard-2.0", true)
 if not Bundle then return end
 
 local Core = Bundle._core

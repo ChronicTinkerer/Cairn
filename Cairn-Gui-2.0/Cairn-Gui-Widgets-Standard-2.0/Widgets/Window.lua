@@ -1,5 +1,5 @@
 --[[
-Cairn-Gui-Widgets-Standard-1.0 / Widgets / Window
+Cairn-Gui-Widgets-Standard-2.0 / Widgets / Window
 
 A top-level container with a title bar, optional close button, and a
 content area where consumers add their widgets. Drag-to-move enabled
@@ -59,7 +59,7 @@ time (consumer can SetSize after if desired). No modal mode. No focus
 ring. No keyboard escape-to-close. All deferrable.
 ]]
 
-local Bundle = LibStub("Cairn-Gui-Widgets-Standard-1.0", true)
+local Bundle = LibStub("Cairn-Gui-Widgets-Standard-2.0", true)
 if not Bundle then return end
 
 local Core = Bundle._core

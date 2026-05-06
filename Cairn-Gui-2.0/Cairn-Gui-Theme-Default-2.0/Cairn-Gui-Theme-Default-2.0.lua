@@ -1,5 +1,5 @@
 --[[
-Cairn-Gui-Theme-Default-1.0
+Cairn-Gui-Theme-Default-2.0
 
 The default theme for Cairn-Gui-2.0. Modern dark surfaces with a blue
 accent, designed to look at home in 2026 rather than 2010. The whole
@@ -7,6 +7,11 @@ palette is registered as theme name "Cairn.Default" and set as the
 active theme on load. Consumers can switch via:
 
 	LibStub("Cairn-Gui-2.0"):SetActiveTheme(otherName)
+
+The bundle's MAJOR matches the Core MAJOR it targets (2.0). Earlier the
+bundle was named Cairn-Gui-Theme-Default-1.0, which created confusion
+because it suggested the v1 family even though the LibStub call inside
+asked for v2 Core.
 
 Per Decision 11, this bundle is its own LibStub MAJOR. Consumers who
 want a different visual language can replace this bundle with one of
@@ -30,16 +35,19 @@ Tokens not registered here fall through to the library hardcoded
 defaults in Cairn-Gui-2.0/Core/Theme.lua DEFAULTS table.
 ]]
 
--- MINOR bumps:
+-- History under previous MAJOR (Cairn-Gui-Theme-Default-1.0):
 --   1: initial dark theme (Days 1-13).
 --   2: Day 14: texture.icon.check token registered for Checkbox.
-local MAJOR, MINOR = "Cairn-Gui-Theme-Default-1.0", 2
+--
+-- Cairn-Gui-Theme-Default-2.0 MINOR bumps:
+--   1: MAJOR rename only. No token / API changes from 1.0/MINOR=2.
+local MAJOR, MINOR = "Cairn-Gui-Theme-Default-2.0", 1
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
 local Core = LibStub("Cairn-Gui-2.0", true)
 if not Core then
-	error("Cairn-Gui-Theme-Default-1.0 requires Cairn-Gui-2.0; check Cairn.toc load order")
+	error("Cairn-Gui-Theme-Default-2.0 requires Cairn-Gui-2.0; check Cairn.toc load order")
 end
 
 if not Core:RequireCore("Cairn-Gui-2.0", 1) then

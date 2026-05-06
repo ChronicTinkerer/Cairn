@@ -1,4 +1,4 @@
-## Interface: 120005
+## Interface: 20505
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
@@ -6,12 +6,25 @@
 ## X-Category: Library
 ## X-License: MIT
 ## X-Curse-Project-ID: 1532175
-## X-Wago-ID: b6XemBKp
-## X-WoWI-ID: 27134
 ## SavedVariables: CairnLogSV
 ## OptionalDeps: LibEditMode
 ## DefaultState: enabled
 ## LoadOnDemand: 0
+
+# NOTE: X-Wago-ID and X-WoWI-ID intentionally omitted on the first TBC
+#       Anniversary ship. The BigWigs packager only uploads to sites
+#       whose project ID is present in the TOC, so the TBC zip publishes
+#       to CurseForge only. Add the two X-* lines once the flavor is
+#       validated in-game.
+# Interface 20505 verified against .build.info (Version 2.5.5.67157)
+# on 2026-05-05.
+#
+# Compatibility caveat: Cairn-EditMode-1.0 wraps the Retail EditMode
+# system and will be a no-op on this flavor (LibEditMode soft-deps
+# itself). Cairn-Settings-1.0 / Cairn-SettingsPanel-1.0 use the modern
+# Settings API; on TBC Anniversary 2.5.5 the Settings API is partial,
+# so anything dependent on it should fall back gracefully or be
+# omitted by the consumer addon.
 
 # LibStub is the universal addon-library loader.
 Libs\LibStub\LibStub.lua

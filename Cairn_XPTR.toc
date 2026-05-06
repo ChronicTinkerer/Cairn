@@ -1,4 +1,4 @@
-## Interface: 120005
+## Interface: 120007
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
@@ -6,12 +6,26 @@
 ## X-Category: Library
 ## X-License: MIT
 ## X-Curse-Project-ID: 1532175
-## X-Wago-ID: b6XemBKp
-## X-WoWI-ID: 27134
 ## SavedVariables: CairnLogSV
 ## OptionalDeps: LibEditMode
 ## DefaultState: enabled
 ## LoadOnDemand: 0
+
+# NOTE: X-Wago-ID and X-WoWI-ID intentionally omitted on this XPTR ship.
+#       XPTR audience is essentially developers only; CF can host it on
+#       the Retail PTR slot via the Interface line. Add Wago/WoWI IDs
+#       only if there's a specific reason.
+# Interface 120007 verified against .build.info (Version 12.0.7.67360)
+# on 2026-05-05.
+# NOTE: BigWigs packager doesn't have a standard _XPTR suffix convention.
+#       The packager will build the zip from this TOC's Interface line
+#       (120007) and CurseForge will tag the upload to whichever PTR
+#       game-version slot matches that build. If the packager errors on
+#       the suffix, add `wow-versions: [wowxptr]` to .pkgmeta.
+#
+# Compatibility: same surface as Mainline (120005) — XPTR is just the
+# next-feature-flag PTR. Cairn-EditMode-1.0 / Cairn-Settings-1.0 /
+# Cairn-SettingsPanel-1.0 should all work identically.
 
 # LibStub is the universal addon-library loader.
 Libs\LibStub\LibStub.lua

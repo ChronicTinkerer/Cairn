@@ -1,4 +1,4 @@
-## Interface: 120005
+## Interface: 50503
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
@@ -6,12 +6,23 @@
 ## X-Category: Library
 ## X-License: MIT
 ## X-Curse-Project-ID: 1532175
-## X-Wago-ID: b6XemBKp
-## X-WoWI-ID: 27134
 ## SavedVariables: CairnLogSV
 ## OptionalDeps: LibEditMode
 ## DefaultState: enabled
 ## LoadOnDemand: 0
+
+# NOTE: X-Wago-ID and X-WoWI-ID intentionally omitted on the first MoP
+#       Classic ship. The BigWigs packager only uploads to sites whose
+#       project ID is present in the TOC, so the Mists zip publishes to
+#       CurseForge only. Add the two X-* lines once the flavor is
+#       validated in-game.
+# Interface 50503 verified against .build.info (Version 5.5.3.67158)
+# on 2026-05-05.
+#
+# Compatibility caveat: Cairn-EditMode-1.0 wraps the Retail EditMode
+# system and will be a no-op on this flavor (LibEditMode soft-deps
+# itself). Cairn-Settings-1.0 uses the modern Settings API which MoP
+# Classic 5.5.3 has — should work but unverified at first ship.
 
 # LibStub is the universal addon-library loader.
 Libs\LibStub\LibStub.lua

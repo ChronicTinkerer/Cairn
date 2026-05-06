@@ -8,6 +8,46 @@ run) on 2026-05-06. Higher integers are newer than any YYMMDDHHMM stamp.
 The format is loosely based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Multi-flavor support.** Cairn now ships per-flavor TOCs covering
+  every WoW client Steven's project supports:
+  - `Cairn.toc` — Mainline / Retail (Interface 120005)
+  - `Cairn_Mists.toc` — MoP Classic (Interface 50503)
+  - `Cairn_TBC.toc` — TBC Anniversary (Interface 20505)
+  - `Cairn_Vanilla.toc` — Classic Era / Hardcore (Interface 11508)
+  - `Cairn_XPTR.toc` — Experimental PTR (Interface 120007)
+
+  All five TOCs share the same file load order. The BigWigs packager
+  picks each TOC up by suffix and produces a separate per-flavor zip.
+  Existing single-TOC consumers (Pattern B / vendored) keep working
+  against `Cairn.toc` as before.
+
+### Changed
+
+- **Mainline `Cairn.toc` `## Interface:` line** trimmed from the
+  comma-separated multi-interface form
+  (`120005, 50503, 20505, 11508, 120007`) to just `120005`. Per-flavor
+  TOCs now declare each Interface number on their own.
+- **`.dev/release.ps1`** `$FilesToBump` lists all 5 TOCs so every release
+  bumps them in lockstep. Adding a new flavor in the future is a single
+  array entry; retiring one is a single deletion.
+
+### Notes
+
+- **First-ship distribution policy** — the four new flavor TOCs omit
+  `X-Wago-ID` and `X-WoWI-ID` so the BigWigs packager only uploads them
+  to CurseForge. Once each flavor is validated in-game, add the two
+  X-* lines to enable Wago + WoWI publishing on subsequent releases.
+- **Compatibility caveats per flavor** are documented at the top of
+  each per-flavor TOC. Headline: `Cairn-EditMode-1.0` is Retail-only
+  and no-ops on Classic flavors via LibEditMode's optional dep.
+  `Cairn-Settings-1.0` / `Cairn-SettingsPanel-1.0` lean on the modern
+  Settings API which is partially supported on Vanilla / TBC; consumer
+  addons should treat Settings registration as best-effort there.
+
 ## [1] — Cairn-Gui-2.0 + sequential versioning (2026-05-06)
 
 First release under the sequential build-number convention. Bundles the

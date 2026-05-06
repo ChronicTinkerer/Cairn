@@ -95,6 +95,12 @@ luacov.*.out
 .pkgmeta-cache/
 *.zip
 
+# ----------------------------------------------------- Dev tooling folder
+# All dev-local artifacts (release.ps1, future tools, intermediate dumps,
+# caches, configs) live under .dev/ at the repo root per the project-wide
+# convention. One folder, one ignore line, one .pkgmeta exclusion.
+.dev/
+
 # ---------------------------------------------------------- PowerShell scripts
 # Local-only convenience scripts. The GitHub Actions release workflow calls
 # BigWigs packager directly and does NOT execute any .ps1 from the repo.

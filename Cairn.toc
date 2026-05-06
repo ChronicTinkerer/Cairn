@@ -2,7 +2,7 @@
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
-## Version: 2605041952
+## Version: 1
 ## X-Category: Library
 ## X-License: MIT
 ## X-Curse-Project-ID: 1532175
@@ -90,7 +90,12 @@ Cairn-Gui-2.0\Core\Layouts\Stack.lua
 # Core. Separate LibStub MAJOR per Decision 11 so consumers can swap in
 # alternative bundles. Bundle anchor must load before any Widgets/*.lua file.
 Cairn-Gui-Widgets-Standard-1.0\Cairn-Gui-Widgets-Standard-1.0.lua
+# Container is a building block for Window; load it before Window.
+Cairn-Gui-Widgets-Standard-1.0\Widgets\Container.lua
 Cairn-Gui-Widgets-Standard-1.0\Widgets\Button.lua
+Cairn-Gui-Widgets-Standard-1.0\Widgets\Label.lua
+# Window depends on Container, Label, and Button being registered.
+Cairn-Gui-Widgets-Standard-1.0\Widgets\Window.lua
 
 # Cairn-Gui-Theme-Default-1.0: default visual theme. Auto-activates on load.
 # Consumers can replace with an alternative theme bundle without touching

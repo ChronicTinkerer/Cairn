@@ -1,9 +1,9 @@
 name: Release
 
-# Triggers on a pushed tag of any name. Recommended convention is a
-# YYMMDDHHMM build stamp matching the .toc Version, optionally `v`-prefixed
-# (e.g. `2605051800` or `v2605051800`). Pushing a tag is the only way a
-# release ever ships -- pushes to main do nothing.
+# Triggers on a pushed tag of any name. Convention is the sequential build
+# number that matches the .toc Version (e.g. `1`, `2`, ... bumped by
+# .dev/release.ps1). Optionally `v`-prefixed. Pushing a tag is the only
+# way a release ever ships -- pushes to main do nothing.
 on:
   push:
     tags:

@@ -7,25 +7,26 @@
 package-as: Cairn
 
 # Don't ship dev/build infrastructure or editor state to end users.
+#  - .dev/         All dev-local artifacts: release.ps1, intermediate dumps,
+#                  caches, configs. One folder, one ignore line.
 #  - SESSION_NOTES.md is project-internal, not user-facing
-#  - release.ps1 is a developer tool, not part of the addon
 #  - editor/IDE folders never ship
 #  - scratch/tmp dirs are local workspace junk
 ignore:
+  - .dev
   - .vscode
   - .idea
   - SESSION_NOTES.md
-  - release.ps1
   - "*.bat"
   - "*.ps1"
   - scratch
   - tmp
 
 # We do NOT use @project-version@ substitution in the .toc -- the version
-# field carries our YYMMDDHHMM build stamp and is bumped manually (or via
-# release.ps1) on every edit. The packager will leave a hardcoded
-# `## Version:` line untouched, so no `enable-toc-creation` or
-# `move-out-of-package-as` directives are needed.
+# field carries our sequential build number (+1 per .dev/release.ps1 run,
+# replacing the legacy YYMMDDHHMM stamp on 2026-05-06). The packager will
+# leave a hardcoded `## Version:` line untouched, so no `enable-toc-creation`
+# or `move-out-of-package-as` directives are needed.
 
 # License is MIT; ship it inside the package so embedders see it.
 # (LICENSE is at the repo root and lives inside package-as by default.)

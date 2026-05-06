@@ -5,10 +5,17 @@
 Cairn is a small collection of independent, modern Lua libraries for WoW
 addon authors. Pick the pieces you need, leave the rest.
 
-It targets **WoW Retail (Midnight, Interface 120005)** and is positioned as
-a fresh alternative to Ace3 — not a successor, not a fork. The libraries
-are designed to be useful on their own, including alongside Ace3 if you're
-already invested.
+It targets every shipping WoW client via per-flavor TOCs:
+
+- **Retail / Mainline** — Interface `120005`
+- **MoP Classic** — Interface `50503`
+- **TBC Anniversary** — Interface `20505`
+- **Classic Era / Hardcore** — Interface `11508`
+- **Experimental PTR (XPTR)** — Interface `120007`
+
+Cairn is positioned as a fresh alternative to Ace3 — not a successor, not
+a fork. The libraries are designed to be useful on their own, including
+alongside Ace3 if you're already invested.
 
 **Status:** v0.2.0-dev. v0.1.0 shipped: `Cairn.Events`, `Cairn.Log`,
 `Cairn.LogWindow`, `Cairn.DB`, `Cairn.Settings`, `Cairn.Addon`,
@@ -62,14 +69,31 @@ Cairn supports two distribution modes. Both expose the same `Cairn.X` API.
 
 ### Mode 1: Standalone (recommended for end users)
 
-1. Copy the `Cairn/` folder into:
-   `World of Warcraft\_retail_\Interface\AddOns\Cairn\`
+1. Copy the `Cairn/` folder into the `Interface\AddOns\` directory of
+   whichever flavor(s) you play:
+   - Retail: `World of Warcraft\_retail_\Interface\AddOns\Cairn\`
+   - MoP Classic: `World of Warcraft\_classic_\Interface\AddOns\Cairn\`
+   - TBC Anniversary: `World of Warcraft\_anniversary_\Interface\AddOns\Cairn\`
+   - Classic Era / Hardcore: `World of Warcraft\_classic_era_\Interface\AddOns\Cairn\`
+   - Experimental PTR: `World of Warcraft\_xptr_\Interface\AddOns\Cairn\`
+
+   The published zip ships separate per-flavor builds (CurseForge picks
+   the right one automatically). The folder content is identical; the
+   client picks the matching `Cairn_<flavor>.toc` for its Interface
+   number, falling back to `Cairn.toc`.
 2. Make sure Cairn is enabled in your in-game AddOns list.
 3. Optionally install [LibEditMode](https://www.curseforge.com/wow/addons/libeditmode)
-   from CurseForge if you want EditMode integration to work.
+   from CurseForge if you want EditMode integration to work
+   (Retail-only — no-ops on Classic flavors).
 4. Any addon that depends on Cairn loads after it automatically.
 
 After login, type `/cairn` to see the available subcommands.
+
+**Compatibility notes for Classic flavors:** `Cairn.EditMode` no-ops on
+non-Retail. `Cairn.Settings` / `Cairn.SettingsPanel` use the modern
+Settings API which is partially supported on Vanilla 1.15.x and TBC
+Anniversary 2.5.5; consumer addons should treat Settings registration as
+best-effort there.
 
 ### Mode 2: Embedded (recommended for addon authors shipping a single zip)
 
@@ -941,7 +965,13 @@ are fine).
 
 ```
 Cairn/
-  Cairn.toc                       Manifest. Lists module files in load order.
+  Cairn.toc                       Mainline / Retail manifest (Interface 120005).
+  Cairn_Mists.toc                 MoP Classic manifest (Interface 50503).
+  Cairn_TBC.toc                   TBC Anniversary manifest (Interface 20505).
+  Cairn_Vanilla.toc               Classic Era / Hardcore manifest (Interface 11508).
+  Cairn_XPTR.toc                  Experimental PTR manifest (Interface 120007).
+                                  All five share the same load order.
+  CHANGELOG.md                    Release notes (Keep a Changelog format).
   Libs/LibStub/LibStub.lua        Vendored standard LibStub. Public domain.
   Cairn.lua                       Umbrella facade + /cairn slash router.
   Cairn-Events-1.0.lua            Event subscription.

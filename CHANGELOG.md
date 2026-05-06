@@ -8,7 +8,7 @@ run) on 2026-05-06. Higher integers are newer than any YYMMDDHHMM stamp.
 The format is loosely based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2] — Multi-flavor TOCs (2026-05-06)
 
 ### Added
 

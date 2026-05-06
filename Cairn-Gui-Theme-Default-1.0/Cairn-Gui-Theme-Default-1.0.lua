@@ -30,7 +30,10 @@ Tokens not registered here fall through to the library hardcoded
 defaults in Cairn-Gui-2.0/Core/Theme.lua DEFAULTS table.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Theme-Default-1.0", 1
+-- MINOR bumps:
+--   1: initial dark theme (Days 1-13).
+--   2: Day 14: texture.icon.check token registered for Checkbox.
+local MAJOR, MINOR = "Cairn-Gui-Theme-Default-1.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -139,6 +142,14 @@ Core:RegisterTheme("Cairn.Default", {
 		["duration.fast"]                    = 0.12,
 		["duration.normal"]                  = 0.20,
 		["duration.slow"]                    = 0.35,
+
+		-- ====== Textures ==============================================
+		-- Atlas keys preferred. DrawIcon tries C_Texture.GetAtlasInfo
+		-- first, falls back to SetTexture for file paths. The check atlas
+		-- is a clean white glyph on transparent, suitable for tinting via
+		-- color.accent.primary or a state-variant color spec.
+
+		["texture.icon.check"]               = "common-icon-checkmark",
 	},
 })
 

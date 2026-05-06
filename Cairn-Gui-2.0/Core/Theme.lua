@@ -170,6 +170,10 @@ local DEFAULTS = {
 	["duration.fast"]        = 0.15,
 	["duration.normal"]      = 0.25,
 	["duration.slow"]        = 0.40,
+
+	-- Texture defaults. Atlas keys preferred; DrawIcon tries
+	-- C_Texture.GetAtlasInfo first and falls back to file paths.
+	["texture.icon.check"]   = "common-icon-checkmark",
 }
 
 lib._defaults    = lib._defaults    or DEFAULTS

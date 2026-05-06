@@ -20,10 +20,14 @@ Load order in Cairn.toc:
 Widget files use LibStub("Cairn-Gui-2.0") to get Core, then call
 Core:RegisterWidget(name, def) to register themselves.
 
-Status: Day 8. Button is the first widget; more land in subsequent days.
+Status: Day 14. Button + Label + Container + Window + Checkbox.
+
+MINOR bumps:
+	1: Days 8-13 (Button, Label, Container, Window).
+	2: Day 14: Checkbox (uses Core MINOR 2's DrawIcon).
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-1.0", 1
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-1.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -35,8 +39,9 @@ end
 -- Verify Core is at a compatible revision. RequireCore returns false on
 -- mismatch and routes a chat error through Cairn-Log; we abort the
 -- bundle's registration in that case so misaligned versions don't ship
--- partial widget sets.
-if not Core:RequireCore("Cairn-Gui-2.0", 1) then
+-- partial widget sets. Bump the minimum here when a widget starts using
+-- a Core API added in a later MINOR (Day 14: DrawIcon needs Core >= 2).
+if not Core:RequireCore("Cairn-Gui-2.0", 2) then
 	return
 end
 

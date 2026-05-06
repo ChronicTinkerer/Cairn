@@ -24,7 +24,14 @@ Verification (Day 1 success criterion):
 	/dump LibStub("Cairn-Gui-2.0")  -- returns a table (this file)
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-2.0", 1
+-- MINOR bumps:
+--   1: Days 1-13 build (registries, Acquire, theme cascade, Rect/Border
+--      primitives + state machine, Events, Layout, three layout strategies,
+--      Standard widget bundle pilot).
+--   2: Day 14: DrawIcon primitive (atlas-first, file-path fallback, sized
+--      anchor + tint) and SetPrimitiveShown helper. State variants on
+--      icons supported. Texture pool stays per-record-update like Rect.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

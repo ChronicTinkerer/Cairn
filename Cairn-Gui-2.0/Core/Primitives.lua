@@ -18,6 +18,25 @@ Public API on widget.Cairn (added to Mixins.Base by this file):
 		opts.width  = pixel thickness (default 1).
 		opts.layer  overrides the default "BORDER" draw layer.
 
+	widget.Cairn:DrawIcon(slot, textureSpec, opts?)
+		Sized + anchored texture region inside the frame. textureSpec
+		resolves to a string (token-name first via theme cascade, then
+		used as-is). The string is tried as an atlas key first, then as
+		a file path. State-variant texture maps switch the source on
+		state change. Empty/nil string hides the icon.
+
+		opts.size      = number | length-token, square edge (default 16)
+		opts.width     = number | length-token, overrides opts.size
+		opts.height    = number | length-token, overrides opts.size
+		opts.anchor    = "CENTER"|"LEFT"|"RIGHT"|"TOP"|"BOTTOM"|
+		                 "TOPLEFT"|"TOPRIGHT"|"BOTTOMLEFT"|"BOTTOMRIGHT"
+		                 (default "CENTER")
+		opts.offsetX   = number, default 0
+		opts.offsetY   = number, default 0
+		opts.color     = optional color spec (string token | tuple |
+		                 state-variant table). nil = untinted (white).
+		opts.layer     = string, default "ARTWORK"
+
 	widget.Cairn:SetVisualState(state)
 		Switch the widget to "default" | "hover" | "pressed" | "disabled".
 		Re-applies token values to every primitive.
@@ -29,6 +48,11 @@ Public API on widget.Cairn (added to Mixins.Base by this file):
 		this after a theme change or per-instance override.
 
 	widget.Cairn:GetPrimitive(slot) -> internal record (for tests)
+
+	widget.Cairn:SetPrimitiveShown(slot, shown)
+		Show/hide every texture in a primitive. Useful for toggling
+		an Icon (e.g. a checkmark when checked) without redrawing.
+		No-op for unknown slots.
 
 The `spec` argument to Draw* methods accepts three shapes:
 
@@ -59,12 +83,15 @@ Day 7 additions (state machine):
 	  Frame:SetEnabled when present, and forces a repaint.
 
 Status:
-	- Rect, Border ship.
+	- Rect, Border, Icon ship.
 	- State variants drive automatic transitions on actual hover/press.
+	  Icons support state-variant texture maps in addition to color tints.
+	- Atlas resolution shipped for Icon (C_Texture.GetAtlasInfo first,
+	  file path fallback). Same fallback chain will extend to Rect/Border
+	  once 9-slice ships.
 	- No automatic repaint on SetActiveTheme or SetTokenOverride; call
 	  :Repaint() explicitly. Lazy repaint queue is a Decision-5 follow-up.
-	- Icon, Divider, Glow, Mask come later. So do atlas resolution and
-	  9-slice for radius support.
+	- Divider, Glow, Mask come later. So does 9-slice for radius support.
 ]]
 
 local MAJOR, MINOR = "Cairn-Gui-2.0", 1
@@ -140,6 +167,78 @@ local function ensurePrimitives(self)
 	return self._primitives, self._primitiveList
 end
 
+-- ----- Texture spec resolution (Icon) ----------------------------------
+-- Resolve a spec to a final texture string for the given visual state.
+-- Returns the resolved string, or nil if the spec didn't yield one.
+-- Strings: try as token name first; if no token resolution, return as-is.
+-- State-variant tables: pick the entry for `state` (fall back to default),
+-- then resolve as a string. Anything else returns nil.
+local function resolveTextureSpec(widgetCairn, spec, state)
+	local raw
+	if type(spec) == "string" then
+		raw = lib:ResolveToken(spec, widgetCairn)
+		if type(raw) ~= "string" then raw = spec end
+	elseif type(spec) == "table" and looksLikeStateMap(spec) then
+		local entry = spec[state]
+		if entry == nil then entry = spec.default end
+		if type(entry) == "string" then
+			raw = lib:ResolveToken(entry, widgetCairn)
+			if type(raw) ~= "string" then raw = entry end
+		end
+	end
+	if type(raw) == "string" then return raw end
+	return nil
+end
+
+-- Resolve a length-typed value: a literal number passes through; a string
+-- resolves through the theme cascade and is accepted only if it resolves
+-- to a number. Anything else returns nil.
+local function resolveLength(widgetCairn, v)
+	if type(v) == "number" then return v end
+	if type(v) == "string" then
+		local resolved = lib:ResolveToken(v, widgetCairn)
+		if type(resolved) == "number" then return resolved end
+	end
+	return nil
+end
+
+-- Atlas-first, file-path fallback application of a texture source string.
+-- Empty/nil sources hide the texture rather than blanking it.
+local function applyTextureSource(texture, source)
+	if not source or source == "" then
+		if texture.Hide then texture:Hide() end
+		return
+	end
+	local atlasInfo
+	if C_Texture and C_Texture.GetAtlasInfo then
+		atlasInfo = C_Texture.GetAtlasInfo(source)
+	end
+	if atlasInfo then
+		texture:SetAtlas(source)
+	else
+		texture:SetTexture(source)
+	end
+	if texture.Show then texture:Show() end
+end
+
+-- Re-resolve a primitive record's spec(s) for the given state and apply.
+-- Single point of dispatch by record kind so the state machine, Repaint,
+-- and the DrawX entry points all behave consistently.
+local function applyRecord(self, rec, state)
+	if rec.kind == "rect" or rec.kind == "border" then
+		applyColor(rec.textures, resolveSpec(self, rec.spec, state))
+	elseif rec.kind == "icon" then
+		local source = resolveTextureSpec(self, rec.spec, state)
+		applyTextureSource(rec.textures[1], source)
+		if rec.colorSpec then
+			applyColor(rec.textures, resolveSpec(self, rec.colorSpec, state))
+		else
+			-- No tint requested: render the icon at its native color.
+			rec.textures[1]:SetVertexColor(1, 1, 1, 1)
+		end
+	end
+end
+
 -- ----- Interactive state machine ---------------------------------------
 -- Driven by _hovering / _pressing / _disabled flags. The flags are
 -- toggled by hook scripts on the underlying frame (OnEnter/OnLeave/
@@ -167,7 +266,7 @@ local function recomputeVisualState(self)
 			for _, slot in ipairs(self._primitiveList) do
 				local rec = self._primitives[slot]
 				if rec then
-					applyColor(rec.textures, resolveSpec(self, rec.spec, newState))
+					applyRecord(self, rec, newState)
 				end
 			end
 		end
@@ -341,7 +440,7 @@ function Base:Repaint()
 	for _, slot in ipairs(self._primitiveList) do
 		local rec = self._primitives[slot]
 		if rec then
-			applyColor(rec.textures, resolveSpec(self, rec.spec, state))
+			applyRecord(self, rec, state)
 		end
 	end
 end
@@ -371,4 +470,93 @@ end
 
 function Base:IsEnabled()
 	return not self._disabled
+end
+
+-- ----- DrawIcon --------------------------------------------------------
+
+local DEFAULT_ICON_SIZE  = 16
+local DEFAULT_ICON_LAYER = "ARTWORK"
+
+local VALID_ANCHORS = {
+	CENTER = true, LEFT = true, RIGHT = true, TOP = true, BOTTOM = true,
+	TOPLEFT = true, TOPRIGHT = true, BOTTOMLEFT = true, BOTTOMRIGHT = true,
+}
+
+function Base:DrawIcon(slot, spec, opts)
+	if type(slot) ~= "string" or slot == "" then
+		error("DrawIcon: slot must be a non-empty string", 2)
+	end
+	local frame = self._frame
+	if not frame or not frame.CreateTexture then return end
+
+	opts         = opts or {}
+	local layer  = opts.layer or DEFAULT_ICON_LAYER
+	local anchor = opts.anchor or "CENTER"
+	if not VALID_ANCHORS[anchor] then
+		error(("DrawIcon: invalid anchor %q (CENTER/LEFT/RIGHT/TOP/BOTTOM/TOPLEFT/TOPRIGHT/BOTTOMLEFT/BOTTOMRIGHT)"):format(tostring(anchor)), 2)
+	end
+	local offsetX = opts.offsetX or 0
+	local offsetY = opts.offsetY or 0
+
+	-- Size: width / height override size. Each accepts a number or a
+	-- length-token string. Falls back to DEFAULT_ICON_SIZE.
+	local size = resolveLength(self, opts.size)   or DEFAULT_ICON_SIZE
+	local w    = resolveLength(self, opts.width)  or size
+	local h    = resolveLength(self, opts.height) or size
+
+	local prims, list = ensurePrimitives(self)
+	local rec = prims[slot]
+
+	if not rec or rec.kind ~= "icon" then
+		-- Fresh create. As with other primitives, if a different-kind
+		-- record previously occupied this slot we replace it; the old
+		-- texture leaks visually until covered, but is unreferenced.
+		local tex = frame:CreateTexture(nil, layer)
+		rec = {
+			kind      = "icon",
+			textures  = { tex },
+			spec      = spec,
+			opts      = opts,
+			colorSpec = opts.color,
+		}
+		prims[slot] = rec
+		list[#list + 1] = slot
+	else
+		-- Update existing in-place.
+		rec.spec      = spec
+		rec.opts      = opts
+		rec.colorSpec = opts.color
+		rec.textures[1]:SetDrawLayer(layer)
+	end
+
+	-- Position + size on every call (caller may have changed anchor/offsets).
+	local tex = rec.textures[1]
+	tex:ClearAllPoints()
+	tex:SetPoint(anchor, frame, anchor, offsetX, offsetY)
+	tex:SetSize(w, h)
+
+	-- Auto-enable interactive state when either spec carries variants;
+	-- single-token / literal specs don't need hover/press hooks.
+	if looksLikeStateMap(spec) or looksLikeStateMap(opts.color) then
+		enableInteractiveState(self)
+	end
+
+	-- Apply texture source + tint via the shared dispatcher.
+	applyRecord(self, rec, self._visualState or "default")
+
+	return rec
+end
+
+-- ----- SetPrimitiveShown -----------------------------------------------
+-- Show/hide every texture in a named primitive. Used by widgets that need
+-- to toggle a glyph (e.g. a check icon when checked) without redrawing.
+-- No-op if the slot doesn't exist.
+
+function Base:SetPrimitiveShown(slot, shown)
+	local rec = self._primitives and self._primitives[slot]
+	if not rec then return end
+	local visible = shown and true or false
+	for _, t in ipairs(rec.textures) do
+		if t.SetShown then t:SetShown(visible) end
+	end
 end

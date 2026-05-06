@@ -96,6 +96,8 @@ Cairn-Gui-Widgets-Standard-1.0\Widgets\Button.lua
 Cairn-Gui-Widgets-Standard-1.0\Widgets\Label.lua
 # Window depends on Container, Label, and Button being registered.
 Cairn-Gui-Widgets-Standard-1.0\Widgets\Window.lua
+# Day 14: Checkbox uses Core MINOR 2's DrawIcon for the check glyph.
+Cairn-Gui-Widgets-Standard-1.0\Widgets\Checkbox.lua
 
 # Cairn-Gui-Theme-Default-1.0: default visual theme. Auto-activates on load.
 # Consumers can replace with an alternative theme bundle without touching

@@ -221,17 +221,59 @@ local function applyTextureSource(texture, source)
 	if texture.Show then texture:Show() end
 end
 
+-- Read a state-variant spec's `transition` token (Day 15 slice B).
+-- Returns (durationSeconds, easingName) or (nil, nil) if no transition is
+-- configured. The token can be a duration token name (resolved through
+-- the cascade) or a literal number; an optional `ease` sibling key
+-- supplies the easing name. Any non-positive duration disables the
+-- transition (treated as snap).
+local function readTransition(self, spec)
+	if type(spec) ~= "table" or spec.transition == nil then return nil, nil end
+	local raw = spec.transition
+	if type(raw) == "string" then
+		raw = lib:ResolveToken(raw, self)
+	end
+	if type(raw) ~= "number" or raw <= 0 then return nil, nil end
+	local ease = spec.ease
+	if ease ~= nil and type(ease) ~= "string" then ease = nil end
+	return raw, ease
+end
+
 -- Re-resolve a primitive record's spec(s) for the given state and apply.
 -- Single point of dispatch by record kind so the state machine, Repaint,
 -- and the DrawX entry points all behave consistently.
-local function applyRecord(self, rec, state)
+--
+-- options.transition (number, seconds): if set and self has the
+--   _animatePrimitiveColor method (Animation.lua loaded), color changes
+--   animate over this duration. Otherwise the new color snaps. Source
+--   changes on icons (state-variant texture) always snap.
+-- options.ease (string): easing name passed through to the animation.
+local function applyRecord(self, slot, rec, state, options)
+	options = options or {}
+	local transition = options.transition
+	local ease       = options.ease
+	local canAnimate = transition and transition > 0 and type(self._animatePrimitiveColor) == "function"
+
 	if rec.kind == "rect" or rec.kind == "border" then
-		applyColor(rec.textures, resolveSpec(self, rec.spec, state))
+		local color = resolveSpec(self, rec.spec, state)
+		if canAnimate and type(color) == "table" then
+			self:_animatePrimitiveColor(slot, color, transition, ease)
+		else
+			applyColor(rec.textures, color)
+		end
 	elseif rec.kind == "icon" then
+		-- Source change (state-variant texture spec) always snaps; v1
+		-- doesn't fade between atlases. Color tint, however, animates
+		-- when the colorSpec carries a transition.
 		local source = resolveTextureSpec(self, rec.spec, state)
 		applyTextureSource(rec.textures[1], source)
 		if rec.colorSpec then
-			applyColor(rec.textures, resolveSpec(self, rec.colorSpec, state))
+			local color = resolveSpec(self, rec.colorSpec, state)
+			if canAnimate and type(color) == "table" then
+				self:_animatePrimitiveColor(slot, color, transition, ease)
+			else
+				applyColor(rec.textures, color)
+			end
 		else
 			-- No tint requested: render the icon at its native color.
 			rec.textures[1]:SetVertexColor(1, 1, 1, 1)
@@ -243,6 +285,34 @@ end
 -- Driven by _hovering / _pressing / _disabled flags. The flags are
 -- toggled by hook scripts on the underlying frame (OnEnter/OnLeave/
 -- OnMouseDown/OnMouseUp) when interactive state is enabled.
+
+-- Walk every primitive on the widget and apply it for `state`. Per-record
+-- transitions are honored so different primitives can transition at
+-- different speeds (or not at all). Shared between the state machine
+-- and SetVisualState so consumers / tests get the same animated path.
+local function applyAllForState(self, state)
+	if not self._primitives then return end
+	for _, slot in ipairs(self._primitiveList) do
+		local rec = self._primitives[slot]
+		if rec then
+			-- For icons, the transition lives on the colorSpec (the
+			-- texture source itself doesn't animate in v1). For
+			-- rect/border, the transition lives on the spec.
+			local specForTransition
+			if rec.kind == "icon" then
+				specForTransition = rec.colorSpec
+			else
+				specForTransition = rec.spec
+			end
+			local dur, ease = readTransition(self, specForTransition)
+			if dur then
+				applyRecord(self, slot, rec, state, { transition = dur, ease = ease })
+			else
+				applyRecord(self, slot, rec, state)
+			end
+		end
+	end
+end
 
 -- Priority: disabled > pressed-while-hovering > hovering > default.
 -- Pressed without hovering means the user dragged off the widget while
@@ -260,16 +330,7 @@ local function recomputeVisualState(self)
 	end
 	if newState ~= self._visualState then
 		self._visualState = newState
-		-- Repaint inline; skip the public Repaint to avoid the iteration
-		-- when we've already computed the new state right here.
-		if self._primitives then
-			for _, slot in ipairs(self._primitiveList) do
-				local rec = self._primitives[slot]
-				if rec then
-					applyRecord(self, rec, newState)
-				end
-			end
-		end
+		applyAllForState(self, newState)
 	end
 end
 
@@ -345,7 +406,10 @@ function Base:DrawRect(slot, spec, opts)
 		enableInteractiveState(self)
 	end
 
-	applyColor(rec.textures, resolveSpec(self, spec, self._visualState or "default"))
+	-- Initial paint snaps (no transition) so the user sees the starting
+	-- state immediately. State CHANGES go through recomputeVisualState
+	-- which honors the transition token.
+	applyRecord(self, slot, rec, self._visualState or "default")
 	return rec
 end
 
@@ -414,18 +478,26 @@ function Base:DrawBorder(slot, spec, opts)
 		enableInteractiveState(self)
 	end
 
-	applyColor(rec.textures, resolveSpec(self, spec, self._visualState or "default"))
+	-- Initial paint snaps; state changes via the state machine animate
+	-- if the spec carries a transition token.
+	applyRecord(self, slot, rec, self._visualState or "default")
 	return rec
 end
 
 -- ----- SetVisualState / GetVisualState ---------------------------------
 
+-- SetVisualState honors transitions: a state change triggers animation
+-- when the spec carries a `transition` token, same as a hover-driven
+-- change. Use Repaint() instead when you want a snap (post-theme-swap
+-- or post-token-override redraw).
 function Base:SetVisualState(state)
 	if not VALID_STATES[state] then
 		error(("SetVisualState: invalid state %q (must be default/hover/pressed/disabled)"):format(tostring(state)), 2)
 	end
-	self._visualState = state
-	self:Repaint()
+	if state ~= self._visualState then
+		self._visualState = state
+		applyAllForState(self, state)
+	end
 end
 
 function Base:GetVisualState()
@@ -434,13 +506,17 @@ end
 
 -- ----- Repaint ---------------------------------------------------------
 
+-- Repaint snaps to the current state's resolved values for every
+-- primitive. Does NOT animate, even if specs carry transitions; Repaint
+-- is the explicit "force a redraw" path and is typically called after a
+-- theme swap or token override, not on user-driven state changes.
 function Base:Repaint()
 	if not self._primitives then return end
 	local state = self._visualState or "default"
 	for _, slot in ipairs(self._primitiveList) do
 		local rec = self._primitives[slot]
 		if rec then
-			applyRecord(self, rec, state)
+			applyRecord(self, slot, rec, state)
 		end
 	end
 end
@@ -541,8 +617,10 @@ function Base:DrawIcon(slot, spec, opts)
 		enableInteractiveState(self)
 	end
 
-	-- Apply texture source + tint via the shared dispatcher.
-	applyRecord(self, rec, self._visualState or "default")
+	-- Apply texture source + tint via the shared dispatcher. Initial
+	-- paint snaps; subsequent state changes animate through the state
+	-- machine when colorSpec carries a transition token.
+	applyRecord(self, slot, rec, self._visualState or "default")
 
 	return rec
 end

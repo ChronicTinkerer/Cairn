@@ -79,6 +79,12 @@ Cairn-Gui-2.0\Core\Acquire.lua
 Cairn-Gui-2.0\Core\Theme.lua
 Cairn-Gui-2.0\Core\Events.lua
 Cairn-Gui-2.0\Core\Primitives.lua
+# Animation: lazy per-widget OnUpdate parented to the widget frame so
+# Blizzard auto-pauses ticking on Hide. Pre-wires the Primitives state
+# machine to animate state-variant color changes when the spec has a
+# transition token. Loads after Primitives so Primitives' state machine
+# can use Base:_animatePrimitiveColor when it's present.
+Cairn-Gui-2.0\Core\Animation.lua
 Cairn-Gui-2.0\Core\Layout.lua
 # Built-in layout strategies. Each registers itself against the Layout
 # registry. Register order doesn't matter; just load after Layout.lua.

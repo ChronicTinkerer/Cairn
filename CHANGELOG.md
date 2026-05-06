@@ -8,6 +8,141 @@ run) on 2026-05-06. Higher integers are newer than any YYMMDDHHMM stamp.
 The format is loosely based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Cairn-Gui-2.0 pool-recycle state-machine leak.** A widget Released
+  while in a non-default visual state (hover, pressed, disabled) was
+  carrying that state into its next pool-Acquire, so a recycled Button
+  could paint at hover color or refuse clicks even though the consumer
+  saw a "fresh" widget. `Core/Acquire.lua` pool path now resets
+  `_visualState`, `_hovering`, `_pressing`, `_disabled` on the cairn
+  AND calls `frame:SetEnabled(true)` on the underlying Blizzard frame
+  before `OnAcquire` runs. Verified with a new test:
+  `Forge\.dev\tests\cairn_gui_2_pool_reset.lua` — 14/14 PASS.
+- **Cairn-Gui-2.0 MINOR 3 → 4.** Bugfix only; no public API changes.
+  Consumers don't need to bump their `RequireCore` minimum.
+
+### Added
+
+- **Cairn-Gui-2.0 Day 15B: Animation engine + transition pre-wire on
+  primitives.** Slice B of the 11-sub-decision Decision-9 plan. Spring
+  physics, Sequence/Parallel/Stagger, OKLCH, ReduceMotion, off-screen
+  pause, AnimationGroup-backend routing, and concurrency cap are
+  deferred to later slices.
+  - New `Core/Animation.lua` ships the engine. Public API on the lib:
+    `RegisterEasing(name, fn)` and a `Cairn.Gui.easings` registry with
+    four built-ins (`linear`, `easeIn`, `easeOut`, `easeInOut`). Public
+    API on `widget.Cairn`: `Animate(spec)` for declarative property
+    tweens (alpha / scale / width / height as scalar, with `to`, `dur`,
+    `ease`, `complete` per property) and `CancelAnimations(prop?)` to
+    cancel a single property or every in-flight animation on the widget.
+    Re-calling `Animate` for an already-animating property captures the
+    current value as the new `from` and replaces the in-flight record;
+    no snapping during state ping-pong.
+  - One OnUpdate per widget regardless of property count (per Decision 9).
+    The tick frame is parented to the widget frame so Blizzard's
+    visibility cascade auto-pauses ticking on Hide and resumes on Show
+    -- one of Decision 9's lifecycle sub-decisions delivered for free
+    by the parenting choice. The OnUpdate detaches itself when the
+    per-widget queue drains, so an idle UI pays nothing per frame.
+  - Internal `widget.Cairn:_animatePrimitiveColor(slot, toColor, dur,
+    ease)` lerps RGBA over the duration via the named easing, applied
+    via `SetVertexColor` across every texture in the primitive record
+    (so a multi-edge border tracks in lockstep).
+  - **Transition token pre-wire on primitives** (mandatory per Decision
+    9). Any state-variant spec passed to `DrawRect` / `DrawBorder` /
+    `DrawIcon` (color tint) can include a `transition = "duration.X"`
+    key. When the state machine moves between visual states, the new
+    color animates over that duration instead of snapping. Decision 5's
+    duration tokens drive the timing through the theme cascade. Initial
+    paint and `Repaint` always snap; only state-change paths animate.
+  - Auto-cancel on Release: `Base:Release` is wrapped in `Animation.lua`
+    to call `CancelAnimations()` and detach the OnUpdate before
+    delegating to the original Release. Pooled widgets get a clean
+    animation slate on every recycle.
+  - Pilot consumer: every Button variant (`default`, `primary`,
+    `danger`, `ghost`) now carries `transition = "duration.fast"` on its
+    bg state map. Hovering and pressing a Button visibly fades between
+    states over ~120ms -- the existing widget gained the animation for
+    free without an Animate call in its OnAcquire.
+
+- **Cairn-Gui-2.0 Day 14: Icon primitive + Checkbox widget.**
+  - `Core/Primitives.lua` — new `widget.Cairn:DrawIcon(slot, spec, opts)`
+    primitive. Atlas-first resolution via `C_Texture.GetAtlasInfo`,
+    file-path fallback, per Decision 7. Supports state-variant texture
+    specs (default / hover / pressed / disabled), token-name resolution
+    through the theme cascade, optional color tint (string token, literal
+    tuple, or state-variant table), anchored sub-region positioning
+    (anchor + offsetX + offsetY + width + height with length-token
+    support), default layer ARTWORK. Empty/nil source hides; non-empty
+    re-shows. Re-Draw on the same slot updates in place. The state
+    machine and Repaint dispatch primitives by record kind via a shared
+    helper so Rect / Border / Icon all stay in lockstep on hover, press,
+    disabled, and theme change.
+  - `Core/Primitives.lua` — new `widget.Cairn:SetPrimitiveShown(slot,
+    bool)` helper. Toggles every texture in a primitive record without
+    redrawing. Used by Checkbox to flip the check glyph on toggle.
+  - `Core/Theme.lua` and `Cairn-Gui-Theme-Default-1.0` — new
+    `texture.icon.check` token, default `common-icon-checkmark` atlas.
+  - `Cairn-Gui-Widgets-Standard-1.0/Widgets/Checkbox.lua` — pooled
+    Checkbox widget. 16x16 box with raw textures (matches Button's
+    raw FontString precedent for label content), DrawIcon for the check
+    glyph, whole-row DrawRect with state-variant ghost-hover for
+    subtle row-level hover/press feedback. Public API: `SetChecked`,
+    `IsChecked`, `Toggle`, `SetText`, `GetText`, `SetEnabled`. Events:
+    `Click(mouseButton, newValue)` on every enabled click; `Toggled
+    (newValue)` whenever the checked value actually flips (programmatic
+    SetChecked-to-same-value does NOT re-fire).
+
+### Changed
+
+- **Cairn-Gui-2.0 MINOR 2 → 3.** Animation engine + transition pre-wire
+  on the Primitives state machine. Existing primitives keep working;
+  specs without a `transition` key continue to snap. `SetVisualState`
+  now honors transitions when the spec carries them (matching the
+  hover/press path); use `Repaint` if you specifically want a snap.
+- **Cairn-Gui-2.0 MINOR 1 → 2.** New public methods (`DrawIcon`,
+  `SetPrimitiveShown`) extend the surface; existing primitives unchanged.
+- **Cairn-Gui-Widgets-Standard-1.0 MINOR 2 → 3.** Bundle now requires
+  Core MINOR ≥ 3 (Animate + transition pre-wire) because Button uses
+  the transition token. Existing widgets unchanged for consumers who
+  only use the public API.
+- **Cairn-Gui-Widgets-Standard-1.0 MINOR 1 → 2.** Bundle now requires
+  Core MINOR ≥ 2 via `RequireCore("Cairn-Gui-2.0", 2)` because Checkbox
+  uses `DrawIcon`.
+- **Cairn-Gui-Theme-Default-1.0 MINOR 1 → 2.** Adds the
+  `texture.icon.check` token registration.
+- **`Cairn.toc`** — loads `Cairn-Gui-2.0\Core\Animation.lua` after
+  Primitives and before Layout; loads
+  `Cairn-Gui-Widgets-Standard-1.0\Widgets\Checkbox.lua` after Window.
+
+### Verified in-game
+
+- `Forge\.dev\tests\cairn_gui_2_animation.lua` — 50/50 PASS. Covers
+  built-in easings + custom easing registration, `Animate` mid-tick
+  interpolation and complete-handler firing exactly once, in-flight
+  replacement (new `from` is the current value), unknown-property
+  silent ignore, `CancelAnimations(prop)` and `CancelAnimations()`,
+  OnUpdate detachment when queue drains, tick frame parented to widget
+  frame, `_animatePrimitiveColor` RGBA lerp, transition pre-wire on
+  Button hover (state change enqueues primColor anim, mid-tick color
+  is between default and hover), auto-cancel on Release with pool
+  reuse not retaining residual animations.
+- `Forge\.dev\tests\cairn_gui_2_icon.lua` — 30/30 PASS. Covers atlas
+  vs. file-path resolution, token cascade, state-variant switching,
+  literal + token color tints, hide/show via empty source and via
+  `SetPrimitiveShown`, in-place re-draw idempotency, Repaint, anchor
+  validation, pool reuse.
+- `Forge\.dev\tests\cairn_gui_2_checkbox.lua` — 32/32 PASS. Covers
+  registration, opts honoring, `SetChecked` / `Toggle` / `IsChecked`
+  semantics, Toggled event dedup on same-value writes, click bridging
+  via Blizzard `OnClick` script firing both `Click` and `Toggled` with
+  the new value, `SetEnabled(false)` suppression of click handling,
+  pool reuse with subscription cleanup (the Day 13 Base:Release Off()
+  contract held).
+
 ## [2] — Multi-flavor TOCs (2026-05-06)
 
 ### Added

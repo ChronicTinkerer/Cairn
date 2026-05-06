@@ -20,14 +20,18 @@ Load order in Cairn.toc:
 Widget files use LibStub("Cairn-Gui-2.0") to get Core, then call
 Core:RegisterWidget(name, def) to register themselves.
 
-Status: Day 14. Button + Label + Container + Window + Checkbox.
+Status: Day 15B. Button + Label + Container + Window + Checkbox.
 
 MINOR bumps:
 	1: Days 8-13 (Button, Label, Container, Window).
 	2: Day 14: Checkbox (uses Core MINOR 2's DrawIcon).
+	3: Day 15B: Button variants gain `transition = "duration.fast"` so
+	   hover / press / disabled animate via the new Animation engine.
+	   Requires Core MINOR 3 (Animate / CancelAnimations / transition
+	   pre-wire on the state machine).
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-1.0", 2
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-1.0", 3
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -40,8 +44,10 @@ end
 -- mismatch and routes a chat error through Cairn-Log; we abort the
 -- bundle's registration in that case so misaligned versions don't ship
 -- partial widget sets. Bump the minimum here when a widget starts using
--- a Core API added in a later MINOR (Day 14: DrawIcon needs Core >= 2).
-if not Core:RequireCore("Cairn-Gui-2.0", 2) then
+-- a Core API added in a later MINOR.
+--   Day 14 (MINOR 2): DrawIcon
+--   Day 15B (MINOR 3): Animate / transition pre-wire
+if not Core:RequireCore("Cairn-Gui-2.0", 3) then
 	return
 end
 

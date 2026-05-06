@@ -31,7 +31,18 @@ Verification (Day 1 success criterion):
 --   2: Day 14: DrawIcon primitive (atlas-first, file-path fallback, sized
 --      anchor + tint) and SetPrimitiveShown helper. State variants on
 --      icons supported. Texture pool stays per-record-update like Rect.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 2
+--   3: Day 15B: Animation engine. Public RegisterEasing + lib.easings
+--      registry (linear, easeIn, easeOut, easeInOut), per-widget
+--      Animate / CancelAnimations API, internal _animatePrimitiveColor
+--      used by the Primitives state machine to animate state-variant
+--      color changes when the spec carries a `transition` token. Per-
+--      widget OnUpdate parented to the widget frame so Blizzard auto-
+--      pauses ticking on Hide. Auto-cancel on Release via Base:Release
+--      wrap.
+--   4: Bugfix: Acquire's pool path now resets _visualState / _hovering /
+--      _pressing / _disabled before OnAcquire so a Released-while-hovered
+--      widget doesn't paint at hover color when recycled.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 4
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

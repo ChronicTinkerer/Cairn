@@ -115,10 +115,28 @@ function lib:Acquire(name, parent, opts)
 			cairn._opts     = opts or {}
 			cairn._children = {}
 			cairn._parent   = nil
+			-- Reset the Primitives state machine so a recycled widget
+			-- paints at "default" rather than carrying over its previous
+			-- owner's state. Without this, a widget Released while
+			-- hovered comes out of the pool painted in hover color, and
+			-- the user has to mouse over and out to "fix" it.
+			-- _interactive (the HookScript-installed flag) intentionally
+			-- stays as-is: the hooks are bound to the underlying frame,
+			-- which is the same frame, so resetting and re-installing
+			-- would stack duplicate handlers. The hooks just toggle the
+			-- flags; they're harmless on a recycled widget.
+			cairn._visualState = "default"
+			cairn._hovering    = false
+			cairn._pressing    = false
+			cairn._disabled    = false
 			-- Reattach the underlying frame to the new parent and show.
+			-- Also restore the frame's Blizzard-side enabled flag if a
+			-- previous SetEnabled(false) toggled it off; otherwise the
+			-- pool-recycled Button stops responding to clicks.
 			local frame = cairn._frame
 			if frame then
 				if frame.SetParent then frame:SetParent(parent) end
+				if type(frame.SetEnabled) == "function" then frame:SetEnabled(true) end
 				if frame.Show      then frame:Show()           end
 			end
 			-- def.reset was already called at Release time; the widget

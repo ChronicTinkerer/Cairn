@@ -10,6 +10,32 @@ The format is loosely based on
 
 ## [Unreleased]
 
+### Added
+
+- **Cairn-Gui-2.0 Core MINOR=14: Decision 10B (Inspector / Stats / EventLog / Dev)** — full read-only introspection surface for the widget library. Forge or any consumer can now enumerate every live widget, inspect per-widget state, count internal events, tail the event log, and toggle a built-in frame-outline overlay. The library exposes the data; the visualization is the consumer's job.
+
+  - **`Cairn.Inspector`** — weak-keyed registry of every widget the library has ever Acquired (released widgets are GC'd naturally). Exposes `Walk(rootCairn, fn)` for depth-first traversal of a subtree, `WalkAll(fn)` for every tree the inspector knows about (no global registry; iterates roots), `Find(x, y)` for hit-testing in screen coordinates with strata + level z-ordering, and `SelectByName(name)` for "first widget of type X." Per-widget `widget.Cairn:Dump()` is mixed into Base; returns a flat table summarizing type, parent, child count, shown state, frame strata/level, rect, intrinsic size, and presence of callbacks/layout.
+  - **`Cairn.Stats`** — counters bumped from instrumentation points in Animation (added/completed), Layout (recomputes), Primitives (rect/border/icon draws), and Events (dispatches). `Snapshot()` returns a frozen nested table with sections for animations, layout, primitives, events, pool occupancy per widget type, and event-log buffer state. Custom `Inc(key, delta)` / `Get(key)` for ad-hoc consumer counters.
+  - **`Cairn.EventLog`** — fixed-capacity ring buffer (default 200 entries) of every Fire dispatched through Events. Off by default; turns on under `lib.Dev` or via explicit `Enable()`. Stores `{t, widgetType, event, argCount}` per entry — deliberately NOT trailing args, since capturing them risks pinning huge tables for the buffer's lifetime. `Tail(n)` returns the newest n entries oldest-first; `SetCapacity(n)` resizes preserving the latest entries; `Clear()` drops everything.
+  - **`Cairn.DevAPI`** — canonical setter for the `lib.Dev` flag. `SetEnabled(bool)`, `Toggle()`, `IsEnabled()`, `OnChange(fn)` (subscribe; returns unsubscribe closure). When enabled, every tracked widget gets a 1px tan outline + a small type-name FontString in its TOPLEFT corner. EventLog is auto-enabled (but not auto-disabled — recordings are intentionally durable for post-mortem inspection). Re-toggling is cheap: overlay frames are hidden, not destroyed.
+
+- **Acquire instrumentation**: every `lib:Acquire` call now registers the new widget in the Inspector via `_track`. Tolerant of Inspector not being loaded.
+
+### Changed
+
+- **Cairn-Gui-2.0 Core: instrumentation hooks installed in 5 files**.
+  - `Animation.lua` — `addAnim` bumps `animations.added`; both completion paths (OnUpdate and AnimationGroup OnFinished) bump `animations.completed`.
+  - `Layout.lua` — `processDirty`'s post-`RelayoutNow` bumps `layout.recomputes`.
+  - `Primitives.lua` — `DrawRect` / `DrawBorder` / `DrawIcon` each bump their respective counter at function entry.
+  - `Events.lua` — `Base:Fire` bumps `event_dispatches` and pushes into the EventLog (when enabled) before dispatch.
+  - `Acquire.lua` — `lib:Acquire` calls `Inspector:_track(cairn)` after parent registration.
+  All call sites are gated on `if lib.Stats then ...` / `if lib.EventLog then ...` / `if lib.Inspector then ...` so the cost is zero when the introspection siblings aren't loaded.
+
+### Notes
+
+- **In-game test:** `Forge/.dev/tests/cairn_gui_2_decision_10b.lua` exercises all four surfaces sync-only. Run after /reload through Forge Console.
+- **Forge consumer**: a Forge tab that visualizes the Inspector tree, displays Stats live, and tails the EventLog is the natural follow-up bucket. The APIs are stable as of MINOR 14 and intended to support that consumer.
+
 ## [6] — Cairn-Gui Standard bundle MINOR=2: ScrollFrame, EditBox, Slider, Dropdown, TabGroup (2026-05-07)
 
 ### Added

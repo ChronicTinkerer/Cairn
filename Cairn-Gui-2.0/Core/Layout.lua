@@ -110,6 +110,7 @@ local function processDirty()
 		-- Skip if the widget was Released between invalidation and pump.
 		if frame and cairn._layout and cairn._layout ~= "Manual" then
 			cairn:RelayoutNow()
+			if lib.Stats then lib.Stats:Inc("layout.recomputes") end
 		end
 	end
 end

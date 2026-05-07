@@ -629,6 +629,7 @@ local function tickAnimations(self, dt)
 			if completed then
 				table.remove(anims, i)
 				if self._animByKey then self._animByKey[a.key] = nil end
+				if lib.Stats then lib.Stats:Inc("animations.completed") end
 				if a.complete then
 					local ok, err = pcall(a.complete, self, a)
 					if not ok and lib._log and lib._log.Error then
@@ -682,6 +683,7 @@ end
 -- the same shared bookkeeping (replacement, cap, ReduceMotion fast-path).
 local function addAnim(self, key, rec)
 	rec.key = key
+	if lib.Stats then lib.Stats:Inc("animations.added") end
 
 	-- ReduceMotion fast-path. Apply target synchronously, fire complete
 	-- synchronously, never enter the queue. Any existing in-flight
@@ -784,6 +786,7 @@ local function addAnim(self, key, rec)
 			if self._animByKey and self._animByKey[rec.key] == rec then
 				self._animByKey[rec.key] = nil
 			end
+			if lib.Stats then lib.Stats:Inc("animations.completed") end
 			if rec.complete then
 				local ok, err = pcall(rec.complete, self, rec)
 				if not ok and lib._log and lib._log.Error then

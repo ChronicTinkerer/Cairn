@@ -158,6 +158,14 @@ function lib:Acquire(name, parent, opts)
 		parent.Cairn:_addChild(cairn)
 	end
 
+	-- Inspector tracking (Decision 10B): every newly-acquired widget is
+	-- registered in the weak-keyed inspector table so debug tools can
+	-- enumerate live widgets without a global registry. Tolerant of
+	-- Inspector not being loaded (it's a soft-required sibling).
+	if self.Inspector and self.Inspector._track then
+		self.Inspector:_track(cairn)
+	end
+
 	-- Run the lifecycle hook last, after all wiring is in place.
 	cairn:OnAcquire(opts)
 

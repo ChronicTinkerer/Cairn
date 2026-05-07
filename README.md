@@ -1117,7 +1117,9 @@ Cairn/
     Cairn-Gui-Core-1.0/...                     12 widgets (Window, Button, CheckBox, ...).
     Cairn-Gui-Menu-1.0/...                     Context-menu widgets on top of Core.
   Cairn-Gui-2.0/                             v2 widget library + bundles.
-    Cairn-Gui-2.0.lua, Core/, Mixins/          Engine, primitives, layout, animation, theme.
+    Cairn-Gui-2.0.lua, Core/, Mixins/          Engine, primitives, layout, animation, theme,
+                                               + introspection (Inspector / Stats /
+                                                 EventLog / Dev overlay) per Decision 10B.
     Cairn-Gui-Widgets-Standard-2.0/...         Standard widget bundle (10 widgets:
                                                Container, Button, Label, Window,
                                                Checkbox, ScrollFrame, EditBox,

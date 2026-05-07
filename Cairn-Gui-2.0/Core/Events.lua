@@ -222,10 +222,16 @@ end
 -- ----- Fire ------------------------------------------------------------
 
 function Base:Fire(event, ...)
-	if not self._cb then return end
 	if type(event) ~= "string" or event == "" then
 		error("Fire: event must be a non-empty string", 2)
 	end
+	-- Stats / EventLog instrumentation (Decision 10B). Bumped UP-FRONT,
+	-- before the no-subscribers early-return: a Fire attempt with zero
+	-- subscribers is still a dispatch, and debugging "why isn't my
+	-- event firing?" relies on Stats counting attempts.
+	if lib.Stats    then lib.Stats:Inc("event_dispatches")   end
+	if lib.EventLog then lib.EventLog:Push(self, event, ...) end
+	if not self._cb then return end
 	self._cb:Fire(event, ...)
 end
 

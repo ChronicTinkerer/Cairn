@@ -128,7 +128,17 @@ Verification (Day 1 success criterion):
 --      Stagger sets def.delay before calling Animate (no more back-
 --      patch loop). Single uniform delay path for both backends.
 --      Side benefit: def.delay is now a documented public field.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 13
+--  14: Decision 10B: introspection / debug surface. Adds Core/EventLog,
+--      Core/Stats, Core/Inspector, Core/Dev. Inspector tracks every
+--      Acquire'd widget in a weak-keyed table; widget.Cairn:Dump() is
+--      added to Mixins.Base. Stats counters bumped from instrumentation
+--      points in Animation, Layout, Primitives, Events. EventLog is a
+--      ring buffer that records every Fire dispatch when enabled. Dev
+--      owns lib.Dev (still a flag for backward compat) and renders a
+--      minimal frame-outline + name-label overlay on every tracked
+--      widget when toggled on. Forge can consume any of these surfaces
+--      for richer debug tabs in a follow-up bundle.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 14
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

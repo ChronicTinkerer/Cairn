@@ -394,6 +394,7 @@ function Base:DrawRect(slot, spec, opts)
 	if type(slot) ~= "string" or slot == "" then
 		error("DrawRect: slot must be a non-empty string", 2)
 	end
+	if lib.Stats then lib.Stats:Inc("primitives.rect.draws") end
 	local frame = self._frame
 	if not frame or not frame.CreateTexture then return end
 
@@ -440,6 +441,7 @@ function Base:DrawBorder(slot, spec, opts)
 	if type(slot) ~= "string" or slot == "" then
 		error("DrawBorder: slot must be a non-empty string", 2)
 	end
+	if lib.Stats then lib.Stats:Inc("primitives.border.draws") end
 	local frame = self._frame
 	if not frame or not frame.CreateTexture then return end
 
@@ -583,6 +585,7 @@ function Base:DrawIcon(slot, spec, opts)
 	if type(slot) ~= "string" or slot == "" then
 		error("DrawIcon: slot must be a non-empty string", 2)
 	end
+	if lib.Stats then lib.Stats:Inc("primitives.icon.draws") end
 	local frame = self._frame
 	if not frame or not frame.CreateTexture then return end
 

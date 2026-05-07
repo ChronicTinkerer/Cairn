@@ -2,7 +2,7 @@
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
-## Version: 6
+## Version: 7
 ## X-Category: Library
 ## X-License: MIT
 ## X-Curse-Project-ID: 1532175
@@ -94,6 +94,10 @@ Cairn-Gui-2.0\Core\Layout.lua
 Cairn-Gui-2.0\Core\Layouts\Manual.lua
 Cairn-Gui-2.0\Core\Layouts\Fill.lua
 Cairn-Gui-2.0\Core\Layouts\Stack.lua
+Cairn-Gui-2.0\Core\EventLog.lua
+Cairn-Gui-2.0\Core\Stats.lua
+Cairn-Gui-2.0\Core\Inspector.lua
+Cairn-Gui-2.0\Core\Dev.lua
 
 # Cairn-Gui-Widgets-Standard-2.0: v2 widget bundle.
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Cairn-Gui-Widgets-Standard-2.0.lua

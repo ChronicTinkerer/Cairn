@@ -2,7 +2,7 @@
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
-## Version: 6
+## Version: 7
 ## X-Category: Library
 ## X-License: MIT
 ## X-Curse-Project-ID: 1532175
@@ -108,6 +108,15 @@ Cairn-Gui-2.0\Core\Layout.lua
 Cairn-Gui-2.0\Core\Layouts\Manual.lua
 Cairn-Gui-2.0\Core\Layouts\Fill.lua
 Cairn-Gui-2.0\Core\Layouts\Stack.lua
+# Decision 10B: introspection / debug surface. EventLog feeds Stats's
+# event-log section. Inspector tracks every Acquire'd widget. Dev hooks
+# Inspector and EventLog into the lib.Dev flag-toggle path. Load order
+# matters: EventLog -> Stats -> Inspector -> Dev so each can reference
+# its predecessor as a soft dep.
+Cairn-Gui-2.0\Core\EventLog.lua
+Cairn-Gui-2.0\Core\Stats.lua
+Cairn-Gui-2.0\Core\Inspector.lua
+Cairn-Gui-2.0\Core\Dev.lua
 
 # Cairn-Gui-Widgets-Standard-2.0: bundled widget set built on Cairn-Gui-2.0
 # Core. Separate LibStub MAJOR per Decision 11 so consumers can swap in

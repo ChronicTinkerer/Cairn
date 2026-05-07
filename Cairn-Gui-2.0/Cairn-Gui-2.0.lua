@@ -94,7 +94,20 @@ Verification (Day 1 success criterion):
 --      Catches "scrolled outside a ScrollFrame's child" cases. Defensive
 --      against ancestors lacking DoesClipChildren or yet-unpositioned
 --      ancestors (skipped, walk continues).
-local MAJOR, MINOR = "Cairn-Gui-2.0", 10
+--  11: Day 15I: AnimationGroup-backend routing for Alpha. PROPERTY_ADAPTERS
+--      gain backend / animType / setupAnim metadata; alpha opts in.
+--      Animate routes to "animgroup" record type when adapter.backend ==
+--      "animgroup" AND def.ease maps to Blizzard's smoothing names
+--      (NONE/IN/OUT/IN_OUT). addAnim creates a per-record AnimationGroup
+--      plus Animation, hooks OnFinished, calls Play(). OnFinished applies
+--      final value, removes from queue, fires user complete. Cancellation
+--      and same-key replacement Stop the group + nil OnFinished via the
+--      teardownAnimGroupRecord helper. tickAnimations skips animgroup
+--      records. Non-mappable easings (easeOutBack, easeOutBounce, custom)
+--      fall back to OnUpdate. Springs always go OnUpdate. Off-screen
+--      pause (15G/H) doesn't apply to animgroup records yet (Blizzard
+--      runs them past our gate); deferred.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 11
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

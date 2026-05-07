@@ -6,9 +6,12 @@ sub-decisions; this file ships the engine, primitive transition tokens,
 composition primitives, ReduceMotion accessibility flag, the standard
 easing set, Spring physics, an imperative Tween shortcut, a per-widget
 concurrency cap, OKLCH color interpolation (opt-in per primitive color
-anim), and off-screen pause (viewport-based plus clipping-ancestor
-walk). AnimationGroup-backend routing for Translation/Scale/Alpha/
-Rotation remains deferred.
+anim), off-screen pause (viewport-based plus clipping-ancestor walk),
+and AnimationGroup-backend routing for Alpha (mappable easings only;
+non-mappable easings and other properties stay on OnUpdate). Translation/
+Scale/Rotation routing remains deferred until a real consumer applies
+pressure (their Blizzard APIs differ by build, so the abstractions
+deserve real-world signal before being designed).
 
 Public API on the lib:
 
@@ -153,12 +156,25 @@ Engine notes:
 	  pause; this layer adds "shown but off-screen" coverage for two
 	  cases: Day 15G (positioned off the visible viewport) and 15H
 	  (scrolled outside a clipping ancestor like a ScrollFrame's child).
+	- Day 15I: AnimationGroup-backend routing for properties whose
+	  adapter has backend = "animgroup" (currently only `alpha`). When
+	  the easing maps to one of Blizzard's smoothing names (NONE / IN /
+	  OUT / IN_OUT), addAnim creates a per-record AnimationGroup +
+	  Animation, hooks OnFinished, and Plays the group. Blizzard runs
+	  the animation on its own clock; the OnUpdate tick skips animgroup
+	  records (they sit in the queue purely for replacement and
+	  cancellation lookup). Non-mappable easings and the other
+	  properties fall back to OnUpdate, so consumers see the same
+	  visual curve they asked for. Caveats: Stagger's per-record delay
+	  isn't honored by animgroup records yet (delay is for OnUpdate);
+	  off-screen pause (15G/15H) doesn't apply to animgroup records
+	  because Blizzard runs them past our gate. Both are deferred.
 
-Status: Day 15 slices B + C + D + E + F + G + H. AnimationGroup-backend
-routing for Translation/Scale/Alpha/Rotation remains deferred.
+Status: Day 15 slices B + C + D + E + F + G + H + I. AnimationGroup-
+backend routing landed for Alpha; Translation/Scale/Rotation deferred.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-2.0", 10
+local MAJOR, MINOR = "Cairn-Gui-2.0", 11
 local lib = LibStub:GetLibrary(MAJOR, true)
 if not lib then return end
 
@@ -458,10 +474,13 @@ end
 -- both the normal completion path inside the tick AND the ReduceMotion
 -- fast-path in addAnim. Pulled out to keep the two call sites in sync.
 local function applyFinal(self, a)
-	-- All record types so far store the final value in a.to (scalar
-	-- final, rgba final color table, spring rest position). The apply
-	-- function is what differentiates them.
-	if a.fromType == "scalar" or a.fromType == "rgba" or a.fromType == "spring" then
+	-- All record types store the final value in a.to (scalar final,
+	-- rgba final color table, spring rest position, animgroup final
+	-- value). The apply function is what differentiates them. We
+	-- check apply existence rather than the fromType allowlist so a
+	-- new record type doesn't silently fall through to a no-op the
+	-- way animgroup did pre-15I.
+	if a.apply then
 		a.apply(self, a.to)
 	end
 	if a.complete then
@@ -519,7 +538,14 @@ local function tickAnimations(self, dt)
 			end
 		end
 
-		if active then
+		-- Day 15I: Animgroup records are driven by Blizzard's clock via
+		-- OnFinished. The OnUpdate tick has nothing to do for them; skip
+		-- without touching elapsed or apply. They sit in _anims/_animByKey
+		-- for replacement and cancellation purposes only. The `processed`
+		-- and `i` increments at the end of the loop body still apply.
+		if a.fromType == "animgroup" then
+			i = i + 1
+		elseif active then
 			local completed = false
 
 			if a.fromType == "spring" then
@@ -628,7 +654,22 @@ local function ensureAnimFrame(self)
 	end)
 end
 
--- Add or replace an animation by key.
+-- Day 15I: Tear down an animgroup record's Blizzard state. Stops the
+-- group (cancels the in-flight animation) and nils the OnFinished hook
+-- so it can't fire on a record we've already removed from our queue.
+-- Safe to call on records of any fromType (no-op for non-animgroup).
+local function teardownAnimGroupRecord(rec)
+	if not rec or rec.fromType ~= "animgroup" then return end
+	if rec.animObject and rec.animObject.SetScript then
+		rec.animObject:SetScript("OnFinished", nil)
+	end
+	if rec.animGroupForRecord and rec.animGroupForRecord.Stop then
+		rec.animGroupForRecord:Stop()
+	end
+end
+
+-- Add or replace an animation by key. Dispatches by rec.fromType after
+-- the same shared bookkeeping (replacement, cap, ReduceMotion fast-path).
 local function addAnim(self, key, rec)
 	rec.key = key
 
@@ -636,10 +677,13 @@ local function addAnim(self, key, rec)
 	-- synchronously, never enter the queue. Any existing in-flight
 	-- record under the same key is canceled first so we don't paint
 	-- over the (now-final) value with a leftover lerp on a later tick.
+	-- Animgroup existing records also need their Blizzard group Stop'd
+	-- and their OnFinished hook nil'd to avoid fire-on-dead-record.
 	if lib.ReduceMotion then
 		ensureAnimList(self)
 		local existing = self._animByKey[key]
 		if existing then
+			teardownAnimGroupRecord(existing)
 			for i, a in ipairs(self._anims) do
 				if a == existing then
 					table.remove(self._anims, i)
@@ -658,6 +702,7 @@ local function addAnim(self, key, rec)
 	-- Replace any existing animation under the same key.
 	local existing = self._animByKey[key]
 	if existing then
+		teardownAnimGroupRecord(existing)
 		for i, a in ipairs(self._anims) do
 			if a == existing then
 				table.remove(self._anims, i)
@@ -671,11 +716,13 @@ local function addAnim(self, key, rec)
 	-- OLDEST (lowest index) silently before appending. The cap is a
 	-- guard against pathological consumer code, not a routine throttle.
 	-- Same-key replacement above already happened, so the count we
-	-- check is post-replacement.
+	-- check is post-replacement. Animgroup-evicted records also get the
+	-- Blizzard teardown so their OnFinished can't fire late.
 	local cap = lib.MaxConcurrentAnims or 64
 	if cap > 0 then
 		while #self._anims >= cap do
 			local oldest = self._anims[1]
+			teardownAnimGroupRecord(oldest)
 			table.remove(self._anims, 1)
 			if oldest and self._animByKey[oldest.key] == oldest then
 				self._animByKey[oldest.key] = nil
@@ -685,27 +732,109 @@ local function addAnim(self, key, rec)
 
 	self._anims[#self._anims + 1] = rec
 	self._animByKey[key]          = rec
-	ensureAnimFrame(self)
+
+	if rec.fromType == "animgroup" then
+		-- Day 15I: AnimationGroup-backend route. Build the Blizzard
+		-- objects, hook OnFinished for completion, Play the group.
+		-- Blizzard runs the animation on its own clock; our OnUpdate
+		-- (if attached for other records) skips animgroup records.
+		local group = self._frame:CreateAnimationGroup()
+		local anim  = group:CreateAnimation(rec.animType)
+		if anim.SetDuration then anim:SetDuration(rec.dur) end
+		if rec.smoothing and anim.SetSmoothing then
+			anim:SetSmoothing(rec.smoothing)
+		end
+		if rec.setupAnim then rec.setupAnim(anim, rec.from, rec.to) end
+
+		rec.animObject         = anim
+		rec.animGroupForRecord = group
+
+		anim:SetScript("OnFinished", function()
+			-- Apply final value defensively: Blizzard may leave the
+			-- frame at the to value already, but enforcing it here
+			-- means a OnFinished consumer can't observe a transient
+			-- "almost done" reading. Safe to call.
+			if rec.apply then rec.apply(self, rec.to) end
+			-- Remove from queue.
+			if self._anims then
+				for i, a in ipairs(self._anims) do
+					if a == rec then
+						table.remove(self._anims, i)
+						break
+					end
+				end
+			end
+			if self._animByKey and self._animByKey[rec.key] == rec then
+				self._animByKey[rec.key] = nil
+			end
+			if rec.complete then
+				local ok, err = pcall(rec.complete, self, rec)
+				if not ok and lib._log and lib._log.Error then
+					lib._log:Error("animation %s complete handler errored: %s",
+						tostring(rec.key), tostring(err))
+				end
+			end
+		end)
+
+		if group.Play then group:Play() end
+	else
+		ensureAnimFrame(self)
+	end
 end
 
 -- ----- Public Animate API ----------------------------------------------
 
+-- Day 15I: Mappable easings can route to Blizzard's AnimationGroup
+-- backend, which runs on Blizzard's clock instead of our OnUpdate. Our
+-- four base easings map directly to Blizzard's smoothing parameter; non-
+-- mappable easings (easeOutBack, easeOutBounce, custom-registered) fall
+-- back to OnUpdate so consumers get the same visual behavior either way.
+local EASING_TO_SMOOTHING = {
+	linear    = "NONE",
+	easeIn    = "IN",
+	easeOut   = "OUT",
+	easeInOut = "IN_OUT",
+}
+
+-- Adapters per property. `backend = "animgroup"` opts the property into
+-- AnimationGroup routing (only when the easing is mappable). Properties
+-- without `backend` always use OnUpdate. `animType` is the Blizzard
+-- animation type name; `setupAnim` configures the from/to on the
+-- created Animation object. Defensive about API availability: in
+-- Retail (>= ~Shadowlands) Alpha animations support SetFromAlpha /
+-- SetToAlpha; older builds may only have SetChange (delta) -- the
+-- setupAnim closure tries the modern API first, falls back to delta.
 local PROPERTY_ADAPTERS = {
 	alpha = {
 		get   = function(frame) return frame:GetAlpha() end,
 		apply = function(frame, v) frame:SetAlpha(v) end,
+		backend  = "animgroup",
+		animType = "Alpha",
+		setupAnim = function(anim, from, to)
+			if anim.SetFromAlpha and anim.SetToAlpha then
+				anim:SetFromAlpha(from)
+				anim:SetToAlpha(to)
+			elseif anim.SetChange then
+				anim:SetChange(to - from)
+			end
+		end,
 	},
 	scale = {
 		get   = function(frame) return frame:GetScale() end,
 		apply = function(frame, v) frame:SetScale(v) end,
+		-- No animgroup backend in 15I; Scale animation API differs by
+		-- build (SetScaleFrom/To vs SetScale delta) and Vellum hasn't
+		-- surfaced a need yet. Stays on OnUpdate.
 	},
 	width = {
 		get   = function(frame) return frame:GetWidth() end,
 		apply = function(frame, v) frame:SetWidth(v) end,
+		-- No native AnimationGroup type for Width; OnUpdate only.
 	},
 	height = {
 		get   = function(frame) return frame:GetHeight() end,
 		apply = function(frame, v) frame:SetHeight(v) end,
+		-- No native AnimationGroup type for Height; OnUpdate only.
 	},
 }
 
@@ -728,7 +857,9 @@ function Base:Animate(spec)
 				-- Spring path. Carry the in-flight velocity forward
 				-- when re-Animating an active spring so a hover-leave-
 				-- hover during oscillation continues physically rather
-				-- than zeroing out velocity.
+				-- than zeroing out velocity. Springs always go OnUpdate
+				-- regardless of adapter.backend; physics integration
+				-- has no AnimationGroup equivalent.
 				local existing = self._animByKey and self._animByKey[prop]
 				local startVelocity = 0
 				if existing and existing.fromType == "spring" then
@@ -748,15 +879,39 @@ function Base:Animate(spec)
 					complete  = def.complete,
 				})
 			else
-				addAnim(self, prop, {
-					fromType = "scalar",
-					from     = fromValue,
-					to       = def.to,
-					dur      = def.dur or 0.2,
-					ease     = def.ease or "easeOut",
-					apply    = function(_, v) applyFn(frame, v) end,
-					complete = def.complete,
-				})
+				-- Day 15I: Decide backend per spec. Adapter must opt in
+				-- via backend = "animgroup", AND the chosen easing must
+				-- map to one of Blizzard's smoothing names. Non-mappable
+				-- easings (easeOutBack, easeOutBounce, custom-registered)
+				-- fall back to OnUpdate so the rendered curve matches
+				-- the easing the consumer asked for.
+				local ease      = def.ease or "easeOut"
+				local smoothing = adapter.backend == "animgroup"
+					and EASING_TO_SMOOTHING[ease] or nil
+
+				if smoothing then
+					addAnim(self, prop, {
+						fromType  = "animgroup",
+						animType  = adapter.animType,
+						from      = fromValue,
+						to        = def.to,
+						dur       = def.dur or 0.2,
+						smoothing = smoothing,
+						setupAnim = adapter.setupAnim,
+						apply     = function(_, v) applyFn(frame, v) end,
+						complete  = def.complete,
+					})
+				else
+					addAnim(self, prop, {
+						fromType = "scalar",
+						from     = fromValue,
+						to       = def.to,
+						dur      = def.dur or 0.2,
+						ease     = ease,
+						apply    = function(_, v) applyFn(frame, v) end,
+						complete = def.complete,
+					})
+				end
 			end
 		end
 		-- Unknown props silently ignored. Allows forward-compat with
@@ -784,13 +939,19 @@ function Base:CancelAnimations(prop)
 	if not anims or #anims == 0 then return end
 
 	if prop == nil then
-		-- Cancel everything. wipe() preserves the table identity so the
-		-- existing _animByKey reference stays valid.
+		-- Cancel everything. Tear down each animgroup record's Blizzard
+		-- objects (Stop the group, nil OnFinished) before clearing.
+		-- wipe() preserves the table identity so the existing
+		-- _animByKey reference stays valid.
+		for _, a in ipairs(anims) do
+			teardownAnimGroupRecord(a)
+		end
 		wipe(anims)
 		if self._animByKey then wipe(self._animByKey) end
 	else
 		local existing = self._animByKey and self._animByKey[prop]
 		if existing then
+			teardownAnimGroupRecord(existing)
 			for i, a in ipairs(anims) do
 				if a == existing then
 					table.remove(anims, i)

@@ -12,6 +12,37 @@ The format is loosely based on
 
 ### Added
 
+- **Cairn-Gui-2.0 Day 15I: AnimationGroup-backend routing for Alpha.**
+  Decision 9's last big architectural item. The `alpha` property adapter
+  opts into Blizzard's native AnimationGroup engine when the easing maps
+  to one of Blizzard's smoothing names (`NONE`, `IN`, `OUT`, `IN_OUT`).
+  - **Routing logic.** `Animate` decides backend per spec. Mappable
+    easing on a `backend = "animgroup"` adapter → `fromType = "animgroup"`
+    record. Non-mappable easings (`easeOutBack`, `easeOutBounce`, any
+    custom-registered easing), springs, and other properties fall back
+    to OnUpdate so the rendered curve always matches the easing the
+    consumer asked for.
+  - **Lifecycle.** `addAnim` creates a per-record AnimationGroup and
+    Animation, configures duration / smoothing / from-to via the
+    adapter's `setupAnim`, hooks `OnFinished` (which applies the final
+    value, removes the record, fires the user `complete`), and calls
+    `Play()`. The OnUpdate tick loop skips animgroup records — they
+    live in the queue only for replacement and cancellation lookup.
+  - **Cancellation.** A new `teardownAnimGroupRecord` helper Stops the
+    group and nils the `OnFinished` hook. Used by `CancelAnimations`,
+    by the same-key replacement path, and by the concurrency-cap
+    eviction path so a Stopped record can't fire its handler late.
+  - **API compatibility.** `setupAnim` for Alpha tries the modern
+    `SetFromAlpha`/`SetToAlpha` API first, falls back to `SetChange`
+    (delta) for older builds. `SetSmoothing` is also called defensively.
+  - **Caveats (deferred):** off-screen pause (15G/15H) doesn't apply to
+    animgroup records because Blizzard runs them past our gate;
+    Stagger's per-record `delay` isn't honored by animgroup records;
+    Translation / Scale / Rotation routing not implemented (their
+    Blizzard APIs vary by build, so the abstraction deserves a real
+    consumer's signal before being designed).
+  - Core MINOR 10 → 11.
+
 - **Cairn-Gui-2.0 Day 15H: Clipping-ancestor walk for off-screen pause.**
   Extends 15G. `isOffScreen` now also walks the parent chain from the
   widget upward; for any ancestor where `DoesClipChildren()` returns

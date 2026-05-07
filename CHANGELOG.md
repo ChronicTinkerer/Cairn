@@ -12,6 +12,26 @@ The format is loosely based on
 
 ### Added
 
+- **Cairn-Gui-2.0 Day 15D: Animation physics + ergonomics.**
+  - **Spring physics.** Animate's per-property def now accepts a
+    `spring = { stiffness, damping, mass }` table; when present, the
+    record uses semi-implicit Euler integration instead of
+    duration + easing. Settles via `lib.SpringSettleThreshold` (default
+    0.001). In-flight velocity carries over on re-Animate so a hover-
+    leave-hover during oscillation continues physically rather than
+    snapping velocity to zero. Defaults: stiffness 170, damping 26,
+    mass 1 (Framer Motion's "smooth" preset).
+  - **`Base:Tween(prop, to, opts)` imperative shortcut** for the common
+    single-property case. Equivalent to
+    `Animate({ [prop] = mergeInto({ to = to }, opts) })`.
+  - **`lib.MaxConcurrentAnims` defensive cap** (default 64). When a
+    widget would exceed the cap, the oldest in-flight record is evicted
+    silently before appending. Cap is configurable; not intended as a
+    routine throttle.
+  - ReduceMotion fast-path now snaps spring records to their rest
+    position (synchronous apply + complete) just like scalar/rgba.
+  - Core MINOR 5 → 6.
+
 - **Cairn-Gui-2.0 Day 15C: Animation composition + accessibility.**
   Closes out the bulk of Decision 9. New on `widget.Cairn`:
   - `Sequence(steps, opts)` runs a list of specs one after another. The

@@ -1,0 +1,92 @@
+name: Framework gap report
+description: "I tried to do X with a Cairn library and the lib couldn't express it cleanly." Internal-flavored; produces a candidate for a lib MINOR bump.
+title: "[Gap] "
+labels: ["framework-gap", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is for cases where the lib API technically works but
+        forces the consumer into a workaround (poking at private fields,
+        re-implementing something the lib should provide, copying a helper
+        that "everyone needs"). The output of a triaged gap is usually a
+        MINOR bump on the offending lib.
+
+        If the lib THROWS or behaves visibly wrong, file a [Bug report](./new?template=bug_report.yml) instead.
+
+  - type: dropdown
+    id: lib
+    attributes:
+      label: Which library has the gap?
+      options:
+        - Cairn.Events
+        - Cairn.Log
+        - Cairn.LogWindow
+        - Cairn.DB
+        - Cairn.Settings
+        - Cairn.Addon
+        - Cairn.Slash
+        - Cairn.EditMode
+        - Cairn.Locale
+        - Cairn.Hooks
+        - Cairn.Sequencer
+        - Cairn.Timer
+        - Cairn.FSM
+        - Cairn.Comm
+        - Cairn-Gui-2.0 (widget toolkit)
+        - Cairn-Gui-Widgets-Standard-2.0
+        - Cairn-Gui-Widgets-Secure-2.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-i-tried
+    attributes:
+      label: What were you trying to build?
+      description: One-paragraph context. The kind of thing that would land in a "How I built X" blog post.
+      placeholder: |
+        Building a tab inside a v2 Window that lists every registered
+        Cairn-Slash subcommand for debugging. Needed to enumerate the
+        registered subs of a Slash registry from outside the lib.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: The workaround you ended up with
+      description: Code preferred. Show the consumer-side bend-over-backwards.
+      render: lua
+      placeholder: |
+        -- Had to read the private _subs table:
+        for name, entry in pairs(slash._subs or {}) do ... end
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What public API would have made this clean?
+      description: Sketch the addition.
+      placeholder: |
+        slash:GetSubcommands() returns
+            { { name = "config", help = "..." }, ... }
+        sorted by name; copies (caller can't mutate internal state).
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: How many places does this gap affect?
+      description: One-off, common pattern, or universal? Helps rank against other gaps.
+      placeholder: |
+        Anyone building a debug / introspection UI on top of Cairn-Slash
+        hits this. Forge_Registry, Cairn-Demo, and probably any future
+        per-addon command-palette plugin.
+
+  - type: input
+    id: cairn-version
+    attributes:
+      label: Cairn version
+      placeholder: "12"

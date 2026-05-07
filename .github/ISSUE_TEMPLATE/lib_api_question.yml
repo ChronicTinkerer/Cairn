@@ -1,0 +1,65 @@
+name: Library API question
+description: How do I use a specific Cairn API, or what's the recommended pattern for X?
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For open-ended discussions consider
+        [GitHub Discussions](https://github.com/ChronicTinkerer/cairn/discussions)
+        instead. This template is for concrete API questions where the
+        answer is "use this method" or "this is the recommended pattern."
+        Check the [Cairn Wiki](https://github.com/ChronicTinkerer/cairn/wiki)
+        first; per-lib pages cover most usage questions.
+
+  - type: dropdown
+    id: lib
+    attributes:
+      label: Which library?
+      options:
+        - Cairn.Events
+        - Cairn.Log
+        - Cairn.LogWindow
+        - Cairn.DB
+        - Cairn.Settings
+        - Cairn.Addon
+        - Cairn.Slash
+        - Cairn.EditMode
+        - Cairn.Locale
+        - Cairn.Hooks
+        - Cairn.Sequencer
+        - Cairn.Timer
+        - Cairn.FSM
+        - Cairn.Comm
+        - Cairn-Gui-2.0 (widget toolkit)
+        - Cross-cutting / multiple
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: Plain-English description of the consumer-side goal.
+      placeholder: "I want my addon's settings panel to live-update a frame's alpha as the user drags the slider."
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Code snippets welcome. Saying "I read X wiki page and it didn't cover Y" is also useful.
+      render: lua
+      placeholder: |
+        local s = Cairn.Settings.New(addonName, db, {
+            { key = "alpha", type = "range", default = 1.0, min = 0, max = 1, label = "Alpha" },
+        })
+        -- How do I get a callback when alpha changes?
+
+  - type: input
+    id: cairn-version
+    attributes:
+      label: Cairn version
+      placeholder: "12"

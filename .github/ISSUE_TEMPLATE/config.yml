@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Cairn Wiki
+    url: https://github.com/ChronicTinkerer/cairn/wiki
+    about: Library reference, getting-started guide, FAQ. Check here first.
+  - name: GitHub Discussions
+    url: https://github.com/ChronicTinkerer/cairn/discussions
+    about: Open-ended questions, design feedback, "what would the Cairn way of doing X look like?"

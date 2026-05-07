@@ -1,0 +1,109 @@
+name: Bug report
+description: Report a bug in Cairn (a library throws an error, behaves wrong, or crashes the client).
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. The more reproduction
+        detail you give, the faster this gets fixed. If you're not sure
+        whether something is a bug or just unclear behavior, file it anyway;
+        unclear behavior is also a bug worth fixing.
+
+  - type: input
+    id: cairn-version
+    attributes:
+      label: Cairn version
+      description: The build number from the AddOns list (e.g. `12`) OR the YYMMDDHHMM stamp on older builds. Check `## Version:` in `Cairn.toc` if you're not sure.
+      placeholder: "12"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: wow-flavor
+    attributes:
+      label: WoW flavor
+      description: Which client are you running?
+      options:
+        - Retail / Mainline (Interface 120005)
+        - MoP Classic (Interface 50503)
+        - TBC Anniversary (Interface 20505)
+        - Classic Era / Hardcore (Interface 11508)
+        - Experimental PTR (Interface 120007)
+        - Other (note in description below)
+    validations:
+      required: true
+
+  - type: input
+    id: interface
+    attributes:
+      label: Interface number (if "Other" above)
+      description: From `/run print(select(4, GetBuildInfo()))` in-game.
+      placeholder: "120005"
+
+  - type: textarea
+    id: which-libs
+    attributes:
+      label: Which Cairn libraries are involved?
+      description: List the `Cairn.X` modules your code touches. Helps narrow the bug.
+      placeholder: |
+        - `Cairn.DB`
+        - `Cairn.Settings`
+        - `Cairn.Gui-2.0` (Window + ScrollFrame)
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Numbered list. Smallest possible Lua snippet that triggers the bug is gold.
+      placeholder: |
+        1. `/reload` with only Cairn enabled.
+        2. `/run local db = Cairn.DB.New("FooDB", { defaults = { profile = {} } })`
+        3. Observe error in chat.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "DB.New returns a wrapper object."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: "Error thrown at file scope; addon load aborts."
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-text
+    attributes:
+      label: Lua error text + stack (if any)
+      description: Full text of the error, including the file:line stack. !BugGrabber, BugSack, or `/dump GetCVar("scriptErrors")` are good sources.
+      render: text
+
+  - type: textarea
+    id: other-addons
+    attributes:
+      label: Other relevant addons loaded
+      description: ElvUI, !BugGrabber, LibStub-bundling addons, anything that overlaps Cairn's surface. Bonus: a screenshot of your AddOns list.
+      placeholder: |
+        - ElvUI 13.x
+        - !BugGrabber + BugSack
+        - LibCodex (depends on Cairn)
+
+  - type: checkboxes
+    id: tried
+    attributes:
+      label: Sanity checks
+      options:
+        - label: I reproduced this with ONLY Cairn loaded (or noted above why I couldn't).
+        - label: I checked the [Cairn Wiki](https://github.com/ChronicTinkerer/cairn/wiki) FAQ and existing issues for duplicates.
+        - label: I'm running the latest published build (or noted why I'm on an older one).

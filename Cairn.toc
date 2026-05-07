@@ -2,7 +2,7 @@
 ## Title: Cairn
 ## Notes: Modern composable library collection for WoW addons. https://github.com/ChronicTinkerer/cairn
 ## Author: ChronicTinkerer
-## Version: 10
+## Version: 11
 ## X-Category: Library
 ## X-License: MIT
 ## X-Curse-Project-ID: 1532175
@@ -115,6 +115,14 @@ Cairn-Gui-2.0\Core\Layouts\Flex.lua
 # _ENABLED, queues mutations during combat, drains on exit. Layouts
 # read lib.Combat:InCombat() via the _isLayoutable helper.
 Cairn-Gui-2.0\Core\CombatQueue.lua
+# Core/L10n: "@namespace:key" prefix resolution for widget text setters
+# (Decision 10A round-out). Lazy lookup of Cairn-Locale-1.0; pass-through
+# for plain strings. Mixed into Mixins.Base as widget.Cairn:_resolveText.
+Cairn-Gui-2.0\Core\L10n.lua
+# Core/Contracts: validators for widget / layout / theme / easing
+# registration shapes (Decision 11). Public lib:RunContracts() walks
+# every registered piece and emits warnings via Cairn-Log.
+Cairn-Gui-2.0\Core\Contracts.lua
 # Decision 10B: introspection / debug surface. EventLog feeds Stats's
 # event-log section. Inspector tracks every Acquire'd widget. Dev hooks
 # Inspector and EventLog into the lib.Dev flag-toggle path. Load order
@@ -155,6 +163,13 @@ Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Cairn-Gui-Widgets-Secure-2.0.lua
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\ActionButton.lua
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\MacroButton.lua
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\UnitButton.lua
+
+# Cairn-Gui-Layouts-Extra-2.0: optional bundle with Hex + Polar layout
+# strategies. Niche use cases (HUD hex maps, radial menus). Separate
+# bundle so consumers who don't need them don't pay the load cost.
+Cairn-Gui-2.0\Cairn-Gui-Layouts-Extra-2.0\Cairn-Gui-Layouts-Extra-2.0.lua
+Cairn-Gui-2.0\Cairn-Gui-Layouts-Extra-2.0\Layouts\Hex.lua
+Cairn-Gui-2.0\Cairn-Gui-Layouts-Extra-2.0\Layouts\Polar.lua
 
 # Cairn-Gui-Theme-Default-2.0: default visual theme. Auto-activates on load.
 # Consumers can replace with an alternative theme bundle without touching

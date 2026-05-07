@@ -180,7 +180,25 @@ Verification (Day 1 success criterion):
 --      + per-modifier action support). All three use typed wrappers
 --      (SetSpell / SetMacroText / SetClickAction) routed through the
 --      combat queue so consumer code is safe to call mid-combat.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 17
+--  18: Round-out pass: completes every remaining ARCHITECTURE.md item.
+--      Adds Core/L10n.lua (lib:ResolveText + Base:_resolveText for
+--      "@namespace:key" prefix; wired into Button/Label/EditBox/Checkbox/
+--      MacroButton/UnitButton text setters and EditBox placeholder).
+--      Adds Core/Contracts.lua (Decision 11 validators with
+--      lib:RunContracts() entry point + per-registration ValidateX).
+--      Off-screen pause now extends to AnimationGroup records (Pause/
+--      Resume on viewport transition; closes the Day 15G/H gap that
+--      Day 15I/J's animgroup routing left open). Translation /
+--      Rotation animgroup routing added to PROPERTY_ADAPTERS as
+--      backend = "animgroup" with appropriate setupAnim closures
+--      (best-effort; needs real-consumer validation of the wrapper-
+--      level API). Default theme adds atlas tokens (texture.icon.x,
+--      .warning, .gear, .search, .atlas.glow.soft) and documents the
+--      2x asset path for theme bundles. New optional bundle
+--      Cairn-Gui-Layouts-Extra-2.0 ships Hex (axial-coord hex grid,
+--      pointy/flat orientation) and Polar (radial arrangement around
+--      a center point with start/end angles + cw/ccw direction).
+local MAJOR, MINOR = "Cairn-Gui-2.0", 18
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

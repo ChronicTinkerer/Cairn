@@ -185,7 +185,7 @@ function mixin:OnAcquire(opts)
 	end
 
 	-- Initial text + checked state.
-	self._label:SetText(opts.text or "")
+	self._label:SetText(self:_resolveText(opts.text or ""))
 	self._checked = opts.checked and true or false
 	self:SetPrimitiveShown("check", self._checked)
 
@@ -205,7 +205,7 @@ end
 
 function mixin:SetText(text)
 	if self._label then
-		self._label:SetText(text or "")
+		self._label:SetText(self:_resolveText(text or ""))
 	end
 end
 

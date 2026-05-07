@@ -156,8 +156,24 @@ Core:RegisterTheme("Cairn.Default", {
 		-- first, falls back to SetTexture for file paths. The check atlas
 		-- is a clean white glyph on transparent, suitable for tinting via
 		-- color.accent.primary or a state-variant color spec.
+		--
+		-- High-DPI / 2x assets per Decision 5: Blizzard atlases scale
+		-- automatically with the UI scale setting, so atlas-keyed
+		-- textures don't need a separate 2x file. Custom themes that
+		-- ship their OWN textures (TGA/BLP) should provide 2x variants
+		-- via the texture path convention `Path/foo.tga` (1x) +
+		-- `Path/foo-2x.tga` (2x); themes / addons use a runtime check
+		-- like `(GetCVar("uiScale") + 0) > 0.85 and "foo-2x.tga" or
+		-- "foo.tga"`. This default theme uses only Blizzard atlas keys
+		-- so the 2x split isn't relevant; documented here so consumers
+		-- forking the theme know where to wire their own assets.
 
 		["texture.icon.check"]               = "common-icon-checkmark",
+		["texture.icon.x"]                   = "common-icon-redx",
+		["texture.icon.warning"]             = "services-icon-warning",
+		["texture.icon.gear"]                = "GarrMission_CurrencyIcon-Xp",
+		["texture.icon.search"]              = "common-search-magnifyingglass",
+		["texture.atlas.glow.soft"]          = "loottoast-glow",  -- consumers can swap for a bespoke 2x rounded-glow asset
 	},
 })
 

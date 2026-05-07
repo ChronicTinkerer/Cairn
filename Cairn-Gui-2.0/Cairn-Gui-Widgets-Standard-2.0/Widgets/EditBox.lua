@@ -167,14 +167,14 @@ function mixin:OnAcquire(opts)
 		end
 		local r, g, b, a = color(self, "color.fg.text.muted")
 		self._placeholderFS:SetTextColor(r, g, b, a)
-		self._placeholderFS:SetText(opts.placeholder)
+		self._placeholderFS:SetText(self:_resolveText(opts.placeholder))
 	elseif self._placeholderFS then
 		self._placeholderFS:SetText("")
 		self._placeholderFS:Hide()
 	end
 
-	-- Initial text.
-	frame:SetText(opts.text or "")
+	-- Initial text. Resolve L10n prefix.
+	frame:SetText(self:_resolveText(opts.text or ""))
 
 	-- ----- Native -> Cairn event bridges ---------------------------------
 	-- Note: in modern WoW retail, OnTextChanged is not reliably fired for
@@ -215,16 +215,17 @@ end
 -- ----- Public methods --------------------------------------------------
 
 function mixin:SetText(text)
+	text = self:_resolveText(text or "")
 	-- Suppress the OnTextChanged bridge for the duration of the native
 	-- SetText so we fire TextChanged exactly once even if Blizzard's
 	-- OnTextChanged decides to fire. Then explicitly fire TextChanged
 	-- ourselves (modern retail's OnTextChanged is unreliable for
 	-- programmatic SetText, so we can't depend on the bridge alone).
 	self._suppressOnTextChanged = true
-	self._frame:SetText(text or "")
+	self._frame:SetText(text)
 	self._suppressOnTextChanged = false
 	refreshPlaceholder(self)
-	self:Fire("TextChanged", text or "", false)
+	self:Fire("TextChanged", text, false)
 end
 
 function mixin:GetText()
@@ -248,6 +249,7 @@ function mixin:HighlightText(from, to)
 end
 
 function mixin:SetPlaceholder(text)
+	text = text and self:_resolveText(text) or text
 	self._placeholderText = text
 	if text and not self._placeholderFS then
 		-- Lazy-create on first SetPlaceholder if OnAcquire didn't.

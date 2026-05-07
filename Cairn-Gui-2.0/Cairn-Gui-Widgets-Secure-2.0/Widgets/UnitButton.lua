@@ -98,7 +98,7 @@ function mixin:OnAcquire(opts)
 		self._nameFs:SetPoint("RIGHT", frame, "RIGHT", -6, 0)
 		self._nameFs:SetJustifyH("LEFT")
 	end
-	self._nameFs:SetText(opts.text or "")
+	self._nameFs:SetText(self:_resolveText(opts.text or ""))
 
 	-- Bind unit + default click actions.
 	if opts.unit then setAttr(self, "unit", opts.unit) end
@@ -157,7 +157,7 @@ function mixin:Clear()
 end
 
 function mixin:SetText(text)
-	if self._nameFs then self._nameFs:SetText(text or "") end
+	if self._nameFs then self._nameFs:SetText(self:_resolveText(text or "")) end
 end
 
 function mixin:GetText()

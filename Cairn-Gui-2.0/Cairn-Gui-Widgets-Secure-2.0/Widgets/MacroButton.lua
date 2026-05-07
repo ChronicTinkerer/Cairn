@@ -74,7 +74,7 @@ function mixin:OnAcquire(opts)
 		self._label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 		self._label:SetPoint("CENTER", frame, "CENTER", 0, 0)
 	end
-	self._label:SetText(opts.text or "")
+	self._label:SetText(self:_resolveText(opts.text or ""))
 
 	-- Default action type: macro if a macro is given, macrotext if text
 	-- is given, else nothing until the consumer wires one explicitly.
@@ -106,7 +106,7 @@ end
 
 function mixin:SetText(text)
 	-- Label is a UI-only FontString; not subject to combat lockdown.
-	if self._label then self._label:SetText(text or "") end
+	if self._label then self._label:SetText(self:_resolveText(text or "")) end
 end
 
 function mixin:GetText()

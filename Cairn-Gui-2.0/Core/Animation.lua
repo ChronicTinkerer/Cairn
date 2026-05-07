@@ -514,7 +514,29 @@ local function tickAnimations(self, dt)
 	-- apply). dt is discarded -- this is "pause" semantics, not "catch
 	-- up" semantics. Animations resume from their captured state when
 	-- the frame returns on-screen on a later tick.
-	if isOffScreen(self._frame) then return end
+	local off = isOffScreen(self._frame)
+
+	-- Day 15K+ extension: drive Blizzard's group clock for animgroup
+	-- records via Pause / Resume on viewport transitions. Without this,
+	-- animgroup-backed Alpha/Scale animations keep ticking past the
+	-- off-screen gate (Blizzard runs them regardless of our OnUpdate
+	-- bail). Tracked via self._lastOffScreen so we only Pause/Resume on
+	-- the transition edge, not every tick.
+	if off ~= self._lastOffScreen then
+		self._lastOffScreen = off
+		for _, a in ipairs(anims) do
+			if a.fromType == "animgroup" and a.animGroupForRecord then
+				local g = a.animGroupForRecord
+				if off then
+					if g.Pause then pcall(g.Pause, g) end
+				else
+					if g.Resume then pcall(g.Resume, g) end
+				end
+			end
+		end
+	end
+
+	if off then return end
 
 	-- Records added during this tick (typically by a complete handler
 	-- that calls Animate again -- e.g., Sequence's chain or any user
@@ -824,6 +846,9 @@ local EASING_TO_SMOOTHING = {
 -- Retail (>= ~Shadowlands) Alpha animations support SetFromAlpha /
 -- SetToAlpha; older builds may only have SetChange (delta) -- the
 -- setupAnim closure tries the modern API first, falls back to delta.
+-- Exposed on lib for introspection (Forge / contract tests / debug
+-- inspectors). Treat as read-only; mutating from outside the engine
+-- would corrupt routing. Public surface: lib._propertyAdapters.
 local PROPERTY_ADAPTERS = {
 	alpha = {
 		get   = function(frame) return frame:GetAlpha() end,
@@ -875,7 +900,82 @@ local PROPERTY_ADAPTERS = {
 		apply = function(frame, v) frame:SetHeight(v) end,
 		-- No native AnimationGroup type for Height; OnUpdate only.
 	},
+	-- Translation X/Y (Day 17+, animgroup-routed):
+	-- WoW Frames don't have GetX/SetX in a "current animated translation"
+	-- sense. We track the cumulative translation on the cairn so the
+	-- get/apply path can re-derive position via SetPoint offset. The
+	-- animgroup backend uses Blizzard's "Translation" animation type
+	-- which moves the frame visually; we mirror to cairn._translateX/Y
+	-- so re-Animate can read the current value. Best-effort; needs a
+	-- real consumer to validate the wrapper-level API.
+	translateX = {
+		get   = function(frame, cairn) return (cairn and cairn._translateX) or 0 end,
+		apply = function(frame, v, cairn)
+			if cairn then cairn._translateX = v end
+			-- Apply via SetPoint offset: re-anchor relative to whatever
+			-- the consumer originally anchored to. Without that anchor
+			-- captured, fall back to a TOPLEFT shift from current.
+			if frame.GetPoint then
+				local p, rel, relP, x, y = frame:GetPoint(1)
+				if p then frame:SetPoint(p, rel, relP, v, y or 0) end
+			end
+		end,
+		backend  = "animgroup",
+		animType = "Translation",
+		setupAnim = function(anim, from, to)
+			if anim.SetOffset then anim:SetOffset(to - from, 0) end
+		end,
+	},
+	translateY = {
+		get   = function(frame, cairn) return (cairn and cairn._translateY) or 0 end,
+		apply = function(frame, v, cairn)
+			if cairn then cairn._translateY = v end
+			if frame.GetPoint then
+				local p, rel, relP, x, y = frame:GetPoint(1)
+				if p then frame:SetPoint(p, rel, relP, x or 0, v) end
+			end
+		end,
+		backend  = "animgroup",
+		animType = "Translation",
+		setupAnim = function(anim, from, to)
+			if anim.SetOffset then anim:SetOffset(0, to - from) end
+		end,
+	},
+	-- Rotation (Day 17+, animgroup-routed):
+	-- WoW Frames don't have a native rotation property; only Textures
+	-- rotate (via SetRotation). For Frame-level rotation, the
+	-- AnimationGroup "Rotation" animation type rotates the frame's
+	-- transformation matrix at draw time. Cairn tracks cumulative
+	-- rotation on the cairn for re-Animate. Best-effort; needs a real
+	-- consumer to validate the wrapper-level API.
+	rotation = {
+		get   = function(frame, cairn) return (cairn and cairn._rotation) or 0 end,
+		apply = function(frame, v, cairn)
+			if cairn then cairn._rotation = v end
+			-- Frame-level SetRotation doesn't exist in stock WoW Frame.
+			-- The animgroup path applies rotation via the animation
+			-- system itself; the OnUpdate fallback can't easily mirror
+			-- a Frame-level rotation, so this apply path is a no-op
+			-- when the backend is OnUpdate. Animgroup-routed callers
+			-- get the visual rotation; re-Animate reads cairn._rotation.
+		end,
+		backend  = "animgroup",
+		animType = "Rotation",
+		setupAnim = function(anim, from, to)
+			-- Blizzard expects radians for Rotation animations.
+			if anim.SetDegrees then
+				anim:SetDegrees(math.deg(to - from))
+			elseif anim.SetRadians then
+				anim:SetRadians(to - from)
+			end
+		end,
+	},
 }
+
+-- Public introspection handle. Forge / contract tests / debug inspectors
+-- read this to verify routing without poking file-locals. DO NOT mutate
+-- externally; the engine assumes ownership of the table.
+lib._propertyAdapters = PROPERTY_ADAPTERS
 
 function Base:Animate(spec)
 	if type(spec) ~= "table" then

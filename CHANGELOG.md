@@ -10,6 +10,34 @@ The format is loosely based on
 
 ## [Unreleased]
 
+## [11] — Cairn-Gui-2.0 Core MINOR=18: Round-out pass (2026-05-07)
+
+### Added
+
+- **Cairn-Gui-2.0 Core MINOR=18** — round-out pass that finishes every remaining ARCHITECTURE.md item. Six surfaces touched: L10n resolver, Contracts validator, animgroup off-screen pause parity, Translation/Rotation animgroup routing, default theme atlas tokens, and a new optional Layouts-Extra bundle.
+
+  - **`Core/L10n.lua` (new)** — `lib:ResolveText(text, widgetCairn?)` resolves the `@namespace:key` prefix against `Cairn-Locale-1.0` (lazy lookup; no hard dep). Mixes `Base:_resolveText(text)` into `Mixins/Base.lua` so widget mixins can call it from text-setting paths. Tries `instance:Lookup(key)` first then `instance:Get(key)`; pass-through for plain strings and for missing namespaces. Wired into `Button.SetText`, `Label.SetText`, `Checkbox.SetLabel`, `EditBox.SetText` + `SetPlaceholder`, `MacroButton.SetText`, and `UnitButton.SetText`.
+
+  - **`Core/Contracts.lua` (new)** — Decision 11 validators. `ValidateWidget`, `ValidateLayout`, `ValidateTheme`, `ValidateEasing` enforce per-registration invariants (secure widgets need a Secure*Template, `pool=true` requires a non-function reset to be flagged as an error, `prewarm` must be non-negative). `lib:RunContracts()` walks every registered piece and returns a `{ ok, warnings, errors }` summary. Warnings flow through `Cairn-Log` when present, falling back to chat. Pure best-effort: warnings don't block registration.
+
+  - **`Core/Animation.lua` extended** — off-screen pause parity now covers AnimationGroup-backed records as well as OnUpdate records. Each animgroup record tracks `_lastOffScreen`; on viewport state change the engine calls `group:Pause()` / `group:Resume()` instead of just skipping the frame. Closes the gap between the OnUpdate path (Day 15G/H) and the animgroup path (Day 15I/J).
+
+  - **Translation / Rotation animgroup routing** — `PROPERTY_ADAPTERS` gains `translateX`, `translateY`, and `rotation` entries with `backend = "animgroup"`. Each adapter installs the appropriate `Translation` or `Rotation` child anim with `setupAnim` closures that set offset/degrees from the target value. Best-effort surface; flagged in code as needing real-consumer validation of the wrapper-level API.
+
+  - **`Cairn-Gui-Layouts-Extra-2.0` (new bundle)** — optional companion to the built-in six strategies. Distinct LibStub MAJOR; consumers depend on it only when they want the extras. RequiresCore(>=17). Two strategies shipped:
+
+    - **`Hex`** — axial-coordinate hexagonal grid. Configurable orientation (`pointy` default, `flat` option), `size` (hex radius), `gap`, and `padding`. Children flow in row-then-column axial order. Use cases: hex-based pickers, grid-style icon arrangements with hex aesthetics.
+
+    - **`Polar`** — radial arrangement around a center point. Configurable `radius`, `startAngle`, `endAngle`, and `direction` (`cw` / `ccw`). Children evenly distributed across the angular sweep; rotated about their own anchor optionally. Use cases: radial menus, dial-style pickers, ring-of-icons HUDs.
+
+  - **Default theme atlas tokens** — `Cairn-Gui-Theme-Default-2.0` adds `texture.icon.x`, `.warning`, `.gear`, `.search`, and `.atlas.glow.soft` token paths. Document headers note the 2x asset path for theme bundles that ship retina-class textures.
+
+### Notes
+
+- **L10n resolution is widget-aware where available.** `Base:_resolveText` is a no-op for plain strings (no `@` prefix), so widgets that pass arbitrary user content through it pay zero cost when locale isn't in use.
+- **Contracts surface is gentle.** Designed to be run by Forge/dev tooling, not at addon load. Warnings are advisory; errors don't prevent the widget/layout/theme from registering.
+- **In-game test:** `Forge/.dev/tests/cairn_gui_2_round_out.lua` exercises L10n resolve path, Contracts:RunContracts return shape, Layouts-Extra Hex/Polar registration presence, animgroup off-screen pause structure (`_lastOffScreen` field present after first tick), and Translation/Rotation adapter presence in `PROPERTY_ADAPTERS`.
+
 ## [10] — Cairn-Gui-2.0 Core MINOR=17: Decision 8 secure widget support (2026-05-07)
 
 ### Added

@@ -163,8 +163,8 @@ function mixin:OnAcquire(opts)
 	-- Apply variant (does the bg + border + text-color work).
 	applyVariant(self, opts.variant or DEFAULT_VARIANT)
 
-	-- Initial text from opts.
-	self._label:SetText(opts.text or "")
+	-- Initial text from opts. Resolve L10n prefix.
+	self._label:SetText(self:_resolveText(opts.text or ""))
 
 	-- Bridge Blizzard's native OnClick to a Cairn semantic event.
 	frame:SetScript("OnClick", function(_, button)
@@ -176,7 +176,8 @@ end
 
 function mixin:SetText(text)
 	if self._label then
-		self._label:SetText(text or "")
+		-- Resolve "@namespace:key" L10n prefix; pass-through for plain strings.
+		self._label:SetText(self:_resolveText(text or ""))
 	end
 end
 

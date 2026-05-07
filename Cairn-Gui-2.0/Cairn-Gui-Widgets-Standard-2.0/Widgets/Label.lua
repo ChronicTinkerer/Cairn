@@ -129,7 +129,7 @@ function mixin:OnAcquire(opts)
 
 	-- Set text BEFORE measuring intrinsic size (string measurement reads
 	-- the current text).
-	self._text:SetText(opts.text or "")
+	self._text:SetText(self:_resolveText(opts.text or ""))
 
 	-- Size: explicit dimensions win; otherwise size to fit the rendered
 	-- string. Layout strategies will override anyway.
@@ -141,7 +141,8 @@ end
 
 function mixin:SetText(text)
 	if self._text then
-		self._text:SetText(text or "")
+		-- Resolve "@namespace:key" L10n prefix; pass-through for plain strings.
+		self._text:SetText(self:_resolveText(text or ""))
 	end
 end
 

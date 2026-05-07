@@ -10,21 +10,124 @@ The format is loosely based on
 
 ## [Unreleased]
 
+## [5] — Cairn-FSM-1.0 (2026-05-06)
+
+New v0.2 sibling library: `Cairn-FSM-1.0`. Flat finite state machine
+with named states, transition graph, per-state entry/exit hooks,
+optional guards and actions, and async transitions backed by sibling
+Cairn libs.
+
+Designed as a sibling to `Cairn.Sequencer`, not a replacement. Where
+Sequencer drives an ordered list of actions ("do these in order, advance
+when each one returns truthy"), FSM models a named-state graph with
+named transitions ("I'm in some state, named events change which state
+I'm in, entering and exiting runs hooks"). They compose — an FSM
+transition with `actions = {...}` runs that step list through Sequencer
+internally.
+
 ### Added
 
-- **Cairn-FSM-1.0** — flat finite state machine library. Sibling of
-  `Cairn.Sequencer`: where Sequencer drives an ordered list of actions,
-  FSM models a named-state graph with transitions, per-state entry/exit
-  hooks, optional guards/actions, and async transitions backed by
-  `Cairn.Timer` and `Cairn.Sequencer`. Per-state `events = {...}` maps
-  auto-register Cairn.Events listeners on entry and unregister on exit;
-  lifecycle dispatches through `Cairn.Callback`. Designed flat-now /
-  hierarchical-later: state values are tables of properties, so a future
-  MINOR can add nested machines without breaking the v1 API.
-  - LibStub MAJOR: `Cairn-FSM-1.0`. Folder: `CairnFSM/`. MINOR=1.
-  - Loaded after `CairnSequencer` and `CairnTimer` (soft dependencies
-    used for the `actions` and `delay` / `wait` async transition kinds).
-  - In-game test: `Forge/.dev/tests/cairn_fsm_basic.lua`.
+- **`Cairn-FSM-1.0`** — flat finite state machine library at LibStub
+  MAJOR `Cairn-FSM-1.0`, MINOR=1. Folder: `CairnFSM/`. Auto-resolves
+  at `Cairn.FSM` via the umbrella facade.
+
+  Public API:
+
+  ```lua
+  local spec = Cairn.FSM.New({
+      initial = "idle",
+      context = { retries = 0 },
+      states = {
+          idle = {
+              on = {
+                  START = "running",                            -- bare target
+                  BOOM  = { target = "error", action = fn },    -- side-effect
+                  BAD   = { target = "error", guard  = fn },    -- predicate
+                  GO    = { target = "ready", delay  = 1.5 },   -- async: timer
+                  DRAIN = { target = "idle",  wait   = pred,
+                            timeout = 10, onTimeout = "error" },-- async: poll
+                  DEPLOY= { target = "deployed",
+                            actions = { fn1, fn2, fn3 } },      -- async: steps
+              },
+              onEnter = function(m, payload) ... end,
+              onExit  = function(m, payload) ... end,
+          },
+          running = {
+              events = {                                        -- WoW events
+                  PLAYER_REGEN_DISABLED = "FAIL",
+                  PLAYER_DEAD = function(m, ...) m:Send("FAIL") end,
+              },
+              on = { STOP = "idle", FAIL = "error" },
+          },
+          error    = { onEnter = function(m, payload) ... end },
+          ready    = { on = { GO = "running" } },
+          deployed = {},
+      },
+  })
+
+  local m = spec:Instantiate()
+  m:Send("START")           -- transition by name
+  m:State()                 -- current state ("running"; FROM during async)
+  m:Pending()               -- async descriptor or nil
+  m:Cancel()                -- abort pending async
+  m:Reset()                 -- back to spec.initial
+  m:Destroy()               -- unhook events, cancel timers
+
+  m:On("Transition", function(_, mm, from, to, evt) ... end)
+  m:On("Enter:running", function(_, mm) ... end)
+  ```
+
+- **Three async transition kinds**:
+  - `delay = N` — Cairn.Timer schedules the commit after N seconds.
+  - `wait = pred` — Cairn.Timer ticker polls `pred(m)` each
+    `pollInterval` (default 0.1s) and commits when truthy. Optional
+    `timeout` + `onTimeout` reroute to a different state if the
+    predicate never resolves.
+  - `actions = {fn1, ...}` — runs the list as a Cairn.Sequencer
+    internally and commits when the sequencer finishes.
+
+- **Per-state `events = {...}` map** auto-registers Cairn.Events
+  listeners on entry and unregisters on exit. Mappings can be a
+  transition name (string) or a custom handler function.
+
+- **Configurable Send-during-pending** via `sendDuringPending` on the
+  spec: `"drop"` (default), `"queue"`, or `"override"` (cancel the
+  pending transition first). Re-entrant `Send` calls from inside an
+  `onEnter` / action / callback are always queued.
+
+- **Owner-tagged cleanup.** The machine acts as the Cairn-Timer /
+  Cairn-Events `owner`, so `Destroy` is a single `CancelAll` +
+  `UnsubscribeAll` defense-in-depth pass.
+
+- **Soft-required deps.** Cairn-Timer / Sequencer / Callback / Log are
+  resolved lazily; missing deps degrade gracefully (e.g., `actions`
+  runs each fn once inline if Sequencer is absent).
+
+- **Errors in user functions** (guards, actions, onEnter, onExit, event
+  handlers, callbacks) are pcall-trapped and routed to
+  `geterrorhandler()`. A bad consumer can't kill the machine.
+
+### Changed
+
+- **`Cairn.toc` v0.2 block** — added `CairnFSM\Cairn-FSM-1.0.lua` line
+  after `CairnSequencer` and `CairnTimer` (FSM's soft dependencies for
+  the `actions` and `delay`/`wait` async kinds).
+
+- **`README.md`** — new full module section after `Cairn.Sequencer`
+  with the FSM example, async-kinds table, method reference, and
+  callback signature documentation. Module also added to the Status
+  paragraph, the Roadmap v0.2 list, and the File Layout table.
+
+### Notes
+
+- **Flat now, hierarchical later.** `states[name]` is a table of
+  properties, never a leaf. A future MINOR can extend a state value
+  to contain its own `{ initial, states }` for nested machines without
+  breaking the v1 API surface.
+- **In-game test:** `Forge/.dev/tests/cairn_fsm_basic.lua` — 30/30
+  PASS at release time. Sync-only (Forge Console snippets don't
+  observe deferred `C_Timer.After` callbacks; the commit half is
+  exercised by calling `m:_completePending()` directly).
 
 ## [4] — Cairn-Gui-2.0 Decision 9 implementation (2026-05-06)
 

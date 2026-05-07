@@ -10,6 +10,8 @@ The format is loosely based on
 
 ## [Unreleased]
 
+## [7] — Cairn-Gui-2.0 Core MINOR=14: Decision 10B introspection (2026-05-07)
+
 ### Added
 
 - **Cairn-Gui-2.0 Core MINOR=14: Decision 10B (Inspector / Stats / EventLog / Dev)** — full read-only introspection surface for the widget library. Forge or any consumer can now enumerate every live widget, inspect per-widget state, count internal events, tail the event log, and toggle a built-in frame-outline overlay. The library exposes the data; the visualization is the consumer's job.

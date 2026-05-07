@@ -21,6 +21,12 @@ ignore:
   - "*.ps1"
   - scratch
   - tmp
+  # Wago rejects packages whose TOC filenames carry a flavor suffix it
+  # doesn't recognize ("We found different named TOC files in your addon").
+  # `_XPTR` is not a WoW-canonical flavor (Mainline / Mists / TBC /
+  # Vanilla / Wrath / Cata are). XPTR support stays in our local working
+  # tree for dev installs but never enters the published zip.
+  - "*_XPTR.toc"
 
 # We do NOT use @project-version@ substitution in the .toc -- the version
 # field carries our sequential build number (+1 per .dev/release.ps1 run,

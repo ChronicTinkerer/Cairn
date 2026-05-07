@@ -10,6 +10,24 @@ The format is loosely based on
 
 ## [Unreleased]
 
+## [8] — Cairn-Gui-2.0 Core MINOR=15: Grid / Form / Flex layouts (2026-05-07)
+
+### Added
+
+- **Cairn-Gui-2.0 Core MINOR=15** — three new built-in layout strategies under `Core/Layouts/`, completing the v1 set of six (Manual, Fill, Stack, Grid, Form, Flex) called out in ARCHITECTURE.md Decision 4. All three follow the existing `lib:RegisterLayout(name, fn)` contract; consumers register custom strategies the same way.
+
+  - **`Grid`** — N-column flow. Children fill rows left-to-right and wrap to the next row at `columns`. Cell width is computed from the container width (default) or set explicitly via `opts.cellWidth`. Row height is per-row max-intrinsic (default) or explicit via `opts.cellHeight`. Independent `rowGap` and `colGap`. Use cases: icon grids, uniform card layouts, two-column toggle panels.
+
+  - **`Form`** — Pair-iteration label/field layout. Children consumed in pairs (label, field, label, field, ...); odd-out child becomes a full-width row. Label column auto-fits to widest label intrinsic (override via `opts.labelWidth`); field column fills remaining width minus padding. Per-row height is max of label + field intrinsics. Standard pattern for settings panels and config dialogs.
+
+  - **`Flex`** — CSS-flexbox-inspired. Configurable `direction` (row / column), `justify` (start / end / center / between / around / evenly), `align` (start / end / center / stretch), `gap`, `padding`. Per-child `_flexGrow` distributes leftover free space along the main axis proportionally; `_flexBasis` overrides the initial main-axis size. Single-line only in v1 (no wrap; that's what Grid is for). No flex-shrink and no order property in v1 — both deferred until a real consumer needs them.
+
+### Notes
+
+- **In-game test:** `Forge/.dev/tests/cairn_gui_2_layouts_grid_form_flex.lua` exercises all three with positional spot-checks (Grid 6-cell positions, Form pair offsets, Flex justify-between distribution, Flex grow distribution, Flex column with center align). Sync-only; no timer dependence.
+- **Layout strategies are data**: existing widgets / consumers don't need code changes to use the new strategies. Just `container.Cairn:SetLayout("Grid", { columns = 3 })` and the same `RelayoutNow` / dirty-pump path that already drives Manual/Fill/Stack handles them.
+- **Cairn-Gui-Layouts-Extra-2.0** (Hex, Polar — per the ARCHITECTURE doc directory layout) is still deferred; those are optional bundles, not part of the v1 core six.
+
 ## [7] — Cairn-Gui-2.0 Core MINOR=14: Decision 10B introspection (2026-05-07)
 
 ### Added

@@ -80,6 +80,9 @@ Cairn-Gui-2.0\Core\Layout.lua
 Cairn-Gui-2.0\Core\Layouts\Manual.lua
 Cairn-Gui-2.0\Core\Layouts\Fill.lua
 Cairn-Gui-2.0\Core\Layouts\Stack.lua
+Cairn-Gui-2.0\Core\Layouts\Grid.lua
+Cairn-Gui-2.0\Core\Layouts\Form.lua
+Cairn-Gui-2.0\Core\Layouts\Flex.lua
 Cairn-Gui-2.0\Core\EventLog.lua
 Cairn-Gui-2.0\Core\Stats.lua
 Cairn-Gui-2.0\Core\Inspector.lua

@@ -138,7 +138,15 @@ Verification (Day 1 success criterion):
 --      minimal frame-outline + name-label overlay on every tracked
 --      widget when toggled on. Forge can consume any of these surfaces
 --      for richer debug tabs in a follow-up bundle.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 14
+--  15: Decision 4 round-out: three new layout strategies under
+--      Core/Layouts/. Grid (N-column flow, optional explicit cell
+--      sizes), Form (pair-iteration label/field with auto-fit label
+--      column), Flex (CSS-flexbox-inspired with direction / justify /
+--      align / gap / per-child flexGrow + flexBasis). Six built-in
+--      strategies total now: Manual, Fill, Stack, Grid, Form, Flex.
+--      Strategies-as-data is unchanged; consumers register custom
+--      strategies via the same lib:RegisterLayout API.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 15
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

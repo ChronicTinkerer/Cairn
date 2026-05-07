@@ -295,6 +295,30 @@ function mixin:OnAcquire(opts)
 	end
 	sf:SetScrollChild(self._content)
 
+	-- ----- Outer-frame resize propagation -------------------------------
+	-- If a consumer SetPoint's the outer frame to fill a parent (rather
+	-- than relying on opts.width/height), the outer frame's size changes
+	-- AFTER OnAcquire ran and our content Container was sized from the
+	-- now-stale defaults. Hook the outer's OnSizeChanged once and keep
+	-- the content's width in sync with the viewport's width minus the
+	-- scrollbar reserve. Idempotent across pool re-Acquire via the
+	-- _outerSizeHooked sentinel.
+	self._sbReserve = sbReserve
+	if not self._outerSizeHooked then
+		frame:HookScript("OnSizeChanged", function(_, ow, _oh)
+			if not self._content then return end
+			local reserve = self._sbReserve or 0
+			local newW = math.max(1, ow - reserve)
+			local _, ch = self._content:GetSize()
+			if not ch or ch <= 0 then ch = self._contentHeight or ow end
+			self._content:SetSize(newW, ch)
+			-- Inner Blizzard ScrollFrame is anchored via SetPoint to the
+			-- outer, so it tracks automatically. Thumb repositions next
+			-- frame via the inner SF's own OnSizeChanged hook.
+		end)
+		self._outerSizeHooked = true
+	end
+
 	-- ----- Scrollbar (optional) -----------------------------------------
 	if showSB then
 		ensureScrollbar(self)

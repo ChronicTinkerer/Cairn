@@ -360,6 +360,9 @@ function mixin:SetOptions(opts)
 		rebuildRows(self)
 		layoutPopup(self)
 	end
+	-- Header label width tracks the selected option's label; invalidate
+	-- the parent layout so siblings re-anchor.
+	self:_invalidateParentLayout()
 end
 
 function mixin:GetOptions()
@@ -374,6 +377,9 @@ function mixin:SetSelected(value)
 		local opt = findOption(self._options, value)
 		self:Fire("Changed", value, opt and opt.label or nil)
 	end
+	-- Header text width tracks the selection; tell the parent layout to
+	-- re-measure.
+	self:_invalidateParentLayout()
 end
 
 function mixin:GetSelected()

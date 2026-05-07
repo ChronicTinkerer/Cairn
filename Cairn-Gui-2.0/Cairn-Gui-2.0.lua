@@ -180,6 +180,47 @@ Verification (Day 1 success criterion):
 --      + per-modifier action support). All three use typed wrappers
 --      (SetSpell / SetMacroText / SetClickAction) routed through the
 --      combat queue so consumer code is safe to call mid-combat.
+--  19: Framework gaps surfaced by Cairn-Gui-Demo-2.0. Five fixes:
+--      (1) Layout auto-invalidate. New Base:_invalidateParentLayout()
+--      called from Button/Label/Checkbox/EditBox/Dropdown setters
+--      (SetText / SetVariant / SetPlaceholder / SetSelected /
+--      SetOptions). Stack horizontal in particular silently kept old
+--      widths after SetText, letting longer text bleed into siblings;
+--      auto-invalidate flips the parent dirty flag so the next-frame
+--      pump re-runs the strategy and re-anchors. Universal: every
+--      consumer of every widget benefits without changing code.
+--      (2) ScrollFrame outer-resize propagation. New OnSizeChanged
+--      hook on the outer frame keeps the scroll-child Container's
+--      width in sync with the viewport (minus scrollbar reserve).
+--      Previously Acquire sized content from opts.width; if the
+--      consumer SetPoint'd the outer to fill a parent later, the
+--      content stayed at the original width and children added to
+--      it anchored to the wrong-width frame. The hook is idempotent
+--      across pool re-Acquire via _outerSizeHooked.
+--      (3) L10n resolver: rawget against prototype instead of
+--      probing via attribute access. Cairn-Locale's instance
+--      metatable treats unknown attribute reads as translation
+--      lookups, so the previous `if type(instance.Lookup) ==
+--      "function"` check emitted a missing-key warning every call.
+--      Resolver now uses getmetatable(instance).__index where it's
+--      a table, or calls instance.Get directly when __index is a
+--      function (Cairn-Locale's pattern).
+--      (4) Cairn.Dev fallback warnings on layouts. Stack / Grid /
+--      Flex / Form now emit a Cairn-Log warning under Cairn.Dev when
+--      a child has no intrinsic size AND no current frame size, so
+--      the strategy resorts to the 20px fallback. Previously this
+--      was silent; cells collapsed on top of each other (the
+--      "jumbled" symptom) with no signal to the author.
+--      (5) Window default strata HIGH (not DIALOG). With Window at
+--      DIALOG, DIALOG-strata popups (Dropdown option lists, child
+--      windows) raced for frame level inside the same strata and
+--      lost half the time, rendering invisibly behind the host.
+--      Defaulting Window to HIGH lifts host windows out of the
+--      collision zone. ARCHITECTURE.md gains a "Strata Convention"
+--      section documenting HIGH/DIALOG/FULLSCREEN_DIALOG roles.
+--      Companion bundle bump: Cairn-Gui-Widgets-Standard-2.0 -> 3
+--      (widget setter behavior change for #1, ScrollFrame for #2,
+--      Window default for #5).
 --  18: Round-out pass: completes every remaining ARCHITECTURE.md item.
 --      Adds Core/L10n.lua (lib:ResolveText + Base:_resolveText for
 --      "@namespace:key" prefix; wired into Button/Label/EditBox/Checkbox/
@@ -198,7 +239,7 @@ Verification (Day 1 success criterion):
 --      Cairn-Gui-Layouts-Extra-2.0 ships Hex (axial-coord hex grid,
 --      pointy/flat orientation) and Polar (radial arrangement around
 --      a center point with start/end angles + cw/ccw direction).
-local MAJOR, MINOR = "Cairn-Gui-2.0", 18
+local MAJOR, MINOR = "Cairn-Gui-2.0", 19
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

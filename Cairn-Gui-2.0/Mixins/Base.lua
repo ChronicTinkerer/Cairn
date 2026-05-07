@@ -96,6 +96,23 @@ function Base:_addChild(childCairn)
 	end
 end
 
+-- ----- Auto-invalidate parent layout (Decision 4 follow-up) ------------
+-- Setters on widgets (SetText, SetVariant, SetPlaceholder, etc.) that
+-- change a child's intrinsic size should call this so the parent's
+-- layout strategy re-runs and re-anchors siblings around the new size.
+-- Without this, Stack horizontal in particular silently keeps the old
+-- width and longer text bleeds into adjacent widgets.
+--
+-- Called by widget mixins, NOT by consumer code. Safe no-op if the
+-- widget has no parent (top-level Window) or the parent has no layout.
+
+function Base:_invalidateParentLayout()
+	local p = self._parent
+	if p and p._invalidateLayout then
+		p:_invalidateLayout()
+	end
+end
+
 function Base:_removeChild(childCairn)
 	if not self._children then return false end
 	for i, c in ipairs(self._children) do

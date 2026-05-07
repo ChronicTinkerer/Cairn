@@ -178,6 +178,9 @@ function mixin:SetText(text)
 	if self._label then
 		-- Resolve "@namespace:key" L10n prefix; pass-through for plain strings.
 		self._label:SetText(self:_resolveText(text or ""))
+		-- Intrinsic width depends on label width; tell the parent layout
+		-- to re-measure so siblings re-anchor around the new size.
+		self:_invalidateParentLayout()
 	end
 end
 
@@ -190,6 +193,10 @@ function mixin:SetVariant(variantName)
 		error(("SetVariant: %q is not a known variant (default/primary/danger/ghost)"):format(tostring(variantName)), 2)
 	end
 	applyVariant(self, variantName)
+	-- Variant changes don't usually shift intrinsic width, but text-color
+	-- repaints and border swaps can affect padding-aware sizing in custom
+	-- variants. Cheap to invalidate.
+	self:_invalidateParentLayout()
 end
 
 function mixin:GetVariant()

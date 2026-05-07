@@ -77,7 +77,17 @@ lib:RegisterLayout("Grid", function(container, opts)
         else
             local _, ih = child:GetIntrinsicSize()
             h = ih or (child._frame:GetHeight() or 0)
-            if h <= 0 then h = DEFAULT_FALLBACK_SIZE end
+            if h <= 0 then
+                -- Dev-mode warning: silent fallback to 20px collapses
+                -- cells on top of each other (the "jumbled" symptom).
+                -- Consumers should pass opts.cellHeight or give the
+                -- child an intrinsic size.
+                if lib.Dev and lib._log and lib._log.Warn then
+                    lib._log:Warn("Grid: child %s has no intrinsic height and frame:GetHeight()=0; using fallback %dpx (pass opts.cellHeight to silence)",
+                        tostring(child._type or "?"), DEFAULT_FALLBACK_SIZE)
+                end
+                h = DEFAULT_FALLBACK_SIZE
+            end
         end
         rowHeights[row] = math.max(rowHeights[row] or 0, h)
     end

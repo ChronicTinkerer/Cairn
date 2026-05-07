@@ -1,0 +1,6 @@
+# Editor configs (per the Cairn editor-config policy: never committed).
+.vscode/
+.idea/
+
+# Dev-local artifacts.
+.dev/

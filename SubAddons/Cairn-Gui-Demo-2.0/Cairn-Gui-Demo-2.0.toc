@@ -1,0 +1,34 @@
+## Interface: 120005, 50503, 20505, 11508, 120007
+## Title: Cairn-Gui-Demo-2.0
+## Notes: Live, browseable showcase of every Cairn-Gui-2.0 feature. /cgdemo opens a tabbed window with one tab per surface (widgets, layouts, themes, primitives, animations, events, L10n, secure widgets, contracts, inspector). Author-facing reference; not required by any other addon.
+## Author: ChronicTinkerer
+## Version: 1
+## Dependencies: Cairn
+## X-Category: Development Tools
+## X-License: MIT
+## DefaultState: enabled
+## LoadOnDemand: 0
+
+# Core: init, slash command, root Window + TabGroup shell. Each Tabs/*.lua
+# below builds out one tab against the shared shell.
+Core.lua
+
+# Code-snippet strings shared across tabs (so each tab file stays focused
+# on rendering, not on quoting itself in Lua).
+Snippets.lua
+
+# Tabs (load after Core since they call into the registration API on it).
+Tabs\Welcome.lua
+Tabs\Buttons.lua
+Tabs\Inputs.lua
+Tabs\Containers.lua
+Tabs\Layouts.lua
+Tabs\LayoutsExtra.lua
+Tabs\Themes.lua
+Tabs\Primitives.lua
+Tabs\Animations.lua
+Tabs\Events.lua
+Tabs\L10n.lua
+Tabs\Inspector.lua
+Tabs\Secure.lua
+Tabs\Contracts.lua

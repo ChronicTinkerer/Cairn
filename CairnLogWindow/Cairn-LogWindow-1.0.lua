@@ -26,7 +26,13 @@ Slash commands (registered by Cairn-Standalone-1.0):
 	/cairn log stats        show buffer/level summary
 ]]
 
-local MAJOR, MINOR = "Cairn-LogWindow-1.0", 1
+-- MINOR history:
+--   1  initial: scrollable buffer viewer with filters
+--   2  strata HIGH -> DIALOG so the window layers above Cairn-Gui-2.0
+--      Window hosts (which default to HIGH since Standard-2.0 MINOR 3).
+--      Spotted 2026-05-07 when Cairn-Demo's "Toggle LogWindow" button
+--      opened the window successfully but it rendered behind the demo.
+local MAJOR, MINOR = "Cairn-LogWindow-1.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -82,7 +88,9 @@ local function buildFrame()
 	if f.SetMinResize    then f:SetMinResize(360, 200)    end
 	f:EnableMouse(true)
 	f:SetClampedToScreen(true)
-	f:SetFrameStrata("HIGH")
+	-- DIALOG so we layer above Cairn-Gui-2.0 Window hosts at HIGH strata.
+	-- Bumped from HIGH to DIALOG in MINOR 2 to fix the demo collision.
+	f:SetFrameStrata("DIALOG")
 	if f.SetBackdrop then
 		f:SetBackdrop({
 			bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",

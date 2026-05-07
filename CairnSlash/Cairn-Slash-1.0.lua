@@ -28,7 +28,12 @@ as a single string. Use s:Args(rest) if you want it pre-split with
 respect for "double quotes".
 ]]
 
-local MAJOR, MINOR = "Cairn-Slash-1.0", 1
+-- MINOR history:
+--   1  initial: Register / Subcommand / Default / Aliases / Run / Args / PrintHelp
+--   2  added :GetSubcommands() and :GetSlashes() so tools can introspect
+--      a slash without reaching into the private _subs / _slashes tables.
+--      Spotted while building Cairn-Demo's Slash tab (2026-05-07).
+local MAJOR, MINOR = "Cairn-Slash-1.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -144,6 +149,32 @@ function proto:Run(input)
 end
 
 function proto:Args(rest) return splitArgs(rest) end
+
+-- Introspection: enumerate registered subcommands. Returns a fresh array
+-- of { name = "config", help = "open the config panel" } sorted by name.
+-- Added in MINOR 2 so dev/debug UIs (e.g. Cairn-Demo's Slash tab, Forge's
+-- registry browser) don't have to read the private `_subs` table.
+function proto:GetSubcommands()
+	local out, names = {}, {}
+	for n in pairs(self._subs) do names[#names + 1] = n end
+	table.sort(names)
+	for _, n in ipairs(names) do
+		local entry = self._subs[n]
+		out[#out + 1] = {
+			name = entry.name or n,   -- preserve original-case display name
+			help = entry.help,
+		}
+	end
+	return out
+end
+
+-- Introspection: list of every slash string this object responds to
+-- (primary + aliases). Returns a fresh array of strings.
+function proto:GetSlashes()
+	local out = { self._slashes[1] }
+	for _, alias in ipairs(self._aliases or {}) do out[#out + 1] = alias end
+	return out
+end
 
 -- (Re)register all slashes with SlashCmdList.
 function proto:_register()

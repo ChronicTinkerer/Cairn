@@ -143,6 +143,9 @@ function mixin:SetText(text)
 	if self._text then
 		-- Resolve "@namespace:key" L10n prefix; pass-through for plain strings.
 		self._text:SetText(self:_resolveText(text or ""))
+		-- Re-measure: the rendered string size drives Label's intrinsic
+		-- size, which the parent layout reads to position siblings.
+		self:_invalidateParentLayout()
 	end
 end
 
@@ -155,6 +158,8 @@ function mixin:SetVariant(variantName)
 		error(("SetVariant: %q is not a known Label variant"):format(tostring(variantName)), 2)
 	end
 	applyVariant(self, variantName)
+	-- Heading vs body uses different fonts, which changes string width.
+	self:_invalidateParentLayout()
 end
 
 function mixin:GetVariant()

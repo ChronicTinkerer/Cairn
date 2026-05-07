@@ -96,6 +96,11 @@ lib:RegisterLayout("Form", function(container, opts)
                 h = math.max(label._frame:GetHeight() or 0,
                              (field and field._frame:GetHeight()) or 0)
             end
+            if h <= 0 and lib.Dev and lib._log and lib._log.Warn then
+                lib._log:Warn("Form: row %d -- neither label %s nor field %s has intrinsic height; using fallback %dpx (pass opts.rowHeight to silence)",
+                    math.floor((i + 1) / 2), tostring(label._type or "?"),
+                    tostring((field and field._type) or "nil"), DEFAULT_ROW_HEIGHT)
+            end
             rowH = (h > 0) and h or DEFAULT_ROW_HEIGHT
         end
 

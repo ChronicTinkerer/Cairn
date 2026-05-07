@@ -176,6 +176,22 @@ Cairn-Gui-2.0\Cairn-Gui-Layouts-Extra-2.0\Layouts\Polar.lua
 # Core or any widget. Per Decision 11.
 Cairn-Gui-2.0\Cairn-Gui-Theme-Default-2.0\Cairn-Gui-Theme-Default-2.0.lua
 
+# Cairn-SettingsPanel-2.0: schema-to-panel renderer built on Cairn-Gui-2.0.
+# Drop-in successor to Cairn-SettingsPanel-1.0 (which is on Cairn-Gui-1.0).
+# Cairn-Settings:OpenStandalone prefers v2 when this lib is loaded, with
+# a v1 fallback when only v1 is present. Same public API as v1.
+CairnSettingsPanel-2.0\Cairn-SettingsPanel-2.0.lua
+
+# Cairn-LogWindow-2.0: log viewer rebuilt on Cairn-Gui-2.0 widgets. Drop-in
+# successor to Cairn-LogWindow-1.0 with the same public API plus inline
+# filter controls (level / source dropdowns, search field, clear button).
+# At file-scope load it installs itself as Cairn.LogWindow on the umbrella
+# (raw rawset, since the umbrella's __index hardcodes "-1.0"). Loads after
+# Cairn-LogWindow-1.0 so v2 wins the umbrella slot. Cairn-Standalone-1.0
+# prefers v2 with a v1 fallback when picking a LogWindow for the
+# /cairn log slash subcommand.
+CairnLogWindow-2.0\Cairn-LogWindow-2.0.lua
+
 # Standalone-only: SavedVariables persistence + /cairn log subcommands.
 # Do NOT include this file when embedding Cairn in another addon.
 CairnStandalone\Cairn-Standalone-1.0.lua

@@ -34,6 +34,22 @@ if not lib then return end
 
 local DEFAULT_FALLBACK_SIZE = 20
 
+-- Dev-mode warning when a child has no intrinsic size AND no current
+-- frame size, so the strategy uses the 20px fallback. This is a silent
+-- footgun otherwise: cells render tiny / collapsed and the consumer has
+-- to figure out why. With Cairn.Dev = true the warning fires once per
+-- child per layout pass.
+local function warnFallback(strategyName, child, axis)
+	if not lib.Dev then return end
+	local logger = lib._log
+	if logger and logger.Warn then
+		logger:Warn("%s: child %s has no intrinsic %s and frame:Get%s()=0; using fallback %dpx",
+			strategyName, tostring(child._type or "?"),
+			axis, axis == "width" and "Width" or "Height",
+			DEFAULT_FALLBACK_SIZE)
+	end
+end
+
 local function vertical(container, opts)
 	local gap        = opts.gap or 0
 	local padding    = opts.padding or 0
@@ -46,7 +62,10 @@ local function vertical(container, opts)
 			if frame and frame.SetPoint then
 				local _, ih = child:GetIntrinsicSize()
 				local h = ih or frame:GetHeight()
-				if not h or h <= 0 then h = DEFAULT_FALLBACK_SIZE end
+				if not h or h <= 0 then
+					warnFallback("Stack", child, "height")
+					h = DEFAULT_FALLBACK_SIZE
+				end
 
 				frame:ClearAllPoints()
 				frame:SetPoint("TOPLEFT",  containerF, "TOPLEFT",   padding, cursor)
@@ -71,7 +90,10 @@ local function horizontal(container, opts)
 			if frame and frame.SetPoint then
 				local iw = child:GetIntrinsicSize()
 				local w = iw or frame:GetWidth()
-				if not w or w <= 0 then w = DEFAULT_FALLBACK_SIZE end
+				if not w or w <= 0 then
+					warnFallback("Stack", child, "width")
+					w = DEFAULT_FALLBACK_SIZE
+				end
 
 				frame:ClearAllPoints()
 				frame:SetPoint("TOPLEFT",    containerF, "TOPLEFT",    cursor, -padding)

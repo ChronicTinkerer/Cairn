@@ -54,13 +54,28 @@ Type-specific fields:
 	range:    min, max, step (defaults: 0, 1, 0.1)
 	dropdown: choices (table {value = label, ...})
 	anchor:   frame (Frame with a non-nil :GetName())
+	text:     placeholder, maxLetters, width (string default required)
+	color:    hasOpacity (bool); default = { r=, g=, b=[, a=] } (canonical)
+	          or { r, g, b[, a] } positional (also accepted, normalized
+	          to named at validate time). Each component 0..1.
+	keybind:  default is the binding string ("CTRL-SHIFT-X") or "" for unbound
 
 If Blizzard's Settings global is unavailable (e.g., Classic builds),
 Settings.New returns a stub that supports Get/Set/OnChange but cannot
 render a panel. Open() prints a friendly warning.
 ]]
 
-local MAJOR, MINOR = "Cairn-Settings-1.0", 3
+-- MINOR history (selected):
+--   3  prior: settings instance / OpenStandalone wired to Cairn-SettingsPanel-1.0 only
+--   4  OpenStandalone now prefers Cairn-SettingsPanel-2.0 (Cairn-Gui-2.0 panel)
+--      with a v1 fallback. Same public API. Spotted while building Cairn-Demo's
+--      Settings tab on 2026-05-07: opening the panel from a v2 demo window
+--      pulled the user into a visually-mismatched v1 panel.
+--   5  color validator accepts BOTH named ({r=, g=, b=[, a=]}) and positional
+--      ({[1]=r, [2]=g, [3]=b}) shapes, normalizing positional to named.
+--      Lib header documented named; validator only accepted positional. Caught
+--      while wiring Cairn-Demo's Settings tab schema on 2026-05-07.
+local MAJOR, MINOR = "Cairn-Settings-1.0", 5
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -121,12 +136,26 @@ local function validateSchema(schema)
 				.. "' requires a string 'default'", 3)
 		end
 		if entry.type == "color" then
-			-- default = { r, g, b, a } each 0..1
+			-- Canonical shape is named: { r =, g =, b =[, a =] }, each 0..1.
+			-- Positional { [1]=r, [2]=g, [3]=b[, [4]=a] } is also accepted
+			-- for backwards-compat and normalized in-place to named.
+			-- (MINOR 5: prior validator only accepted positional, which
+			-- contradicted the lib header that documented named. Caught
+			-- 2026-05-07 while wiring Cairn-Demo's Settings tab.)
 			local d = entry.default
-			if type(d) ~= "table" or type(d[1]) ~= "number" or type(d[2]) ~= "number"
-				or type(d[3]) ~= "number" then
+			if type(d) ~= "table" then
 				error("Cairn.Settings.New: color entry '" .. entry.key
-					.. "' requires a default = {r, g, b[, a]} (each 0..1)", 3)
+					.. "' requires a default table {r=, g=, b=[, a=]} (each 0..1)", 3)
+			end
+			local hasNamed = (type(d.r) == "number" and type(d.g) == "number" and type(d.b) == "number")
+			local hasPos   = (type(d[1]) == "number" and type(d[2]) == "number" and type(d[3]) == "number")
+			if not hasNamed and not hasPos then
+				error("Cairn.Settings.New: color entry '" .. entry.key
+					.. "' requires a default = {r=, g=, b=[, a=]} OR {r, g, b[, a]} (each 0..1)", 3)
+			end
+			if hasPos and not hasNamed then
+				-- Normalize positional -> named in-place.
+				entry.default = { r = d[1], g = d[2], b = d[3], a = d[4] }
 			end
 		end
 		if entry.type == "keybind" and type(entry.default) ~= "string" then
@@ -230,13 +259,18 @@ function proto:GetCategory() return self._category end
 -- Open a standalone Cairn.Gui-rendered panel for this schema. Independent
 -- of Blizzard's Settings UI - works for every schema type including those
 -- the Blizzard panel can't render on this client (text/color/keybind).
+--
+-- Prefers Cairn-SettingsPanel-2.0 (built on Cairn-Gui-2.0) when present;
+-- falls back to Cairn-SettingsPanel-1.0 (Cairn-Gui-1.0) otherwise. Both
+-- libs expose the same .OpenFor(settings) entrypoint so the call site is
+-- identical.
 function proto:OpenStandalone()
-    local Panel = LibStub("Cairn-SettingsPanel-1.0", true)
-    if not Panel then
-        if logger() then logger():Warn(":OpenStandalone called but Cairn-SettingsPanel-1.0 isn't loaded.") end
-        return nil
-    end
-    return Panel.OpenFor(self)
+    local PanelV2 = LibStub("Cairn-SettingsPanel-2.0", true)
+    if PanelV2 then return PanelV2.OpenFor(self) end
+    local PanelV1 = LibStub("Cairn-SettingsPanel-1.0", true)
+    if PanelV1 then return PanelV1.OpenFor(self) end
+    if logger() then logger():Warn(":OpenStandalone called but no Cairn-SettingsPanel lib is loaded.") end
+    return nil
 end
 stubProto.OpenStandalone = proto.OpenStandalone
 

@@ -226,6 +226,10 @@ function mixin:SetText(text)
 	self._suppressOnTextChanged = false
 	refreshPlaceholder(self)
 	self:Fire("TextChanged", text, false)
+	-- EditBox is usually fixed-size from opts.width, but a parent layout
+	-- (e.g. Form) can read intrinsic size for label-column alignment, so
+	-- invalidate to be safe.
+	self:_invalidateParentLayout()
 end
 
 function mixin:GetText()
@@ -251,6 +255,9 @@ end
 function mixin:SetPlaceholder(text)
 	text = text and self:_resolveText(text) or text
 	self._placeholderText = text
+	-- Placeholder is shown when the field is empty; its rendered string
+	-- can affect what a parent measures if the EditBox uses intrinsic.
+	self:_invalidateParentLayout()
 	if text and not self._placeholderFS then
 		-- Lazy-create on first SetPlaceholder if OnAcquire didn't.
 		self._placeholderFS = self._frame:CreateFontString(nil, "OVERLAY")

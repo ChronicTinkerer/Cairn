@@ -1,0 +1,37 @@
+## Interface: 120005, 50503, 20505, 11508, 120007
+## Title: Cairn-Demo
+## Notes: Live, browseable showcase of every NON-GUI Cairn library. /cdemo opens a tabbed window with one tab per library (Callback, Events, Log, DB, Settings, Addon, Slash, EditMode, Locale, Hooks, Sequencer, Timer, FSM, Comm) plus a Smoke Test tab that PASS/FAIL-asserts every public API. Companion to Cairn-Gui-Demo-2.0 which covers the GUI side.
+## Author: ChronicTinkerer
+## Version: 1
+## Dependencies: Cairn
+## SavedVariables: CairnDemoDB
+## X-Category: Development Tools
+## X-License: MIT
+## DefaultState: enabled
+## LoadOnDemand: 0
+
+# Core: init, slash command, root Window + TabGroup shell. Each Tabs/*.lua
+# below builds out one tab against the shared shell.
+Core.lua
+
+# Code-snippet strings shared across tabs (so each tab file stays focused
+# on rendering, not on quoting itself in Lua).
+Snippets.lua
+
+# Tabs (load after Core since they call into the registration API on it).
+Tabs\Welcome.lua
+Tabs\Callback.lua
+Tabs\Events.lua
+Tabs\Log.lua
+Tabs\DB.lua
+Tabs\Settings.lua
+Tabs\Addon.lua
+Tabs\Slash.lua
+Tabs\EditMode.lua
+Tabs\Locale.lua
+Tabs\Hooks.lua
+Tabs\Sequencer.lua
+Tabs\Timer.lua
+Tabs\FSM.lua
+Tabs\Comm.lua
+Tabs\SmokeTest.lua

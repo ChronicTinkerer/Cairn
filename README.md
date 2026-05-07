@@ -839,9 +839,14 @@ libraries.
 ### `Cairn-Gui-*` — Diesal-derived widget family (v0.2)
 
 A more substantial widget kit than the v0.1 hand-rolled `Cairn.Gui`,
-forked from the [Diesal](https://code.google.com/p/diesallibs/) library
-collection (BSD 3-clause, original author: diesal2010, last upstream
-2014) and modernized for Interface 120005. Four LibStub libraries:
+forked from the [DiesalLibs](https://www.curseforge.com/wow/addons/diesallibs)
+library collection (BSD 3-clause, original author: diesal2010, last
+upstream 2014) and modernized for Interface 120005. The same family is
+also distributed independently as
+[Diesal Continued](https://www.curseforge.com/wow/addons/diesal-continued)
+under the original `DiesalGUI-1.0` / `DiesalTools-1.0` /
+`DiesalStyle-1.0` / `DiesalMenu-1.0` LibStub MAJORs. Four LibStub
+libraries:
 
 | Library                     | Purpose                                            |
 | --------------------------- | -------------------------------------------------- |
@@ -863,10 +868,11 @@ w:SetWidth(400); w:SetHeight(300)
 w:Show()
 ```
 
-Provenance and modification details are documented in
-[`Diesal/ATTRIBUTION.md`](../Diesal/ATTRIBUTION.md). All Diesal-derived
-files retain the original copyright + BSD license text alongside a
-"Modified for Cairn by ChronicTinkerer (2026)" header. Bundled assets:
+Provenance: every Diesal-derived file retains the original 2014
+copyright + BSD 3-clause license text in its header, alongside a
+"Modified for Cairn by ChronicTinkerer (2026)" note where behavior was
+patched. The full BSD text appears at the top of
+`Cairn-Gui-1.0/Cairn-Gui-Core-1.0/Cairn-Gui-Core-1.0.lua`. Bundled assets:
 two `.tga` texture sheets (Diesal originals, BSD), and two free-license
 fonts (`Standard0755.ttf`, `FFF Intelligent Thin Condensed.ttf`). The
 proprietary Calibri Bold font that shipped upstream was dropped.
@@ -1124,6 +1130,11 @@ Cairn/
                                                Container, Button, Label, Window,
                                                Checkbox, ScrollFrame, EditBox,
                                                Slider, Dropdown, TabGroup).
+    Cairn-Gui-Widgets-Secure-2.0/...           Secure widget bundle (3 widgets:
+                                               ActionButton, MacroButton, UnitButton).
+                                               Combat-aware via Core/CombatQueue.lua.
+    Cairn-Gui-Layouts-Extra-2.0/...            Optional layout bundle (Hex axial-coord
+                                               grid + Polar radial arrangement).
     Cairn-Gui-Theme-Default-2.0/...            Default visual theme.
   CairnSettingsPanel/Cairn-SettingsPanel-1.0.lua  Cairn.Gui renderer for Cairn.Settings schemas (v0.2).
   CairnStandalone/Cairn-Standalone-1.0.lua   SavedVariables wiring + /cairn log subcommands.

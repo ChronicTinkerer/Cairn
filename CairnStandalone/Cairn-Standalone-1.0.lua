@@ -12,7 +12,10 @@ persistence.
 ]]
 
 local Log       = LibStub("Cairn-Log-1.0", true)
-local LogWindow = LibStub("Cairn-LogWindow-1.0", true)
+-- Prefer v2 LogWindow when present; fall back to v1 (cairn_v2_only_strategy
+-- transition). Public API matches between the two so the slash dispatch
+-- below doesn't care which one it got.
+local LogWindow = LibStub("Cairn-LogWindow-2.0", true) or LibStub("Cairn-LogWindow-1.0", true)
 local Dashboard = LibStub("Cairn-Dashboard-1.0", true)
 
 if not Log then return end

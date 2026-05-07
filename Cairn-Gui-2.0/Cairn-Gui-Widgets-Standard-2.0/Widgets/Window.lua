@@ -43,6 +43,24 @@ Pool
 	cascade-released to their respective pools (Container, Label,
 	Button), then the Window frame is hidden.
 
+Strata convention
+
+	Window default strata is HIGH (NOT DIALOG). The convention across
+	Cairn-Gui-2.0 is:
+
+		HIGH         - container windows owned by an addon
+		DIALOG       - transient popups (Dropdown option lists, child
+		               windows, modals)
+		FULLSCREEN_DIALOG - critical alerts that must layer above
+		               everything else
+
+	If a Window is at DIALOG and a Dropdown inside it opens its option
+	popup, the popup is at the SAME strata. They race for frame level
+	and the popup often loses, rendering invisibly behind the window.
+	Defaulting Window to HIGH lifts the entire convention out of the
+	collision zone. Pass `strata = "DIALOG"` explicitly if your window
+	IS a popup that should layer above other windows.
+
 Tokens consumed:
 	color.bg.panel              (window background)
 	color.border.default        (window border)
@@ -83,7 +101,10 @@ function mixin:OnAcquire(opts)
 	local frame = self._frame
 
 	frame:SetSize(opts.width or DEFAULT_W, opts.height or DEFAULT_H)
-	frame:SetFrameStrata(opts.strata or "DIALOG")
+	-- Default HIGH (not DIALOG) so DIALOG-strata popups (Dropdown
+	-- option lists, child Windows) layer above us. See header comment
+	-- "Strata convention" for the full rule.
+	frame:SetFrameStrata(opts.strata or "HIGH")
 	frame:Show()
 
 	-- Movability: default on. Acquired even if movable=false so the

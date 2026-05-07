@@ -206,6 +206,9 @@ end
 function mixin:SetText(text)
 	if self._label then
 		self._label:SetText(self:_resolveText(text or ""))
+		-- Row width depends on label width; tell the parent layout to
+		-- re-measure.
+		self:_invalidateParentLayout()
 	end
 end
 

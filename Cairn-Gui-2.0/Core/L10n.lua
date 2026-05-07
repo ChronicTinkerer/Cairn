@@ -64,13 +64,38 @@ function lib:ResolveText(text, _widgetCairn)
 	local instance = Locale.Get(ns)
 	if not instance then return text end
 
-	-- Cairn-Locale exposes :Lookup(key) returning the translated string,
-	-- or :Get(key) in some versions. Try both for robustness.
+	-- Resolve through the instance's prototype, NOT through attribute
+	-- access on the instance. Cairn-Locale's instance metatable treats
+	-- unknown attribute reads as translation lookups (so `instance.Foo`
+	-- emits a missing-key warning for Foo). Probing `instance.Lookup`
+	-- on every call would generate noise for the entire user base.
+	-- Three cases to handle:
+	--   * mt.__index is a TABLE (prototype): rawget the method.
+	--   * mt.__index is a FUNCTION (Cairn-Locale's pattern): we can't
+	--     introspect, but the function is known to route via proto.Get,
+	--     so call instance.Get directly. The function will see "Get" as
+	--     a known proto key and return the function without warning.
+	--   * No metatable: nothing we can do; bail to literal pass-through.
 	local resolved
-	if type(instance.Lookup) == "function" then
-		resolved = instance:Lookup(key)
-	elseif type(instance.Get) == "function" then
-		resolved = instance:Get(key)
+	local mt    = getmetatable(instance)
+	local idx   = mt and mt.__index
+	if type(idx) == "table" then
+		local lookup = rawget(idx, "Lookup")
+		local getter = rawget(idx, "Get")
+		if type(lookup) == "function" then
+			resolved = lookup(instance, key)
+		elseif type(getter) == "function" then
+			resolved = getter(instance, key)
+		end
+	elseif type(idx) == "function" then
+		-- Function-style __index. Touching `instance.Get` returns
+		-- proto.Get (a known key on the proto) without tripping the
+		-- missing-key path. We rely on the convention that any locale
+		-- lib using function-style __index exposes Get.
+		local getter = instance.Get
+		if type(getter) == "function" then
+			resolved = getter(instance, key)
+		end
 	end
 	return resolved or text
 end

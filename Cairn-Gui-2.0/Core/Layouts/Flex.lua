@@ -64,6 +64,18 @@ if not lib then return end
 
 local DEFAULT_FALLBACK_SIZE = 20
 
+-- Dev-mode warning when neither intrinsic size nor frame size is
+-- usable, so the strategy resorts to the 20px fallback.
+local function warnFallback(axis, child)
+    if not lib.Dev then return end
+    if lib._log and lib._log.Warn then
+        lib._log:Warn("Flex: child %s has no intrinsic %s and frame:Get%s()=0; using fallback %dpx (set _flexBasis or give the widget an intrinsic size)",
+            tostring(child._type or "?"),
+            axis, axis == "width" and "Width" or "Height",
+            DEFAULT_FALLBACK_SIZE)
+    end
+end
+
 -- Resolve the main-axis size for a child (basis or intrinsic).
 local function mainSize(child, isRow, basisField)
     local explicit = child[basisField]
@@ -74,7 +86,10 @@ local function mainSize(child, isRow, basisField)
         s = isRow and (child._frame:GetWidth() or 0)
                  or (child._frame:GetHeight() or 0)
     end
-    if s <= 0 then s = DEFAULT_FALLBACK_SIZE end
+    if s <= 0 then
+        warnFallback(isRow and "width" or "height", child)
+        s = DEFAULT_FALLBACK_SIZE
+    end
     return s
 end
 
@@ -86,7 +101,10 @@ local function crossSize(child, isRow)
         s = isRow and (child._frame:GetHeight() or 0)
                  or (child._frame:GetWidth() or 0)
     end
-    if s <= 0 then s = DEFAULT_FALLBACK_SIZE end
+    if s <= 0 then
+        warnFallback(isRow and "height" or "width", child)
+        s = DEFAULT_FALLBACK_SIZE
+    end
     return s
 end
 

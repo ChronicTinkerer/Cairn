@@ -47,9 +47,24 @@ Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	   horizontal tab strip + per-tab Container content panes. All five
 	   theme-aware via the existing token cascade; no new tokens
 	   introduced.
+	3: Companion to Core MINOR 19. Three behavior changes:
+	   * Button / Label / Checkbox / EditBox / Dropdown setters call
+	     Base:_invalidateParentLayout() so SetText / SetVariant /
+	     SetPlaceholder / SetSelected / SetOptions trigger a parent
+	     relayout. Stack horizontal in particular silently kept old
+	     widths after SetText; this fixes the "longer label bleeds
+	     into next sibling" footgun.
+	   * ScrollFrame hooks OnSizeChanged on the outer frame and
+	     re-sizes the scroll-child Container's width to the new
+	     viewport (minus scrollbar reserve), so SetPoint-driven
+	     resize after Acquire propagates correctly.
+	   * Window default strata DIALOG -> HIGH so DIALOG-strata
+	     popups (Dropdown option lists, child windows) layer above
+	     host windows reliably. Pass strata = "DIALOG" explicitly
+	     when a Window IS itself a popup.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 2
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 3
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

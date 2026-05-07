@@ -10,6 +10,22 @@ The format is loosely based on
 
 ## [Unreleased]
 
+### Added
+
+- **Cairn-FSM-1.0** — flat finite state machine library. Sibling of
+  `Cairn.Sequencer`: where Sequencer drives an ordered list of actions,
+  FSM models a named-state graph with transitions, per-state entry/exit
+  hooks, optional guards/actions, and async transitions backed by
+  `Cairn.Timer` and `Cairn.Sequencer`. Per-state `events = {...}` maps
+  auto-register Cairn.Events listeners on entry and unregister on exit;
+  lifecycle dispatches through `Cairn.Callback`. Designed flat-now /
+  hierarchical-later: state values are tables of properties, so a future
+  MINOR can add nested machines without breaking the v1 API.
+  - LibStub MAJOR: `Cairn-FSM-1.0`. Folder: `CairnFSM/`. MINOR=1.
+  - Loaded after `CairnSequencer` and `CairnTimer` (soft dependencies
+    used for the `actions` and `delay` / `wait` async transition kinds).
+  - In-game test: `Forge/.dev/tests/cairn_fsm_basic.lua`.
+
 ## [4] — Cairn-Gui-2.0 Decision 9 implementation (2026-05-06)
 
 Big release. Bundles **nine animation slices** (Day 15C through 15K)

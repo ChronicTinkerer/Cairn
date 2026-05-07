@@ -22,7 +22,8 @@ alongside Ace3 if you're already invested.
 `Cairn.Slash`. v0.2 adds: `Cairn.EditMode` (LibEditMode wrapper),
 the `anchor` schema type in `Cairn.Settings`, `Cairn.Locale`
 (i18n with locale fallback), `Cairn.Sequencer` (composable
-step runner), `Cairn.Hooks` (multi-callback hook helper),
+step runner), `Cairn.FSM` (flat state machine with async transitions),
+`Cairn.Hooks` (multi-callback hook helper),
 `Cairn.Timer` (owner-grouped timers), `Cairn.Comm` (addon-to-addon
 messaging), `Cairn.Callback` (registry-style callback dispatcher,
 exposed at `LibStub("Cairn-Callback-1.0")` for direct internal use),
@@ -570,6 +571,127 @@ is sugar for `Cairn.Sequencer.New(...)`.
 
 ---
 
+### `Cairn.FSM` — flat state machine with async transitions (v0.2)
+
+A named-state graph with transitions, per-state entry/exit hooks,
+optional guards/actions, and async transitions. Different shape from
+`Cairn.Sequencer`: where a Sequencer is "do this list of things in
+order, advance when each one is ready", an FSM is "I'm in some state,
+named events change which state I'm in, and entering/exiting a state
+runs hooks." They compose — an FSM with `actions = {...}` on a
+transition uses Sequencer internally.
+
+```lua
+local spec = Cairn.FSM.New({
+    initial = "idle",
+    context = { retries = 0 },
+    states = {
+        idle = {
+            on = {
+                START = "running",                              -- bare target
+                BOOM  = { target = "error", action = onBoom },  -- side-effect
+                BAD   = { target = "error", guard  = canFail }, -- predicate
+                GO    = { target = "ready", delay  = 1.5 },     -- async: timer
+                DRAIN = { target = "idle",  wait   = isDone,
+                          timeout = 10, onTimeout = "error" },  -- async: poll
+                DEPLOY= { target = "deployed",
+                          actions = { step1, step2, step3 } }, -- async: steps
+            },
+            onEnter = function(m) ... end,
+            onExit  = function(m) ... end,
+        },
+        running = {
+            -- Auto-register WoW events while in this state, drop on exit.
+            events = {
+                PLAYER_REGEN_DISABLED = "FAIL",
+                PLAYER_DEAD = function(m, ...) m:Send("FAIL") end,
+            },
+            on = { STOP = "idle", FAIL = "error" },
+        },
+        error = { onEnter = function(m, payload) ... end },
+        ready = { on = { GO = "running" } },
+        deployed = {},
+    },
+})
+
+local m = spec:Instantiate()
+m:Send("START")                       -- transition by name
+m:Send("FAIL", { reason = "..." })    -- payload merges into context
+m:State()                             -- "running" (FROM during pending async)
+m:Pending()                           -- { from, to, evt, kind } or nil
+m:Can("STOP")                         -- true / false
+
+m:On("Transition", function(_, mm, from, to, evt) ... end)
+m:On("Enter:running", function(_, mm) ... end)
+m:Cancel()                            -- abort pending async transition
+m:Reset()                             -- back to spec.initial
+m:Destroy()                           -- unhook events, cancel timers
+```
+
+**Async transitions.** Three kinds:
+
+- `delay = N` — Cairn.Timer schedules the commit after N seconds.
+- `wait  = pred` — Cairn.Timer ticker polls `pred(m)` each `pollInterval`
+  (default 0.1s) and commits when truthy. Optional `timeout` + `onTimeout`
+  reroute to a different state if the predicate never resolves.
+- `actions = {fn1, ...}` — runs the list as a `Cairn.Sequencer` internally
+  (each step returns truthy to advance), and commits when the sequencer
+  finishes.
+
+During a pending async transition `m:State()` returns the FROM state —
+the machine has fired `Exit:from` and dropped FROM's auto-events but
+hasn't entered TO yet. `m:Cancel()` re-enters FROM and fires `Cancelled`.
+`m:Pending()` returns a snapshot descriptor `{from, to, evt, kind}`.
+
+**Send during pending** is configurable on the spec via
+`sendDuringPending`:
+
+| Mode       | Behavior                                                       |
+| ---------- | -------------------------------------------------------------- |
+| `"drop"`   | Default. Ignore the new Send and fire `Rejected`.              |
+| `"queue"`  | Hold it and dispatch after the pending transition completes.   |
+| `"override"` | Cancel the pending transition, then dispatch the new Send.   |
+
+Re-entrant `Send` calls (from inside an `onEnter` / action / callback)
+are always queued and processed after the current dispatch unwinds, so
+deep state transitions never grow the stack.
+
+| Method                           | What it does                                  |
+| -------------------------------- | --------------------------------------------- |
+| `spec:Instantiate(opts)`         | Build a live machine. `opts.context` overlays. |
+| `m:Send(evt, payload)`           | Request a transition by event name.           |
+| `m:State()`                      | Current state name (FROM during async).       |
+| `m:Pending()`                    | Async transition descriptor or `nil`.         |
+| `m:Can(evt)`                     | Would Send do anything right now?             |
+| `m:Context()`                    | Mutable per-instance context table.           |
+| `m:Cancel()`                     | Abort pending async; re-enter FROM.           |
+| `m:Reset(payload)`               | Back to `spec.initial`.                       |
+| `m:Destroy()`                    | Unhook events / timers; idempotent.           |
+| `m:On(eventKey, fn)`             | Subscribe; returns unsubscribe closure.       |
+| `m:Off(eventKey)`                | Drop the subscription.                        |
+
+Subscribers receive `(eventKey, machine, ...trailing)`. Trailing args
+per event:
+
+- `"Transition"` — `(m, from, to, evt, payload)` after enter fires.
+- `"Enter:<name>"` — `(m, payload)` per-state entry.
+- `"Exit:<name>"` — `(m, payload)` per-state exit.
+- `"Rejected"` — `(m, evt, reason)` where reason is `"no-rule"`,
+  `"guard-false"`, `"guard-error"`, or `"pending"`.
+- `"Cancelled"` — `(m, pendingDescriptor)` async aborted.
+- `"Destroyed"` — `(m)` after teardown.
+
+Errors in user-supplied functions (guards, actions, onEnter, onExit,
+event handlers, callbacks) are pcall-trapped and routed to
+`geterrorhandler()`. A bad consumer can't kill the machine.
+
+The library is flat-now / hierarchical-later: `states[name]` is a table
+of properties, never a leaf. A future MINOR can extend a state's value
+to contain its own `{ initial, states }` for nested machines without
+breaking the v1 API surface.
+
+---
+
 ### `Cairn.Hooks` — multi-callback hook helper (v0.2)
 
 A small wrapper around `hooksecurefunc` that lets multiple addons hook the
@@ -947,6 +1069,7 @@ driven by `Cairn.Settings`. EditMode-movable if LibEditMode is installed.
 - [x] `Cairn.Comm` — addon-to-addon messaging
 - [x] `Cairn.Locale` — i18n with locale fallback
 - [x] `Cairn.Sequencer` — composable step runner
+- [x] `Cairn.FSM` — flat state machine with async transitions
 - [x] `Cairn.Hooks` — multi-callback hook helper
 - [x] `Cairn.Timer` — owner-grouped timers + named replacement
 
@@ -983,6 +1106,7 @@ Cairn/
   CairnEditMode/Cairn-EditMode-1.0.lua       Optional LibEditMode wrapper (v0.2).
   CairnLocale/Cairn-Locale-1.0.lua           Per-addon i18n with fallback (v0.2).
   CairnSequencer/Cairn-Sequencer-1.0.lua     Composable step runner (v0.2).
+  CairnFSM/Cairn-FSM-1.0.lua                 Flat state machine with async transitions (v0.2).
   CairnHooks/Cairn-Hooks-1.0.lua             Multi-callback hook helper (v0.2).
   CairnTimer/Cairn-Timer-1.0.lua             Owner-grouped timers + named replacement (v0.2).
   CairnComm/Cairn-Comm-1.0.lua               Addon-to-addon messaging via CHAT_MSG_ADDON (v0.2).

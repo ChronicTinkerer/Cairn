@@ -56,6 +56,10 @@ CairnLocale\Cairn-Locale-1.0.lua
 CairnHooks\Cairn-Hooks-1.0.lua
 CairnSequencer\Cairn-Sequencer-1.0.lua
 CairnTimer\Cairn-Timer-1.0.lua
+# CairnFSM: flat state machine with named transitions, per-state entry/exit
+# hooks, optional guards/actions, and async transitions backed by Sequencer
+# and Timer. Loads after both.
+CairnFSM\Cairn-FSM-1.0.lua
 CairnComm\Cairn-Comm-1.0.lua
 
 # Cairn-Gui-1.0 family derived from Diesal libraries (BSD 3-clause).

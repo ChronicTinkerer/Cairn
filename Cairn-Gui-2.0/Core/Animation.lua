@@ -43,7 +43,14 @@ Public API on widget.Cairn (added to Mixins.Base):
 			{ to = number,    -- target value (required)
 			  dur = number,   -- duration in seconds (default 0.2)
 			  ease = string,  -- easing name (default "easeOut")
+			  delay = number, -- optional start delay in seconds
 			  complete = fn } -- optional callback fired on completion
+
+		`delay` defers the animation's start by N seconds. Honored by
+		both backends: OnUpdate records count it down before treating
+		dt as elapsed; AnimationGroup records pass it through as
+		anim:SetStartDelay before group:Play. Used internally by Stagger;
+		consumers can also set it directly for a one-shot delayed call.
 
 		Spring physics (set `spring` to opt in):
 			{ to = number,
@@ -170,13 +177,14 @@ Engine notes:
 	  off-screen pause (15G/15H) doesn't apply to animgroup records
 	  because Blizzard runs them past our gate. Both are deferred.
 
-Status: Day 15 slices B + C + D + E + F + G + H + I + J. AnimationGroup-
-backend routing landed for Alpha and Scale; Translation and Rotation
-deferred (no underlying frame property; need a wrapper layer designed
-against a real consumer).
+Status: Day 15 slices B + C + D + E + F + G + H + I + J + K.
+AnimationGroup-backend routing for Alpha and Scale; Stagger now works
+correctly for routed properties via SetStartDelay. Translation and
+Rotation routing still deferred (need a wrapper layer designed against
+a real consumer).
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-2.0", 12
+local MAJOR, MINOR = "Cairn-Gui-2.0", 13
 local lib = LibStub:GetLibrary(MAJOR, true)
 if not lib then return end
 
@@ -747,6 +755,13 @@ local function addAnim(self, key, rec)
 			anim:SetSmoothing(rec.smoothing)
 		end
 		if rec.setupAnim then rec.setupAnim(anim, rec.from, rec.to) end
+		-- Day 15K: Stagger and direct delay support. SetStartDelay must
+		-- happen before Play(); the def.delay -> rec.delay -> SetStartDelay
+		-- pipeline replaces the back-patch model that didn't reach the
+		-- group in time on the animgroup path.
+		if rec.delay and rec.delay > 0 and anim.SetStartDelay then
+			anim:SetStartDelay(rec.delay)
+		end
 
 		rec.animObject         = anim
 		rec.animGroupForRecord = group
@@ -874,6 +889,14 @@ function Base:Animate(spec)
 			-- one indirection per tick rather than a table lookup.
 			local applyFn = adapter.apply
 
+			-- Day 15K: def.delay flows through to the record uniformly
+			-- across all three branches. The OnUpdate ticker (15C) and
+			-- the AnimationGroup branch (15I/J) both honor rec.delay.
+			-- Stagger relies on this; consumers can also set it
+			-- directly for a one-shot delayed animation.
+			local startDelay = (type(def.delay) == "number" and def.delay > 0)
+				and def.delay or nil
+
 			if type(def.spring) == "table" then
 				-- Spring path. Carry the in-flight velocity forward
 				-- when re-Animating an active spring so a hover-leave-
@@ -896,6 +919,7 @@ function Base:Animate(spec)
 					stiffness = def.spring.stiffness or SPRING_STIFFNESS_DEFAULT,
 					damping   = def.spring.damping   or SPRING_DAMPING_DEFAULT,
 					mass      = def.spring.mass      or SPRING_MASS_DEFAULT,
+					delay     = startDelay,
 					apply     = function(_, v) applyFn(frame, v) end,
 					complete  = def.complete,
 				})
@@ -919,6 +943,7 @@ function Base:Animate(spec)
 						dur       = def.dur or 0.2,
 						smoothing = smoothing,
 						setupAnim = adapter.setupAnim,
+						delay     = startDelay,
 						apply     = function(_, v) applyFn(frame, v) end,
 						complete  = def.complete,
 					})
@@ -929,6 +954,7 @@ function Base:Animate(spec)
 						to       = def.to,
 						dur      = def.dur or 0.2,
 						ease     = ease,
+						delay    = startDelay,
 						apply    = function(_, v) applyFn(frame, v) end,
 						complete = def.complete,
 					})
@@ -1119,17 +1145,17 @@ function Base:Stagger(steps, delay, opts)
 				if origComplete then origComplete(widget, anim) end
 				tally()
 			end
-		end
-		-- Animate the step normally, then back-patch the underlying
-		-- anim records with the start-delay. Animate uses property
-		-- names as keys; we reach for them via _animByKey.
-		self:Animate(copy)
-		if startDelay > 0 and self._animByKey then
-			for prop in pairs(copy) do
-				local rec = self._animByKey[prop]
-				if rec then rec.delay = startDelay end
+			-- Day 15K: Push delay forward via def.delay BEFORE calling
+			-- Animate. Replaces the prior back-patch-on-rec model
+			-- (which couldn't reach an animgroup record's SetStartDelay
+			-- because the group was already Playing by the time the
+			-- back-patch loop ran). Single uniform path now works for
+			-- both backends.
+			if startDelay > 0 then
+				def.delay = startDelay
 			end
 		end
+		self:Animate(copy)
 	end
 end
 

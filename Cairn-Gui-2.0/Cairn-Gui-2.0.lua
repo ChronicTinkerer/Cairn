@@ -116,7 +116,15 @@ Verification (Day 1 success criterion):
 --      Translation and Rotation still deferred -- they have no underlying
 --      Frame get/apply, so they need a wrapper layer best designed
 --      against a real consumer.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 12
+--  13: Day 15K: Bug fix. Stagger of routed (animgroup) properties was
+--      broken -- Stagger back-patched rec.delay AFTER Animate, but for
+--      animgroup records the group was already Playing by then so
+--      SetStartDelay never fired. Fix: def.delay flows through Animate
+--      to addAnim, which now calls anim:SetStartDelay BEFORE Play.
+--      Stagger sets def.delay before calling Animate (no more back-
+--      patch loop). Single uniform delay path for both backends.
+--      Side benefit: def.delay is now a documented public field.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 13
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

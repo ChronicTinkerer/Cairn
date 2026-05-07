@@ -10,7 +10,61 @@ The format is loosely based on
 
 ## [Unreleased]
 
+## [4] — Cairn-Gui-2.0 Decision 9 implementation (2026-05-06)
+
+Big release. Bundles **nine animation slices** (Day 15C through 15K)
+that take the Cairn-Gui-2.0 animation engine from "transition pre-wire
+only" to substantially complete on every architectural item Decision 9
+named. Plus a TOC ordering fix that surfaced during the 15K test run.
+
+Headline highlights:
+
+- **Composition primitives** (`Sequence` / `Parallel` / `Stagger`) plus
+  **ReduceMotion accessibility flag** and the two missing built-in
+  easings (`easeOutBack`, `easeOutBounce`).
+- **Spring physics** with velocity carry-over on re-Animate, plus an
+  imperative `Tween(prop, to, opts)` shortcut and a defensive
+  `MaxConcurrentAnims` cap.
+- **OKLCH color interpolation** as an opt-in per-tween path (engine +
+  state-machine wire-up), so theme designers can transition between
+  hues without the gray-midpoint collapse RGB lerp produces.
+- **Off-screen pause** in two layers: viewport-based (15G) and via
+  parent-chain `DoesClipChildren` walk (15H), covering both "slid out
+  of the visible viewport" and "scrolled past a clipping ancestor".
+- **AnimationGroup-backend routing** for Alpha and Scale: mappable
+  easings push onto Blizzard's native engine; non-mappable easings
+  fall back to OnUpdate.
+- **Uniform `delay` field on Animate's def shape** with a single path
+  to either backend. Closes the Stagger-vs-animgroup bug (Stagger of
+  routed properties used to play simultaneously).
+- **TOC ordering fix** for `CairnSettingsPanel` so its file-scope
+  `LibStub("Cairn-Gui-1.0", true)` resolves on every flavor TOC.
+- **249 fresh assertions across nine new test files**, all green at
+  release time. Core MINOR 4 → 13.
+
 ### Added
+
+- **Cairn-Gui-2.0 Day 15K: Bug fix + uniform delay support.**
+  Closes the known Stagger-vs-animgroup bug from 15I/J. The fix promotes
+  `delay` to a documented field on `Animate`'s per-property def shape:
+  ```lua
+  cairn:Animate({
+      alpha = { to = 0.0, dur = 0.3, delay = 0.1 },  -- 100ms start delay
+  })
+  ```
+  - **Bug:** Stagger back-patched `rec.delay` AFTER calling `Animate`.
+    For animgroup records, `group:Play()` had already been called by
+    then, so `anim:SetStartDelay` was never invoked. Stagger of routed
+    properties played all steps simultaneously instead of staggered.
+  - **Fix:** `def.delay` flows through `Animate` directly. addAnim's
+    animgroup branch reads `rec.delay` and calls `anim:SetStartDelay(d)`
+    before `Play()`. The OnUpdate ticker (15C) already honored `rec.delay`
+    so its behavior is unchanged. Stagger now sets `copy[prop].delay`
+    before calling `Animate` and the back-patch loop is removed entirely.
+  - **Side benefit:** `delay` is now part of the documented public def
+    shape. Useful for one-shot delayed animations without needing
+    `Stagger` (e.g., a tooltip that fades in after a 200ms hover hold).
+  - Core MINOR 12 → 13.
 
 - **Cairn-Gui-2.0 Day 15J: AnimationGroup routing for Scale.**
   Mirrors 15I's pattern. `PROPERTY_ADAPTERS.scale` gains
@@ -159,7 +213,19 @@ The format is loosely based on
 
 ### Fixed
 
-- Animation ticker: records appended during the tick (e.g., by a
+- **TOC ordering: CairnSettingsPanel loaded before Cairn-Gui-1.0.**
+  Pre-existing bug across all five TOCs (Retail + Mists + TBC + Vanilla
+  + XPTR). `CairnSettingsPanel/Cairn-SettingsPanel-1.0.lua` does
+  `LibStub("Cairn-Gui-1.0", true)` at file scope and `error`s if it
+  returns nil; SettingsPanel was sandwiched between the v0.2 modules
+  and the Cairn-Gui-1.0 family in every TOC, so its file scope ran
+  before Gui-1.0 had registered with LibStub. Fix: moved
+  `CairnSettingsPanel\Cairn-SettingsPanel-1.0.lua` to AFTER the full
+  Cairn-Gui-1.0 family in each TOC, with a comment documenting the
+  dependency. Surfaced during the 15K test run; the error fired twice
+  on `/reload` but didn't block the test from completing.
+
+- **Animation ticker: records appended during the tick** (e.g., by a
   complete handler that calls `Animate` again -- including Sequence's
   chain) no longer advance in the same frame they were enqueued. The
   ticker captures the in-flight count at entry and stops once it has

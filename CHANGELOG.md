@@ -12,6 +12,17 @@ The format is loosely based on
 
 ### Added
 
+- **Cairn-Gui-2.0 Day 15J: AnimationGroup routing for Scale.**
+  Mirrors 15I's pattern. `PROPERTY_ADAPTERS.scale` gains
+  `backend = "animgroup"`, `animType = "Scale"`, and a defensive
+  `setupAnim` that handles three Blizzard API variants: modern
+  `SetScaleFrom`/`SetScaleTo`, alternate-naming
+  `SetFromScale`/`SetToScale`, and legacy delta-style `SetScale(ratio)`.
+  Same routing rules as Alpha — mappable easings + no spring → animgroup,
+  otherwise OnUpdate. Translation and Rotation still deferred; they
+  lack a Frame get/apply property and need a wrapper layer better
+  designed against a real consumer. Core MINOR 11 → 12.
+
 - **Cairn-Gui-2.0 Day 15I: AnimationGroup-backend routing for Alpha.**
   Decision 9's last big architectural item. The `alpha` property adapter
   opts into Blizzard's native AnimationGroup engine when the easing maps

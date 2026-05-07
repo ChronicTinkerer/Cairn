@@ -107,7 +107,16 @@ Verification (Day 1 success criterion):
 --      fall back to OnUpdate. Springs always go OnUpdate. Off-screen
 --      pause (15G/H) doesn't apply to animgroup records yet (Blizzard
 --      runs them past our gate); deferred.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 11
+--  12: Day 15J: Scale joins Alpha on the AnimationGroup backend. Scale's
+--      adapter gains backend = "animgroup" + animType = "Scale" + a
+--      defensive setupAnim that tries SetScaleFrom/SetScaleTo (modern),
+--      SetFromScale/SetToScale (alternate naming), and SetScale (legacy
+--      delta as ratio) in order. Same routing rules as Alpha (mappable
+--      easings + no spring -> animgroup; otherwise OnUpdate fallback).
+--      Translation and Rotation still deferred -- they have no underlying
+--      Frame get/apply, so they need a wrapper layer best designed
+--      against a real consumer.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 12
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

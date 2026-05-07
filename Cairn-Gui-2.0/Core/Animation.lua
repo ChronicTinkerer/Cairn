@@ -7,11 +7,11 @@ composition primitives, ReduceMotion accessibility flag, the standard
 easing set, Spring physics, an imperative Tween shortcut, a per-widget
 concurrency cap, OKLCH color interpolation (opt-in per primitive color
 anim), off-screen pause (viewport-based plus clipping-ancestor walk),
-and AnimationGroup-backend routing for Alpha (mappable easings only;
-non-mappable easings and other properties stay on OnUpdate). Translation/
-Scale/Rotation routing remains deferred until a real consumer applies
-pressure (their Blizzard APIs differ by build, so the abstractions
-deserve real-world signal before being designed).
+and AnimationGroup-backend routing for Alpha and Scale (mappable
+easings only; non-mappable easings and other properties stay on
+OnUpdate). Translation and Rotation routing remain deferred -- they
+need a "no underlying frame property" wrapper layer that's better
+designed against a real consumer.
 
 Public API on the lib:
 
@@ -170,11 +170,13 @@ Engine notes:
 	  off-screen pause (15G/15H) doesn't apply to animgroup records
 	  because Blizzard runs them past our gate. Both are deferred.
 
-Status: Day 15 slices B + C + D + E + F + G + H + I. AnimationGroup-
-backend routing landed for Alpha; Translation/Scale/Rotation deferred.
+Status: Day 15 slices B + C + D + E + F + G + H + I + J. AnimationGroup-
+backend routing landed for Alpha and Scale; Translation and Rotation
+deferred (no underlying frame property; need a wrapper layer designed
+against a real consumer).
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-2.0", 11
+local MAJOR, MINOR = "Cairn-Gui-2.0", 12
 local lib = LibStub:GetLibrary(MAJOR, true)
 if not lib then return end
 
@@ -822,9 +824,28 @@ local PROPERTY_ADAPTERS = {
 	scale = {
 		get   = function(frame) return frame:GetScale() end,
 		apply = function(frame, v) frame:SetScale(v) end,
-		-- No animgroup backend in 15I; Scale animation API differs by
-		-- build (SetScaleFrom/To vs SetScale delta) and Vellum hasn't
-		-- surfaced a need yet. Stays on OnUpdate.
+		backend  = "animgroup",
+		animType = "Scale",
+		-- Day 15J: Defensive across Blizzard's Scale animation API
+		-- variants. Modern Retail (~Shadowlands+): SetScaleFrom /
+		-- SetScaleTo for absolute scaling. Alternate naming seen in
+		-- some references: SetFromScale / SetToScale. Legacy API: a
+		-- single SetScale(x, y) that's the multiplier applied to the
+		-- frame's scale at Play time -- so to go from `from` to `to`
+		-- the multiplier is `to / from`. We try them in order; only
+		-- one will exist, the others are nil-method short-circuits.
+		setupAnim = function(anim, from, to)
+			if anim.SetScaleFrom and anim.SetScaleTo then
+				anim:SetScaleFrom(from, from)
+				anim:SetScaleTo(to, to)
+			elseif anim.SetFromScale and anim.SetToScale then
+				anim:SetFromScale(from, from)
+				anim:SetToScale(to, to)
+			elseif anim.SetScale and from > 0 then
+				local ratio = to / from
+				anim:SetScale(ratio, ratio)
+			end
+		end,
 	},
 	width = {
 		get   = function(frame) return frame:GetWidth() end,

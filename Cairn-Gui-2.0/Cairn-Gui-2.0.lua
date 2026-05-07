@@ -52,7 +52,19 @@ Verification (Day 1 success criterion):
 --      Penner-standard back-overshoot and piecewise bounce curves).
 --      Anim records now support a `delay` field (Stagger sets it; the
 --      ticker counts it down before treating dt as elapsed time).
-local MAJOR, MINOR = "Cairn-Gui-2.0", 5
+--      Tick loop late-comer guard: records added during a tick (e.g.,
+--      Sequence's chain) wait until the next OnUpdate before advancing.
+--   6: Day 15D: Animation physics + ergonomics. Adds Spring physics --
+--      Animate's def now accepts `spring = { stiffness, damping, mass }`
+--      to opt into a physics-driven path (semi-implicit Euler, settles
+--      via SpringSettleThreshold). In-flight velocity carries over on
+--      re-Animate so a hover-leave-hover during oscillation continues
+--      physically. Adds Base:Tween(prop, to, opts) imperative shortcut
+--      for the single-property case. Adds lib.MaxConcurrentAnims (64)
+--      defensive cap -- new records past the cap evict the oldest
+--      silently. ReduceMotion fast-path now snaps springs to rest just
+--      like scalar/rgba records do.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 6
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

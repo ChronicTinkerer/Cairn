@@ -42,7 +42,17 @@ Verification (Day 1 success criterion):
 --   4: Bugfix: Acquire's pool path now resets _visualState / _hovering /
 --      _pressing / _disabled before OnAcquire so a Released-while-hovered
 --      widget doesn't paint at hover color when recycled.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 4
+--   5: Day 15C: Animation composition + accessibility. Adds Base:Sequence,
+--      Base:Parallel, Base:Stagger composition primitives (specs match
+--      Animate's shape; opts.complete fires once when the whole group
+--      finishes). Adds the lib.ReduceMotion accessibility flag (clamps
+--      duration AND start-delay to zero, applies target value plus
+--      complete handler synchronously, bypasses the queue entirely).
+--      Adds easeOutBack and easeOutBounce to the built-in easings (the
+--      Penner-standard back-overshoot and piecewise bounce curves).
+--      Anim records now support a `delay` field (Stagger sets it; the
+--      ticker counts it down before treating dt as elapsed time).
+local MAJOR, MINOR = "Cairn-Gui-2.0", 5
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

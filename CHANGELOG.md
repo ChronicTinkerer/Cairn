@@ -8,6 +8,47 @@ run) on 2026-05-06. Higher integers are newer than any YYMMDDHHMM stamp.
 The format is loosely based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Cairn-Gui-2.0 Day 15C: Animation composition + accessibility.**
+  Closes out the bulk of Decision 9. New on `widget.Cairn`:
+  - `Sequence(steps, opts)` runs a list of specs one after another. The
+    next step starts only after every property in the current step has
+    completed. `opts.complete` fires after the final step.
+  - `Parallel(steps, opts)` runs all specs simultaneously and fires
+    `opts.complete` once every property across every step is done.
+  - `Stagger(steps, delay, opts)` like `Parallel`, but each step starts
+    `(idx-1) * delay` seconds after the call. Implemented via a per-
+    record `delay` field that the ticker counts down before treating dt
+    as elapsed time, so Stagger remains deterministic and unit-testable.
+  - New `lib.ReduceMotion` boolean accessibility flag (default false).
+    When truthy, all subsequent Animate / Sequence / Parallel / Stagger /
+    `_animatePrimitiveColor` calls clamp duration AND start-delay to
+    zero, applying the target value synchronously and firing complete
+    handlers synchronously. The animation queue is bypassed entirely.
+  - New built-in easings: `easeOutBack` (Penner-standard back-overshoot
+    with c1 = 1.70158) and `easeOutBounce` (piecewise bounce).
+  - Core MINOR 4 → 5.
+
+### Changed
+
+- The animation ticker now respects a `delay` field on records (counts
+  it down before applying values; overshoot rolls into elapsed on the
+  same tick so a 0.05s delay + 0.10s dt produces a 0.05s elapsed, not
+  zero). Existing records without `delay` behave identically.
+
+### Fixed
+
+- Animation ticker: records appended during the tick (e.g., by a
+  complete handler that calls `Animate` again -- including Sequence's
+  chain) no longer advance in the same frame they were enqueued. The
+  ticker captures the in-flight count at entry and stops once it has
+  processed that many records, regardless of late-comers. Without this
+  guard, a long synthetic dt (or a slow real frame) could chain through
+  an entire Sequence in one tick, producing zero per-step pacing.
+
 ## [3] — Cairn-Gui-2.0 Days 14 + 15B + source layout migration (2026-05-06)
 
 Big release. Bundles three feature days, two bug fixes, and a full source-tree reorganization. Driven by the Cairn-Gui-2.0 ARCHITECTURE.md plan plus a known-bug cleanup.

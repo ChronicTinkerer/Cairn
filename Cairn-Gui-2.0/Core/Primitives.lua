@@ -222,21 +222,27 @@ local function applyTextureSource(texture, source)
 end
 
 -- Read a state-variant spec's `transition` token (Day 15 slice B).
--- Returns (durationSeconds, easingName) or (nil, nil) if no transition is
--- configured. The token can be a duration token name (resolved through
--- the cascade) or a literal number; an optional `ease` sibling key
--- supplies the easing name. Any non-positive duration disables the
--- transition (treated as snap).
+-- Returns (durationSeconds, easingName, colorSpace) or (nil, nil, nil) if
+-- no transition is configured. The token can be a duration token name
+-- (resolved through the cascade) or a literal number; an optional `ease`
+-- sibling key supplies the easing name; an optional `colorSpace` sibling
+-- (Day 15F) opts the primitive's color transition into OKLCH lerp instead
+-- of the default RGB. Any non-positive duration disables the transition
+-- (treated as snap).
 local function readTransition(self, spec)
-	if type(spec) ~= "table" or spec.transition == nil then return nil, nil end
+	if type(spec) ~= "table" or spec.transition == nil then
+		return nil, nil, nil
+	end
 	local raw = spec.transition
 	if type(raw) == "string" then
 		raw = lib:ResolveToken(raw, self)
 	end
-	if type(raw) ~= "number" or raw <= 0 then return nil, nil end
+	if type(raw) ~= "number" or raw <= 0 then return nil, nil, nil end
 	local ease = spec.ease
 	if ease ~= nil and type(ease) ~= "string" then ease = nil end
-	return raw, ease
+	local colorSpace = spec.colorSpace
+	if colorSpace ~= nil and type(colorSpace) ~= "string" then colorSpace = nil end
+	return raw, ease, colorSpace
 end
 
 -- Re-resolve a primitive record's spec(s) for the given state and apply.
@@ -248,16 +254,27 @@ end
 --   animate over this duration. Otherwise the new color snaps. Source
 --   changes on icons (state-variant texture) always snap.
 -- options.ease (string): easing name passed through to the animation.
+-- options.colorSpace (string, Day 15F): if "oklch", color transitions
+--   lerp in OKLCH space instead of RGB. Forwarded to
+--   _animatePrimitiveColor as opts.colorSpace.
 local function applyRecord(self, slot, rec, state, options)
 	options = options or {}
 	local transition = options.transition
 	local ease       = options.ease
+	local colorSpace = options.colorSpace
 	local canAnimate = transition and transition > 0 and type(self._animatePrimitiveColor) == "function"
+
+	-- Build the animOpts table only when we'll actually use it. Avoids
+	-- a per-call allocation on the common no-OKLCH path.
+	local animOpts
+	if canAnimate and colorSpace then
+		animOpts = { colorSpace = colorSpace }
+	end
 
 	if rec.kind == "rect" or rec.kind == "border" then
 		local color = resolveSpec(self, rec.spec, state)
 		if canAnimate and type(color) == "table" then
-			self:_animatePrimitiveColor(slot, color, transition, ease)
+			self:_animatePrimitiveColor(slot, color, transition, ease, animOpts)
 		else
 			applyColor(rec.textures, color)
 		end
@@ -270,7 +287,7 @@ local function applyRecord(self, slot, rec, state, options)
 		if rec.colorSpec then
 			local color = resolveSpec(self, rec.colorSpec, state)
 			if canAnimate and type(color) == "table" then
-				self:_animatePrimitiveColor(slot, color, transition, ease)
+				self:_animatePrimitiveColor(slot, color, transition, ease, animOpts)
 			else
 				applyColor(rec.textures, color)
 			end
@@ -304,9 +321,13 @@ local function applyAllForState(self, state)
 			else
 				specForTransition = rec.spec
 			end
-			local dur, ease = readTransition(self, specForTransition)
+			local dur, ease, colorSpace = readTransition(self, specForTransition)
 			if dur then
-				applyRecord(self, slot, rec, state, { transition = dur, ease = ease })
+				applyRecord(self, slot, rec, state, {
+					transition = dur,
+					ease       = ease,
+					colorSpace = colorSpace,
+				})
 			else
 				applyRecord(self, slot, rec, state)
 			end

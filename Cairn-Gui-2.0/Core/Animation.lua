@@ -4,10 +4,11 @@ Cairn-Gui-2.0 / Core / Animation
 Implements Decision 9 from ARCHITECTURE.md. The full decision lists 11
 sub-decisions; this file ships the engine, primitive transition tokens,
 composition primitives, ReduceMotion accessibility flag, the standard
-easing set, Spring physics, an imperative Tween shortcut, and a per-
-widget concurrency cap. OKLCH, off-screen pause beyond Hide cascade, and
-AnimationGroup-backend routing for Translation/Scale/Alpha/Rotation
-remain deferred (Day 15E candidates).
+easing set, Spring physics, an imperative Tween shortcut, a per-widget
+concurrency cap, OKLCH color interpolation (opt-in per primitive color
+anim), and off-screen pause (viewport-based plus clipping-ancestor
+walk). AnimationGroup-backend routing for Translation/Scale/Alpha/
+Rotation remains deferred.
 
 Public API on the lib:
 
@@ -95,13 +96,27 @@ Public API on widget.Cairn (added to Mixins.Base):
 
 Internal API on widget.Cairn:
 
-	widget.Cairn:_animatePrimitiveColor(slot, toColor, duration, easing)
+	widget.Cairn:_animatePrimitiveColor(slot, toColor, duration, easing, opts?)
 		Used by the Primitives state machine when a state-variant spec
 		carries a `transition` token. Captures the primitive's current
 		vertex color as the "from", lerps RGBA over duration via the
 		named easing, applies via SetVertexColor on every texture in the
 		record. Replacement of an in-flight per-slot animation works the
 		same as the public Animate (key is "primColor:<slot>").
+
+		opts.colorSpace = "oklch" opts into OKLCH interpolation (opt-in
+		per call). Endpoints are pre-converted once at addAnim time;
+		each tick lerps L and C linearly, lerps hue along the shortest
+		arc, and converts back to sRGB for the apply. Useful when a
+		theme transitions between hues that pass through the desaturated
+		region of RGB space (e.g., yellow -> blue, which is gray at the
+		RGB midpoint but stays vivid in OKLCH).
+
+	Cairn.Gui:RgbToOklch(r, g, b, a) -> L, C, h, a
+	Cairn.Gui:OklchToRgb(L, C, h, a) -> r, g, b, a
+		Public color-space conversions. r/g/b in [0, 1] sRGB; L/C in
+		[0, ~0.4] typical UI range; h in [0, 360) degrees. Pure functions,
+		safe to call any time after Animation.lua loads.
 
 Engine notes:
 	- One OnUpdate frame per widget, parented to self._frame so Blizzard's
@@ -129,13 +144,21 @@ Engine notes:
 	  (default 64). New records past the cap evict the oldest in-flight
 	  record silently. Defensive against pathological consumer code; not
 	  intended as a routine throttle.
+	- The tick early-returns when the widget's frame is positioned
+	  entirely outside the UIParent viewport OR entirely outside any
+	  DoesClipChildren ancestor's clipped rect. Animations freeze in
+	  time (dt during off-screen is discarded, not banked) and resume
+	  from their captured state when the frame returns on-screen. The
+	  Hide cascade still handles "ancestor hidden" via Blizzard's auto-
+	  pause; this layer adds "shown but off-screen" coverage for two
+	  cases: Day 15G (positioned off the visible viewport) and 15H
+	  (scrolled outside a clipping ancestor like a ScrollFrame's child).
 
-Status: Day 15 slices B + C + D. OKLCH, off-screen pause beyond Hide
-cascade, and AnimationGroup-backend routing for Translation/Scale/Alpha/
-Rotation are deferred (Day 15E candidates).
+Status: Day 15 slices B + C + D + E + F + G + H. AnimationGroup-backend
+routing for Translation/Scale/Alpha/Rotation remains deferred.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-2.0", 6
+local MAJOR, MINOR = "Cairn-Gui-2.0", 10
 local lib = LibStub:GetLibrary(MAJOR, true)
 if not lib then return end
 
@@ -232,6 +255,122 @@ function lib:RegisterEasing(name, fn)
 	self.easings[name] = fn
 end
 
+-- ----- OKLCH color space conversion ------------------------------------
+--
+-- OKLab is Bjorn Ottosson's perceptually-uniform color space (2020). The
+-- polar form OKLCH (Lightness, Chroma, hue) is friendlier for designers
+-- and far better than RGB for interpolation: a yellow -> blue lerp in
+-- RGB passes through gray (because R, G, B all collapse to 0.5 at the
+-- midpoint) but in OKLCH stays vivid through the whole arc.
+--
+-- Pipeline: sRGB <-> linear sRGB <-> OKLab <-> OKLCH.
+--   sRGB <-> linear: standard gamma transfer (CSS Color 4 spec).
+--   linear sRGB <-> OKLab: matrix + cube root (Ottosson's coefficients).
+--   OKLab <-> OKLCH: polar / cartesian. C = sqrt(a^2 + b^2);
+--                    h = atan2(b, a) in degrees.
+--
+-- These functions return scalars (not tables) to avoid allocation in
+-- the conversion path. Hue h is normalized to [0, 360).
+
+local function cbrt(x)
+	-- Lua's `^` on negative bases with non-integer exponents returns NaN.
+	-- Cube root of a negative is a real negative, so we mirror through 0.
+	if x < 0 then return -((-x) ^ (1 / 3)) end
+	return x ^ (1 / 3)
+end
+
+local function srgbToLinear(c)
+	if c <= 0.04045 then return c / 12.92 end
+	return ((c + 0.055) / 1.055) ^ 2.4
+end
+
+local function linearToSrgb(c)
+	if c <= 0.0031308 then return c * 12.92 end
+	return 1.055 * (c ^ (1 / 2.4)) - 0.055
+end
+
+local function rgbToOklab(r, g, b)
+	r = srgbToLinear(r)
+	g = srgbToLinear(g)
+	b = srgbToLinear(b)
+	local l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b
+	local m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b
+	local s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b
+	local lr = cbrt(l)
+	local mr = cbrt(m)
+	local sr = cbrt(s)
+	local L = 0.2104542553 * lr + 0.7936177850 * mr - 0.0040720468 * sr
+	local A = 1.9779984951 * lr - 2.4285922050 * mr + 0.4505937099 * sr
+	local B = 0.0259040371 * lr + 0.7827717662 * mr - 0.8086757660 * sr
+	return L, A, B
+end
+
+local function oklabToRgb(L, A, B)
+	local lr = L + 0.3963377774 * A + 0.2158037573 * B
+	local mr = L - 0.1055613458 * A - 0.0638541728 * B
+	local sr = L - 0.0894841775 * A - 1.2914855480 * B
+	local l = lr * lr * lr
+	local m = mr * mr * mr
+	local s = sr * sr * sr
+	local r =  4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
+	local g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
+	local b = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+	return linearToSrgb(r), linearToSrgb(g), linearToSrgb(b)
+end
+
+-- Internal versions: skip the self-shim so the tick loop can call them
+-- directly without method-call overhead. Public wrappers below.
+local function _rgbToOklch(r, g, b, a)
+	local L, A, B = rgbToOklab(r, g, b)
+	local C = math.sqrt(A * A + B * B)
+	local h = math.deg(math.atan2(B, A))
+	if h < 0 then h = h + 360 end
+	return L, C, h, a or 1
+end
+
+local function _oklchToRgb(L, C, h, a)
+	local rad = math.rad(h or 0)
+	local A = (C or 0) * math.cos(rad)
+	local B = (C or 0) * math.sin(rad)
+	local r, g, b = oklabToRgb(L or 0, A, B)
+	return r, g, b, a or 1
+end
+
+-- Public: r,g,b in [0,1] sRGB -> L,C,h (degrees), passes alpha through.
+function lib:RgbToOklch(r, g, b, a)
+	return _rgbToOklch(r or 0, g or 0, b or 0, a)
+end
+
+-- Public: L,C,h(deg) -> r,g,b in [0,1] sRGB, passes alpha through.
+function lib:OklchToRgb(L, C, h, a)
+	return _oklchToRgb(L or 0, C or 0, h or 0, a)
+end
+
+-- Internal: shortest-path hue lerp on [0, 360). Handles wrap so a hue
+-- of 350 -> 10 takes the short way (20 degrees) instead of the long
+-- way (340 degrees).
+local function lerpHue(hFrom, hTo, t)
+	local diff = hTo - hFrom
+	if diff > 180 then
+		hFrom = hFrom + 360
+	elseif diff < -180 then
+		hTo = hTo + 360
+	end
+	local h = hFrom + (hTo - hFrom) * t
+	return h % 360
+end
+
+-- Internal: hue is undefined when chroma is zero; collapse to the
+-- defined endpoint's hue so we don't lerp toward an arbitrary value.
+-- Returns adjusted (hFrom, hTo).
+local function reconcileGrayHues(cFrom, hFrom, cTo, hTo)
+	local EPS = 1e-4
+	if cFrom < EPS and cTo >= EPS then hFrom = hTo
+	elseif cTo < EPS and cFrom >= EPS then hTo = hFrom
+	end
+	return hFrom, hTo
+end
+
 -- ----- Per-widget animation list bookkeeping ---------------------------
 
 local function ensureAnimList(self)
@@ -248,6 +387,69 @@ local function detachIfIdle(self)
 		self._animFrame:SetScript("OnUpdate", nil)
 		self._animFrameActive = false
 	end
+end
+
+-- Returns true if the frame's UIParent-relative rect is entirely outside
+-- (a) UIParent's viewport OR (b) any DoesClipChildren ancestor's clipped
+-- rect. Animations whose frame is off-screen pause their tick (they
+-- freeze in time; dt during off-screen is discarded, not banked). The
+-- Hide cascade already covers the not-visible case via Blizzard auto-
+-- pause; this catches:
+--
+--   Day 15G: "shown but positioned off-screen" cases like a slid-out
+--   toast or a popped-in element animating off the visible viewport.
+--
+--   Day 15H: "shown but scrolled outside a clipping ancestor" cases
+--   like a list item that's animated even though it's been scrolled
+--   below the visible area of a ScrollFrame.
+--
+-- An unpositioned frame (GetLeft returns nil) is treated as on-screen so
+-- we don't mistake "not yet laid out" for "off-screen" and pause work
+-- the consumer is depending on. Same for ancestors that aren't yet
+-- laid out -- they're skipped without aborting the walk.
+local function isOffScreen(frame)
+	if not frame or not frame.GetLeft then return false end
+	local left = frame:GetLeft()
+	if not left then return false end
+	local right  = frame:GetRight()
+	local top    = frame:GetTop()
+	local bottom = frame:GetBottom()
+	if not right or not top or not bottom then return false end
+
+	-- (a) UIParent viewport check (Day 15G).
+	local screenW = UIParent:GetWidth()
+	local screenH = UIParent:GetHeight()
+	if right <= 0 or left >= screenW or top <= 0 or bottom >= screenH then
+		return true
+	end
+
+	-- (b) Clipping ancestor walk (Day 15H). For each ancestor in the
+	-- parent chain that returns true from DoesClipChildren, check
+	-- whether the widget is entirely outside that ancestor's rect. If
+	-- so, the ancestor's clipping has hidden the widget regardless of
+	-- the widget's own visibility flag, so we should pause.
+	local parent = frame.GetParent and frame:GetParent()
+	while parent do
+		if parent.DoesClipChildren and parent:DoesClipChildren() then
+			local pLeft = parent.GetLeft and parent:GetLeft()
+			if pLeft then
+				local pRight  = parent:GetRight()
+				local pTop    = parent:GetTop()
+				local pBottom = parent:GetBottom()
+				if pRight and pTop and pBottom then
+					if right  <= pLeft
+						or left   >= pRight
+						or top    <= pBottom
+						or bottom >= pTop then
+						return true
+					end
+				end
+			end
+		end
+		parent = parent.GetParent and parent:GetParent() or nil
+	end
+
+	return false
 end
 
 -- ----- The tick (per-widget OnUpdate) ----------------------------------
@@ -277,6 +479,13 @@ local function tickAnimations(self, dt)
 		detachIfIdle(self)
 		return
 	end
+
+	-- Off-screen pause. If the widget's frame is positioned entirely
+	-- outside the viewport, freeze every record (don't advance, don't
+	-- apply). dt is discarded -- this is "pause" semantics, not "catch
+	-- up" semantics. Animations resume from their captured state when
+	-- the frame returns on-screen on a later tick.
+	if isOffScreen(self._frame) then return end
 
 	-- Records added during this tick (typically by a complete handler
 	-- that calls Animate again -- e.g., Sequence's chain or any user
@@ -356,10 +565,25 @@ local function tickAnimations(self, dt)
 					a.apply(self, v)
 				elseif a.fromType == "rgba" then
 					local from, to, buf = a.from, a.to, a._lerpBuffer
-					buf[1] = from[1] + (to[1] - from[1]) * eased
-					buf[2] = from[2] + (to[2] - from[2]) * eased
-					buf[3] = from[3] + (to[3] - from[3]) * eased
-					buf[4] = from[4] + (to[4] - from[4]) * eased
+					if a.colorSpace == "oklch" then
+						-- Lerp L and C linearly; lerp hue along the
+						-- shortest arc on [0, 360). Alpha always lerps
+						-- linearly in display space (no perceptual
+						-- alpha curve in v1).
+						local L = a.lFrom + (a.lTo - a.lFrom) * eased
+						local C = a.cFrom + (a.cTo - a.cFrom) * eased
+						local h = lerpHue(a.hFrom, a.hTo, eased)
+						local r, g, b = _oklchToRgb(L, C, h)
+						buf[1] = r
+						buf[2] = g
+						buf[3] = b
+						buf[4] = from[4] + (to[4] - from[4]) * eased
+					else
+						buf[1] = from[1] + (to[1] - from[1]) * eased
+						buf[2] = from[2] + (to[2] - from[2]) * eased
+						buf[3] = from[3] + (to[3] - from[3]) * eased
+						buf[4] = from[4] + (to[4] - from[4]) * eased
+					end
 					a.apply(self, buf)
 				end
 
@@ -729,7 +953,7 @@ end
 
 -- ----- Internal: animate a primitive's color (used by transition wiring)
 
-function Base:_animatePrimitiveColor(slot, toColor, duration, easingName)
+function Base:_animatePrimitiveColor(slot, toColor, duration, easingName, opts)
 	local rec = self._primitives and self._primitives[slot]
 	if not rec or not rec.textures or not rec.textures[1] then return end
 	if type(toColor) ~= "table" then return end
@@ -744,7 +968,7 @@ function Base:_animatePrimitiveColor(slot, toColor, duration, easingName)
 		toColor[1] or 1, toColor[2] or 1, toColor[3] or 1, toColor[4] or 1,
 	}
 
-	addAnim(self, "primColor:" .. slot, {
+	local record = {
 		fromType    = "rgba",
 		from        = from,
 		to          = to,
@@ -760,7 +984,23 @@ function Base:_animatePrimitiveColor(slot, toColor, duration, easingName)
 				end
 			end
 		end,
-	})
+	}
+
+	-- Opt-in OKLCH lerp. Pre-convert endpoints once at addAnim time so
+	-- the per-tick cost is only one OKLCH->RGB conversion, not two
+	-- conversions plus the lerp. Hue gets the shortest-arc treatment;
+	-- gray endpoints inherit the other endpoint's hue so we don't lerp
+	-- toward an arbitrary undefined value.
+	if opts and opts.colorSpace == "oklch" then
+		record.colorSpace = "oklch"
+		local lF, cF, hF = _rgbToOklch(from[1], from[2], from[3])
+		local lT, cT, hT = _rgbToOklch(to[1],   to[2],   to[3])
+		hF, hT = reconcileGrayHues(cF, hF, cT, hT)
+		record.lFrom, record.cFrom, record.hFrom = lF, cF, hF
+		record.lTo,   record.cTo,   record.hTo   = lT, cT, hT
+	end
+
+	addAnim(self, "primColor:" .. slot, record)
 end
 
 -- ----- Auto-cancel on Release (extends Base:Release) -------------------

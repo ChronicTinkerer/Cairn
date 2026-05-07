@@ -64,7 +64,37 @@ Verification (Day 1 success criterion):
 --      defensive cap -- new records past the cap evict the oldest
 --      silently. ReduceMotion fast-path now snaps springs to rest just
 --      like scalar/rgba records do.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 6
+--   7: Day 15E: OKLCH color interpolation (opt-in per primitive color
+--      anim). lib:RgbToOklch / lib:OklchToRgb public conversions.
+--      _animatePrimitiveColor gains an opts param; opts.colorSpace =
+--      "oklch" triggers OKLCH lerp (L/C linear, hue shortest-arc).
+--      Endpoints pre-converted once at addAnim; per-tick cost is one
+--      OKLCH->RGB conversion plus the lerps. Avoids the gray-midpoint
+--      collapse that RGB lerp produces between complementary hues.
+--   8: Day 15F: OKLCH wired into the Primitives state machine. State-
+--      variant specs now read a `colorSpace` sibling key alongside
+--      `transition` and `ease`; readTransition returns it as a third
+--      value, applyAllForState propagates it into applyRecord, and
+--      applyRecord forwards it to _animatePrimitiveColor as opts.
+--      Theme designers opt into OKLCH per variant without touching the
+--      internal animation API.
+--   9: Day 15G: Viewport-based off-screen pause. tickAnimations early-
+--      returns when the widget's frame is positioned entirely outside
+--      UIParent's viewport. Animations freeze in time (dt during off-
+--      screen discarded, not banked) and resume from their captured
+--      state on the next on-screen tick. The Hide cascade still covers
+--      ancestor-hidden cases via Blizzard auto-pause; this adds the
+--      "shown but positioned off-screen" coverage. Viewport-only check
+--      in v1; scrolled-out-of-clipping-ancestor (e.g., scroll list)
+--      cases need parent-chain awareness, deferred.
+--  10: Day 15H: Clipping-ancestor walk extends 15G's off-screen pause.
+--      isOffScreen now also walks the parent chain; for any ancestor
+--      where DoesClipChildren returns true, intersects the widget rect
+--      against the ancestor's rect. If entirely outside, returns true.
+--      Catches "scrolled outside a ScrollFrame's child" cases. Defensive
+--      against ancestors lacking DoesClipChildren or yet-unpositioned
+--      ancestors (skipped, walk continues).
+local MAJOR, MINOR = "Cairn-Gui-2.0", 10
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

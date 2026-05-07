@@ -12,6 +12,62 @@ The format is loosely based on
 
 ### Added
 
+- **Cairn-Gui-2.0 Day 15H: Clipping-ancestor walk for off-screen pause.**
+  Extends 15G. `isOffScreen` now also walks the parent chain from the
+  widget upward; for any ancestor where `DoesClipChildren()` returns
+  true, the widget's rect is intersected against the ancestor's rect.
+  If entirely outside, the widget is paused regardless of its own
+  visibility flag. Catches "scrolled outside a clipping ancestor's
+  visible area" cases (e.g., a list item in a `ScrollFrame` that has
+  been scrolled past the viewport). Defensive: ancestors lacking
+  `DoesClipChildren`, or those that are themselves not-yet-positioned,
+  are skipped without aborting the walk; the check falls through to
+  the next ancestor (and ultimately to the UIParent viewport check).
+  Core MINOR 9 → 10.
+
+- **Cairn-Gui-2.0 Day 15G: Viewport-based off-screen pause.**
+  `tickAnimations` early-returns when the widget's frame is positioned
+  entirely outside UIParent's viewport (right ≤ 0, left ≥ width, top ≤ 0,
+  or bottom ≥ height). Animations freeze in time -- dt during off-screen
+  is discarded (pause semantics, not catch-up) and ticking resumes from
+  the captured state on the next on-screen tick. The Hide cascade still
+  covers ancestor-hidden cases via Blizzard's auto-pause; this layer
+  adds coverage for the "shown but positioned off-screen" cases (e.g.,
+  a slid-out toast still ticking through its dormant state). Viewport-
+  only in v1; scrolled-out-of-clipping-ancestor cases (e.g., a list
+  item scrolled past a ScrollFrame's viewport) need parent-chain
+  clipping awareness and remain deferred. Core MINOR 8 → 9.
+
+- **Cairn-Gui-2.0 Day 15F: OKLCH wired into the Primitives state machine.**
+  State-variant specs now read a `colorSpace` sibling key alongside
+  `transition` and `ease`. Theme designers opt into OKLCH lerp per variant
+  without touching the internal animation API:
+  ```lua
+  -- In a Button bg variant spec:
+  spec = {
+      default    = "color.bg.button.default",
+      hover      = "color.bg.button.hover",
+      transition = "duration.fast",
+      ease       = "easeOut",
+      colorSpace = "oklch",   -- NEW: opts the hover transition into OKLCH
+  }
+  ```
+  `readTransition` returns `(dur, ease, colorSpace)` (third value new);
+  `applyAllForState` propagates `colorSpace` into the options passed to
+  `applyRecord`; `applyRecord` builds an `opts = { colorSpace = ... }`
+  table only when both `colorSpace` is set AND animation is possible
+  (defensive against unnecessary allocation on the common no-OKLCH path),
+  forwarding to `_animatePrimitiveColor` as the 5th argument. Default
+  RGB lerp behavior for variants without `colorSpace` is unchanged.
+  Core MINOR 7 → 8.
+
+- **Cairn-Gui-2.0 Day 15E: OKLCH color interpolation.**
+  - **`lib:RgbToOklch(r, g, b, a) -> L, C, h, a`** and **`lib:OklchToRgb(L, C, h, a) -> r, g, b, a`** public color-space conversions. r/g/b are sRGB in [0, 1]; L/C are in OKLab's typical UI range; h is in [0, 360) degrees. Pure functions; safe to call any time after Animation.lua loads.
+  - **`_animatePrimitiveColor` gains an `opts` parameter.** Pass `opts = { colorSpace = "oklch" }` to opt in to OKLCH interpolation per call. Endpoints are pre-converted once at addAnim; each tick lerps L and C linearly, lerps hue along the shortest arc on [0, 360), and converts back to sRGB for the apply. Default behavior (RGB lerp) is unchanged.
+  - **Why it matters.** RGB lerp between complementary hues (yellow ↔ blue, green ↔ magenta) passes through near-gray at the midpoint because all three RGB channels collapse to ~0.5. OKLCH stays in a vivid arc through the whole transition.
+  - Gray endpoints (chroma ≈ 0) inherit the other endpoint's hue so we don't lerp toward an arbitrary undefined value.
+  - Core MINOR 6 → 7.
+
 - **Cairn-Gui-2.0 Day 15D: Animation physics + ergonomics.**
   - **Spring physics.** Animate's per-property def now accepts a
     `spring = { stiffness, damping, mass }` table; when present, the

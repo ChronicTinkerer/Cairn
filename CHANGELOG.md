@@ -10,6 +10,8 @@ The format is loosely based on
 
 ## [Unreleased]
 
+## [12] — Cairn-LogWindow-2.0 ships + v2 framework-gap pass + Wago packaging fix (2026-05-07)
+
 ### Added
 
 - **Cairn-LogWindow-2.0 MINOR=1** — drop-in successor to `Cairn-LogWindow-1.0`, built entirely on `Cairn-Gui-2.0` Standard widgets (Window + ScrollFrame + Label body + toolbar with Level / Source `Dropdown`s, Search `EditBox`, and Clear `Button`). Public API matches v1 exactly (`Toggle / Show / Hide / IsShown / SetSourceFilter / SetMinLevel / SetSearch / Refresh`), so the `/cairn log ...` slash subcommands and any consumer code calling `Cairn.LogWindow:...` Just Work. New: filters are now discoverable through inline UI controls instead of requiring slash commands. Source dropdown auto-populates from `Cairn.Log`'s registered loggers + live buffer entries; refreshes when an unknown source logs while the window is open. Strata is `DIALOG` so the window layers above any consumer `Window` (which now defaults to `HIGH` since Standard-2.0 MINOR 3). The umbrella facade installs v2 directly via `rawset(Cairn, "LogWindow", lib)` at file-scope load — `Cairn.lua`'s `__index` hardcodes the `-1.0` suffix and would otherwise lock callers onto v1 forever. Final v1 conversion under the v2-only strategy; the `Cairn-Gui-1.0` family is now eligible for extraction to `Diesal-Continued`.
@@ -17,24 +19,6 @@ The format is loosely based on
 - **Cairn-SettingsPanel-2.0 MINOR=1** — drop-in successor to `Cairn-SettingsPanel-1.0`, built entirely on `Cairn-Gui-2.0` Standard widgets. Same public surface (`lib.OpenFor / HideFor / ToggleFor`); consumers calling `settings:OpenStandalone()` get the v2-rendered panel automatically. Full v1 schema parity: header / toggle / range / dropdown / text / anchor / color / keybind. Color renders a live-tinted swatch + opens Blizzard's `ColorPickerFrame` on click; keybind renders as a Button that enters capture mode and binds the next keypress (Esc clears, modifier-aware).
 - **Cairn-Settings-1.0 MINOR=4** — `:OpenStandalone()` now prefers `Cairn-SettingsPanel-2.0` when present, with a `Cairn-SettingsPanel-1.0` fallback. No call-site changes for consumers. Spotted while building Cairn-Demo's Settings tab: a v2-styled demo window opening a v1-styled panel was a visible mismatch.
 - **Cairn-Settings-1.0 MINOR=5** — color schema validator now accepts BOTH named `{r=, g=, b=[, a=]}` and positional `{r, g, b[, a]}` shapes; positional gets normalized to named at validate time so consumer code only deals with one form. Lib header documented named, validator only accepted positional — caught while wiring Cairn-Demo's Settings tab schema. Same fix exposed text/color/keybind type-specific docs in the header that were absent.
-
-### Fixed
-
-- **Cairn-LogWindow-1.0 MINOR=2** — frame strata bumped from `HIGH` to `DIALOG` so the window layers above hosts using `Cairn-Gui-2.0`'s default `Window` strata (`HIGH` since Standard-2.0 MINOR 3). Caught when Cairn-Demo's "Toggle LogWindow" button opened the window successfully but it rendered behind the demo, looking like a no-op.
-- **Cairn-Slash-1.0 MINOR=2** — added public introspection methods so dev/debug UIs don't have to read the private `_subs` / `_slashes` tables.
-  - `slash:GetSubcommands()` returns a fresh array of `{ name = "config", help = "open the config panel" }` entries sorted by name.
-  - `slash:GetSlashes()` returns a fresh array of every slash this object responds to (primary + aliases).
-  - Spotted while building Cairn-Demo's Slash tab — the only way to render the registered-subcommands list was to peek at `s._subs`. Public API now covers it.
-
-### Added (internal)
-
-- **Cairn-Demo** — new internal SubAddon under `Cairn/SubAddons/Cairn-Demo/`. Companion to `Cairn-Gui-Demo-2.0`, covering the non-GUI library surface: 16 tabs (Welcome + Callback + Events + Log + DB + Settings + Addon + Slash + EditMode + Locale + Hooks + Sequencer + Timer + FSM + Comm + Smoke Test). Slash `/cdemo` (alias `/cairn-demo`). MIT. Not in `.pkgmeta` or `release.ps1` (matches the Cairn-Gui-Demo-2.0 internal-only decision).
-- **Forge/.dev/tests/cairn_demo_smoke.lua** — headless mirror of the Smoke Test tab. Phase 1 walks every Cairn-Demo tab; phase 2 calls the in-tab runner via `Demo._runSmokeTest(print)` and PASS/FAIL-asserts every public Cairn library API.
-
-## [12] — Cairn-Gui-2.0 Core MINOR=19 + Standard MINOR=3: framework gaps from Demo (2026-05-07)
-
-### Added
-
 - **Cairn-Gui-2.0 Core MINOR=19, Cairn-Gui-Widgets-Standard-2.0 MINOR=3** — five framework gaps surfaced while building `Cairn-Gui-Demo-2.0` and walking every widget in-game. Each fix removes a class-of-bug consumers hit, not a single instance.
 
   - **Auto-invalidate parent layout on label/value setters.** New `Base:_invalidateParentLayout()` helper in `Mixins/Base.lua`. `Button.SetText` / `Button.SetVariant`, `Label.SetText` / `Label.SetVariant`, `Checkbox.SetText`, `EditBox.SetText` / `SetPlaceholder`, `Dropdown.SetSelected` / `SetOptions` all call it. Stack horizontal in particular silently kept old widths after `SetText`, letting longer strings (locale switches, post-click confirmations) bleed into adjacent siblings; the auto-invalidate path triggers the parent's next-frame relayout so widths re-measure. Universal: every consumer benefits without changing code.
@@ -47,11 +31,25 @@ The format is loosely based on
 
   - **Window default strata `DIALOG` → `HIGH`.** With Window at `DIALOG`, `DIALOG`-strata popups (`Dropdown` option lists, child `Window`s) raced for frame level inside the same strata and lost half the time, rendering invisibly behind the host. Defaulting Window to `HIGH` lifts host windows out of the collision zone; pass `strata = "DIALOG"` explicitly when a `Window` IS itself a popup. `ARCHITECTURE.md` gains a "Strata Convention" section formalizing `HIGH` / `DIALOG` / `FULLSCREEN_DIALOG` roles.
 
+### Fixed
+
+- **Cairn-LogWindow-1.0 MINOR=2** — frame strata bumped from `HIGH` to `DIALOG` so the window layers above hosts using `Cairn-Gui-2.0`'s default `Window` strata (`HIGH` since Standard-2.0 MINOR 3). Caught when Cairn-Demo's "Toggle LogWindow" button opened the window successfully but it rendered behind the demo, looking like a no-op.
+- **Cairn-Slash-1.0 MINOR=2** — added public introspection methods so dev/debug UIs don't have to read the private `_subs` / `_slashes` tables.
+  - `slash:GetSubcommands()` returns a fresh array of `{ name = "config", help = "open the config panel" }` entries sorted by name.
+  - `slash:GetSlashes()` returns a fresh array of every slash this object responds to (primary + aliases).
+  - Spotted while building Cairn-Demo's Slash tab — the only way to render the registered-subcommands list was to peek at `s._subs`. Public API now covers it.
+- **`.pkgmeta`: ignore `*_XPTR.toc`** — Wago's package validator parses each TOC filename as `<AddonName>_<FlavorSuffix>.toc` and rejects the upload when the suffix isn't a WoW-canonical flavor: *"We found different named TOC files in your addon."* `_XPTR` is not canonical (`_Mainline`, `_Mists`, `_TBC`, `_Vanilla`, `_Wrath`, `_Cata` are). The XPTR TOC stays in the local working tree for dev installs but no longer enters published zips. CF and WoWI accept the unrecognized suffix silently; this is a Wago-specific validator. Applied preemptively to Cairn even though Cairn hadn't yet failed a Wago upload from this pattern (LibCodex hit it first, build 9 confirmed the fix).
+
 ### Migration notes
 
 - Consumers that explicitly called `container.Cairn:RelayoutNow()` after a `SetText` to work around the old behavior can drop those calls; auto-invalidate handles it. The explicit `RelayoutNow()` is still supported for synchronous override.
 - Consumers that `SetFrameStrata("HIGH")` on their host Window can drop the override; `HIGH` is now the Window default.
 - Consumers running `Cairn.Dev = true` will see new warnings if they had layouts hitting the 20px fallback. The warnings are advisory, not blocking; pass an explicit `cellHeight` / `rowHeight` / `_flexBasis` to silence.
+
+### Added (internal)
+
+- **Cairn-Demo** — new internal SubAddon under `Cairn/SubAddons/Cairn-Demo/`. Companion to `Cairn-Gui-Demo-2.0`, covering the non-GUI library surface: 16 tabs (Welcome + Callback + Events + Log + DB + Settings + Addon + Slash + EditMode + Locale + Hooks + Sequencer + Timer + FSM + Comm + Smoke Test). Slash `/cdemo` (alias `/cairn-demo`). MIT. Not in `.pkgmeta` or `release.ps1` (matches the Cairn-Gui-Demo-2.0 internal-only decision).
+- **Forge/.dev/tests/cairn_demo_smoke.lua** — headless mirror of the Smoke Test tab. Phase 1 walks every Cairn-Demo tab; phase 2 calls the in-tab runner via `Demo._runSmokeTest(print)` and PASS/FAIL-asserts every public Cairn library API.
 
 ## [11] — Cairn-Gui-2.0 Core MINOR=18: Round-out pass (2026-05-07)
 

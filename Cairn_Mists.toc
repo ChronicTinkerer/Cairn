@@ -102,6 +102,11 @@ Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Button.lua
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Label.lua
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Window.lua
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Checkbox.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\ScrollFrame.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\EditBox.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Slider.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Dropdown.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\TabGroup.lua
 
 # Cairn-Gui-Theme-Default-2.0: default visual theme.
 Cairn-Gui-2.0\Cairn-Gui-Theme-Default-2.0\Cairn-Gui-Theme-Default-2.0.lua

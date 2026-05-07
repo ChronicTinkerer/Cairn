@@ -24,7 +24,9 @@ Load order in Cairn.toc:
 Widget files use LibStub("Cairn-Gui-2.0") to get Core, then call
 Core:RegisterWidget(name, def) to register themselves.
 
-Status: Day 15B. Button + Label + Container + Window + Checkbox.
+Status: Day 16. Standard widget set goes from 5 to 10:
+ScrollFrame, EditBox, Slider, Dropdown, TabGroup added on top of the
+existing Container, Button, Label, Window, Checkbox.
 
 History under previous MAJOR (Cairn-Gui-Widgets-Standard-1.0):
 	1: Days 8-13 (Button, Label, Container, Window).
@@ -35,9 +37,19 @@ History under previous MAJOR (Cairn-Gui-Widgets-Standard-1.0):
 Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	1: MAJOR rename only. No API changes from 1.0/MINOR=3. Fresh start
 	   to align bundle MAJOR with the Core MAJOR it targets.
+	2: Day 16: ScrollFrame, EditBox, Slider, Dropdown, TabGroup. Five
+	   new widgets in one batch. ScrollFrame is foundational (Dropdown
+	   uses it for the popup; consumers wrap multi-line EditBox in it).
+	   EditBox supports single + multi-line, focus ring via border
+	   re-paint, placeholder. Slider is horizontal-only, draggable thumb,
+	   inline value readout. Dropdown owns a UIParent-strata popup with
+	   GLOBAL_MOUSE_DOWN-driven outside-click close. TabGroup is a
+	   horizontal tab strip + per-tab Container content panes. All five
+	   theme-aware via the existing token cascade; no new tokens
+	   introduced.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 1
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

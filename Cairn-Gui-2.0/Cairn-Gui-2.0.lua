@@ -7,9 +7,13 @@ file is the LibStub registration anchor only. All real implementation
 lives in sibling files (Core/, Mixins/, LocaleOverlay/) loaded after
 this one by Cairn.toc.
 
-Status: SCAFFOLD ONLY. Day 1 of implementation. The library is a
-contract surface plus the empty registries the contract will populate.
-No widgets, no layouts, no themes, no animations are defined yet.
+Status: Day 16. Core MINOR 13. See the MINOR bumps log below for the
+incremental work that's landed: registries, Acquire / Release lifecycle,
+theme cascade, drawing primitives, layout strategies, animation engine
+(composition + ReduceMotion + Spring + OKLCH + AnimationGroup routing
+for Alpha and Scale + off-screen pause + uniform delay), plus the
+Standard widget bundle (Container, Button, Label, Window, Checkbox,
+ScrollFrame, EditBox, Slider, Dropdown, TabGroup as of bundle MINOR 2).
 
 Architecture: see Cairn-Gui-2.0/ARCHITECTURE.md (LOCAL-ONLY per the
 Cairn gitignore policy; not in the public repo). Eleven decisions

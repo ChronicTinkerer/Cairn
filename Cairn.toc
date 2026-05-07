@@ -121,6 +121,14 @@ Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Label.lua
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Window.lua
 # Day 14: Checkbox uses Core MINOR 2's DrawIcon for the check glyph.
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Checkbox.lua
+# Day 16: ScrollFrame, EditBox, Slider, Dropdown, TabGroup. ScrollFrame
+# depends on Container; Dropdown's popup uses ScrollFrame.
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\ScrollFrame.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\EditBox.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Slider.lua
+# Dropdown depends on ScrollFrame (popup uses it) and Button (rows).
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Dropdown.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\TabGroup.lua
 
 # Cairn-Gui-Theme-Default-2.0: default visual theme. Auto-activates on load.
 # Consumers can replace with an alternative theme bundle without touching

@@ -10,6 +10,61 @@ The format is loosely based on
 
 ## [Unreleased]
 
+## [6] — Cairn-Gui Standard bundle MINOR=2: ScrollFrame, EditBox, Slider, Dropdown, TabGroup (2026-05-07)
+
+### Added
+
+- **Cairn-Gui-Widgets-Standard-2.0 MINOR=2** — five new widgets, doubling
+  the Standard bundle from 5 to 10. The new set covers the rest of the
+  v0.2 form/UX surface: scrolling, text input, numeric input, selection,
+  and tabbed navigation.
+
+  - **`ScrollFrame`** — vertical scrollable container. Mouse wheel,
+    drag-thumb scrollbar, programmatic `SetVerticalScroll` /
+    `ScrollToTop` / `ScrollToBottom` / `SetContentHeight`. Scroll event
+    fires per change. Foundational: Dropdown's popup uses it, big lists
+    use it, `Forge_Logs`-style scrollers use it. `pool = false`.
+  - **`EditBox`** — text input. Single-line and multi-line modes,
+    placeholder text, focus-ring border swap (`color.border.focus` while
+    focused), numeric / password / maxLetters opts. `TextChanged`,
+    `EnterPressed`, `EscapePressed`, `FocusGained`, `FocusLost`. Pooled.
+  - **`Slider`** — numeric range input. Horizontal-only in v1.
+    Draggable thumb, inline value readout, step / continuous, programmatic
+    `SetValue` clamps. `Changed`, `DragStart`, `DragStop`. Pooled.
+  - **`Dropdown`** — single-select. Header is a clickable Button;
+    popup is parented to UIParent (DIALOG strata) and uses the new
+    ScrollFrame internally when option count exceeds `maxVisibleRows`.
+    Outside-click close via `GLOBAL_MOUSE_DOWN` through Cairn.Events;
+    ESC closes via `OnKeyDown` propagation. `Changed`, `Opened`,
+    `Closed`. `pool = false`.
+  - **`TabGroup`** — horizontal tab strip + per-tab Container content
+    panes. Active tab uses default-variant Button; inactive tabs use
+    ghost variant. Per-tab content frame fetched via
+    `m:GetTabContent(id)`. `Changed` event on switch. `pool = false`.
+
+- **All five widgets are theme-aware** through the existing token
+  cascade. No new theme tokens introduced; `Cairn.Default` covers
+  everything. A Cairn.Default follow-up MINOR can add scrollbar-specific
+  tokens (track / thumb / thumb.hover / thumb.pressed) if the reuse of
+  `color.bg.surface` and `color.border.*` proves visually limiting.
+
+### Changed
+
+- **`Cairn.toc` (and 4 flavor TOCs)** — load the 5 new widget files
+  after `Checkbox.lua` in the Standard bundle block. Order chosen so
+  ScrollFrame loads before Dropdown (Dropdown's popup uses ScrollFrame
+  internally).
+
+- **`Cairn-Gui-2.0.lua` header status line** — was "SCAFFOLD ONLY,
+  Day 1," held over from the day-1 commit. Updated to reflect Core
+  MINOR 13 (Day 16) with a one-line summary of what's actually shipped.
+
+### Notes
+
+- **In-game test:** `Forge/.dev/tests/cairn_gui_2_widgets_5pack.lua`
+  exercises Acquire / Release / public methods / events for all five
+  widgets synchronously.
+
 ## [5] — Cairn-FSM-1.0 (2026-05-06)
 
 New v0.2 sibling library: `Cairn-FSM-1.0`. Flat finite state machine

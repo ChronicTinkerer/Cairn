@@ -271,13 +271,19 @@ local function applyRecord(self, slot, rec, state, options)
 		animOpts = { colorSpace = colorSpace }
 	end
 
-	if rec.kind == "rect" or rec.kind == "border" then
+	if rec.kind == "rect" or rec.kind == "border"
+	   or rec.kind == "divider" or rec.kind == "glow" then
 		local color = resolveSpec(self, rec.spec, state)
 		if canAnimate and type(color) == "table" then
 			self:_animatePrimitiveColor(slot, color, transition, ease, animOpts)
 		else
 			applyColor(rec.textures, color)
 		end
+	elseif rec.kind == "mask" then
+		-- Masks are non-drawing metadata. They have no color/state to
+		-- apply; the shape is set once at DrawMask time and stays put.
+		-- Other primitives reference them via opts.mask = "<slot>".
+		return
 	elseif rec.kind == "icon" then
 		-- Source change (state-variant texture spec) always snaps; v1
 		-- doesn't fade between atlases. Color tint, however, animates
@@ -420,6 +426,14 @@ function Base:DrawRect(slot, spec, opts)
 		rec.opts = opts
 		rec.textures[1]:SetDrawLayer(layer)
 		rec.textures[1]:SetAllPoints(frame)
+	end
+
+	-- Optional mask: if opts.mask references a previously-registered
+	-- DrawMask slot, attach the mask to this rect's texture so the mask's
+	-- shape clips it. Tolerant of missing AddMaskTexture (older clients).
+	if opts.mask and self._maskRefs and self._maskRefs[opts.mask]
+	   and rec.textures[1].AddMaskTexture then
+		rec.textures[1]:AddMaskTexture(self._maskRefs[opts.mask])
 	end
 
 	-- Auto-enable interactive state machine if the spec has variants.
@@ -635,6 +649,14 @@ function Base:DrawIcon(slot, spec, opts)
 	tex:SetPoint(anchor, frame, anchor, offsetX, offsetY)
 	tex:SetSize(w, h)
 
+	-- Optional mask: if opts.mask references a previously-registered
+	-- DrawMask slot, attach the mask so this icon's texture is clipped
+	-- to the mask's shape (e.g. a circular portrait mask).
+	if opts.mask and self._maskRefs and self._maskRefs[opts.mask]
+	   and tex.AddMaskTexture then
+		tex:AddMaskTexture(self._maskRefs[opts.mask])
+	end
+
 	-- Auto-enable interactive state when either spec carries variants;
 	-- single-token / literal specs don't need hover/press hooks.
 	if looksLikeStateMap(spec) or looksLikeStateMap(opts.color) then
@@ -645,6 +667,237 @@ function Base:DrawIcon(slot, spec, opts)
 	-- paint snaps; subsequent state changes animate through the state
 	-- machine when colorSpec carries a transition token.
 	applyRecord(self, slot, rec, self._visualState or "default")
+
+	return rec
+end
+
+-- ----- DrawDivider -----------------------------------------------------
+-- Single thin line, horizontal or vertical, drawn on the BORDER layer by
+-- default. Used to separate sections in panels, underline headers, or
+-- split horizontal toolbars.
+--
+-- opts:
+--   direction = "horizontal" (default) | "vertical"
+--   thickness = number, default 1; line thickness in pixels
+--   inset     = number, default 0; pixel inset from the frame edges along
+--               the line's main axis (e.g., a horizontal divider with
+--               inset=8 starts 8px from the left edge and ends 8px from
+--               the right)
+--   align     = "TOP"|"BOTTOM"|"CENTER"|"LEFT"|"RIGHT"|"TOPLEFT"|...
+--               Where on the frame the divider sits. Default "BOTTOM"
+--               for horizontal, "LEFT" for vertical.
+--   offset    = number, default 0; perpendicular offset from `align`
+--   layer     = string, default "BORDER"
+
+function Base:DrawDivider(slot, spec, opts)
+	if type(slot) ~= "string" or slot == "" then
+		error("DrawDivider: slot must be a non-empty string", 2)
+	end
+	if lib.Stats then lib.Stats:Inc("primitives.divider.draws") end
+	local frame = self._frame
+	if not frame or not frame.CreateTexture then return end
+
+	opts            = opts or {}
+	local direction = opts.direction or "horizontal"
+	local thickness = opts.thickness or 1
+	local inset     = opts.inset or 0
+	local layer     = opts.layer or "BORDER"
+	local offset    = opts.offset or 0
+	local align     = opts.align
+	if not align then
+		align = (direction == "vertical") and "LEFT" or "BOTTOM"
+	end
+
+	local prims, list = ensurePrimitives(self)
+	local rec = prims[slot]
+
+	if not rec or rec.kind ~= "divider" then
+		local tex = frame:CreateTexture(nil, layer)
+		tex:SetTexture(WHITE_TEX)
+		rec = { kind = "divider", textures = { tex }, spec = spec, opts = opts }
+		prims[slot] = rec
+		list[#list + 1] = slot
+	else
+		rec.spec = spec
+		rec.opts = opts
+		rec.textures[1]:SetDrawLayer(layer)
+	end
+
+	-- Anchor the line. Horizontal: stretch L/R, fixed thickness on Y.
+	-- Vertical: stretch T/B, fixed thickness on X.
+	local tex = rec.textures[1]
+	tex:ClearAllPoints()
+	if direction == "vertical" then
+		if     align == "LEFT"   then tex:SetPoint("TOPLEFT",  frame, "TOPLEFT",   offset + inset, -inset)
+		                              tex:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", offset + inset, inset)
+		elseif align == "RIGHT"  then tex:SetPoint("TOPRIGHT",    frame, "TOPRIGHT",    -offset - inset, -inset)
+		                              tex:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -offset - inset,  inset)
+		else  -- "CENTER" or fallback
+			tex:SetPoint("TOP",    frame, "TOP",    offset, -inset)
+			tex:SetPoint("BOTTOM", frame, "BOTTOM", offset,  inset)
+		end
+		tex:SetWidth(thickness)
+	else  -- horizontal
+		if     align == "TOP"    then tex:SetPoint("TOPLEFT",  frame, "TOPLEFT",   inset, -offset - inset)
+		                              tex:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -inset, -offset - inset)
+		elseif align == "BOTTOM" then tex:SetPoint("BOTTOMLEFT",  frame, "BOTTOMLEFT",   inset,  offset + inset)
+		                              tex:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset,  offset + inset)
+		else  -- "CENTER" or fallback
+			tex:SetPoint("LEFT",  frame, "LEFT",   inset, offset)
+			tex:SetPoint("RIGHT", frame, "RIGHT", -inset, offset)
+		end
+		tex:SetHeight(thickness)
+	end
+
+	if looksLikeStateMap(spec) then enableInteractiveState(self) end
+	applyRecord(self, slot, rec, self._visualState or "default")
+	return rec
+end
+
+-- ----- DrawGlow --------------------------------------------------------
+-- Halo / outer-shadow effect around the frame. Implemented as 4 edge
+-- textures positioned just OUTSIDE the frame edges, with a configurable
+-- spread (how far they extend) and the color spec's alpha controlling
+-- visibility. Drawn on BACKGROUND by default so it sits behind the rest
+-- of the widget chrome; consumers who want an "outer outline" effect
+-- can pass layer = "OVERLAY".
+--
+-- This is a "halo box" -- 4 solid edge rectangles around the frame, no
+-- soft alpha gradient. For a soft-edge glow, ship a custom rounded glow
+-- texture in your theme and override this primitive in your widget.
+--
+-- opts:
+--   spread = number, default 4; distance from each frame edge in pixels
+--   layer  = string, default "BACKGROUND"
+
+function Base:DrawGlow(slot, spec, opts)
+	if type(slot) ~= "string" or slot == "" then
+		error("DrawGlow: slot must be a non-empty string", 2)
+	end
+	if lib.Stats then lib.Stats:Inc("primitives.glow.draws") end
+	local frame = self._frame
+	if not frame or not frame.CreateTexture then return end
+
+	opts         = opts or {}
+	local spread = opts.spread or 4
+	local layer  = opts.layer  or "BACKGROUND"
+
+	local prims, list = ensurePrimitives(self)
+	local rec = prims[slot]
+
+	if not rec or rec.kind ~= "glow" then
+		local edges = {}
+		for i = 1, 4 do
+			local t = frame:CreateTexture(nil, layer)
+			t:SetTexture(WHITE_TEX)
+			edges[i] = t
+		end
+		rec = { kind = "glow", textures = edges, spec = spec, opts = opts }
+		prims[slot] = rec
+		list[#list + 1] = slot
+	else
+		rec.spec = spec
+		rec.opts = opts
+		for _, t in ipairs(rec.textures) do t:SetDrawLayer(layer) end
+	end
+
+	-- Anchor edges at frame edge offsets +/- spread on each side.
+	-- Top: full width plus spread on each side, sits ABOVE the frame.
+	rec.textures[1]:ClearAllPoints()
+	rec.textures[1]:SetPoint("BOTTOMLEFT",  frame, "TOPLEFT",   -spread, 0)
+	rec.textures[1]:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT",   spread, 0)
+	rec.textures[1]:SetHeight(spread)
+	-- Bottom: full width plus spread, sits BELOW the frame.
+	rec.textures[2]:ClearAllPoints()
+	rec.textures[2]:SetPoint("TOPLEFT",  frame, "BOTTOMLEFT",  -spread, 0)
+	rec.textures[2]:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT",  spread, 0)
+	rec.textures[2]:SetHeight(spread)
+	-- Left: between top/bottom edges, to the LEFT of the frame.
+	rec.textures[3]:ClearAllPoints()
+	rec.textures[3]:SetPoint("TOPRIGHT",    frame, "TOPLEFT",    0, 0)
+	rec.textures[3]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", 0, 0)
+	rec.textures[3]:SetWidth(spread)
+	-- Right: between top/bottom edges, to the RIGHT of the frame.
+	rec.textures[4]:ClearAllPoints()
+	rec.textures[4]:SetPoint("TOPLEFT",    frame, "TOPRIGHT",    0, 0)
+	rec.textures[4]:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 0, 0)
+	rec.textures[4]:SetWidth(spread)
+
+	if looksLikeStateMap(spec) then enableInteractiveState(self) end
+	applyRecord(self, slot, rec, self._visualState or "default")
+	return rec
+end
+
+-- ----- DrawMask --------------------------------------------------------
+-- Register a MaskTexture under a slot name. Other texture primitives in
+-- the same widget can reference the mask via opts.mask = "<slot>" to
+-- have their texture clipped to the mask's shape.
+--
+-- A common use is a circular icon: DrawMask("circle", "common-icon-circular")
+-- followed by DrawIcon("portrait", "...", { mask = "circle", ... }).
+--
+-- opts:
+--   shape   = string, optional. Atlas key OR file path for the mask
+--             texture. White pixels = visible, black = hidden, alpha
+--             interpolates. If nil, the mask covers the whole frame
+--             solid (a no-op visually but still consumes registration).
+--   anchor  = "CENTER"|"TOPLEFT"|... default "CENTER"
+--   width   = number, default = frame width
+--   height  = number, default = frame height
+--   offsetX = number, default 0
+--   offsetY = number, default 0
+
+function Base:DrawMask(slot, spec, opts)
+	if type(slot) ~= "string" or slot == "" then
+		error("DrawMask: slot must be a non-empty string", 2)
+	end
+	if lib.Stats then lib.Stats:Inc("primitives.mask.draws") end
+	local frame = self._frame
+	if not (frame and frame.CreateMaskTexture) then return end
+
+	opts          = opts or {}
+	local shape   = spec or opts.shape  -- spec is the canonical input;
+	                                    -- opts.shape is a fallback alias.
+	local anchor  = opts.anchor or "CENTER"
+	local offsetX = opts.offsetX or 0
+	local offsetY = opts.offsetY or 0
+	local w       = opts.width  or (frame:GetWidth()  or 16)
+	local h       = opts.height or (frame:GetHeight() or 16)
+
+	local prims, list = ensurePrimitives(self)
+	local rec = prims[slot]
+
+	if not rec or rec.kind ~= "mask" then
+		local mask = frame:CreateMaskTexture(nil, "OVERLAY")
+		rec = { kind = "mask", textures = { mask }, spec = spec, opts = opts, mask = mask }
+		prims[slot] = rec
+		list[#list + 1] = slot
+	else
+		rec.spec = spec
+		rec.opts = opts
+	end
+
+	local mask = rec.mask
+	mask:ClearAllPoints()
+	mask:SetPoint(anchor, frame, anchor, offsetX, offsetY)
+	mask:SetSize(w, h)
+
+	-- Apply the shape. Atlas-key first; file path fallback. nil/empty
+	-- spec leaves the mask in its default white state (rectangular).
+	if type(shape) == "string" and shape ~= "" then
+		local atlasInfo = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(shape)
+		if atlasInfo then
+			if mask.SetAtlas then mask:SetAtlas(shape) end
+		else
+			if mask.SetTexture then mask:SetTexture(shape) end
+		end
+	end
+
+	-- Cache on a flat lookup table for fast opts.mask resolution from
+	-- DrawRect / DrawIcon. Distinct from self._primitives so the lookup
+	-- isn't a linear walk through every record.
+	self._maskRefs = self._maskRefs or {}
+	self._maskRefs[slot] = mask
 
 	return rec
 end

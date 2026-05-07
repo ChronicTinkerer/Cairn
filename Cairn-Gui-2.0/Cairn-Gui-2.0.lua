@@ -146,7 +146,18 @@ Verification (Day 1 success criterion):
 --      strategies total now: Manual, Fill, Stack, Grid, Form, Flex.
 --      Strategies-as-data is unchanged; consumers register custom
 --      strategies via the same lib:RegisterLayout API.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 15
+--  16: Decision 7 round-out: three new drawing primitives. DrawDivider
+--      (horizontal or vertical thin line with thickness/inset/align/
+--      offset/layer), DrawGlow (4-edge halo around the frame with
+--      configurable spread, drawn on BACKGROUND by default for
+--      outer-shadow effect, OVERLAY for outer outlines), DrawMask
+--      (registers a MaskTexture under a slot name; DrawRect and
+--      DrawIcon now accept opts.mask = "<slot>" to attach the mask
+--      and clip their texture to its shape). Six built-in primitives
+--      total now: Rect, Border, Icon, Divider, Glow, Mask. State
+--      variants on color spec work for Divider/Glow same as Rect/
+--      Border; Mask is metadata-only (no color/state).
+local MAJOR, MINOR = "Cairn-Gui-2.0", 16
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

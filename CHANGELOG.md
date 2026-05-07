@@ -10,6 +10,27 @@ The format is loosely based on
 
 ## [Unreleased]
 
+## [9] — Cairn-Gui-2.0 Core MINOR=16: Divider / Glow / Mask primitives (2026-05-07)
+
+### Added
+
+- **Cairn-Gui-2.0 Core MINOR=16** — three new drawing primitives under `Core/Primitives.lua`, completing the v1 set of six (Rect, Border, Icon, Divider, Glow, Mask) called out in ARCHITECTURE.md Decision 7. State-variant color specs work for Divider and Glow exactly as they do for Rect and Border; Mask is metadata-only.
+
+  - **`DrawDivider(slot, spec, opts)`** — single thin line, horizontal or vertical. Configurable `direction`, `thickness`, `inset`, `align` (TOP/BOTTOM/CENTER for horizontal; LEFT/RIGHT/CENTER for vertical), `offset` (perpendicular distance from `align`), `layer` (default `BORDER`). Color resolves through the theme cascade with optional state variants. Use cases: section separators, header underlines, two-column splitter rules.
+
+  - **`DrawGlow(slot, spec, opts)`** — halo around the frame. Implemented as 4 edge textures positioned just OUTSIDE each frame edge with configurable `spread` (default 4px), `layer` (`BACKGROUND` for outer-shadow, `OVERLAY` for outer-outline). Color spec accepts state variants so a glow can fade in on hover. This is a "halo box" — solid edge rectangles, not a soft alpha gradient. Themes that want a soft glow should override the primitive in their widget bundle with a custom rounded-glow texture.
+
+  - **`DrawMask(slot, spec, opts)`** — registers a `MaskTexture` under a slot name. The mask itself doesn't draw anything; it's metadata. Its shape comes from `spec` (atlas key first via `C_Texture.GetAtlasInfo`, file path fallback). Other texture-bearing primitives in the same widget reference the mask via `opts.mask = "<slot>"` to have their texture clipped to the mask's shape. Standard atlas masks: `common-icon-circular` for circular portraits.
+
+- **`DrawRect` and `DrawIcon` accept `opts.mask`** — set to a previously-registered DrawMask slot name to clip the resulting texture to the mask. Calls `Texture:AddMaskTexture(maskTex)`. Tolerant of older clients that don't expose `AddMaskTexture` (no-op in that case). Unknown mask slot names are silently skipped (no error, no mask).
+
+- **Stats counters**: `primitives.divider.draws`, `primitives.glow.draws`, `primitives.mask.draws` track DrawDivider / DrawGlow / DrawMask call counts. Bumped at the entry of each new method, gated on `lib.Stats` like the existing primitive counters.
+
+### Notes
+
+- **In-game test:** `Forge/.dev/tests/cairn_gui_2_primitives_divider_glow_mask.lua` exercises the new primitives sync-only. Spot-checks: kind/texture-count for each, thickness/spread applied correctly, mask integration doesn't error on Icon or Rect, unknown mask ref is silently skipped, stats counters reachable.
+- **Mask shape support is whatever atlases / texture files Blizzard exposes.** Common atlas names like `common-icon-circular` work out of the box; consumers can also pass arbitrary file paths.
+
 ## [8] — Cairn-Gui-2.0 Core MINOR=15: Grid / Form / Flex layouts (2026-05-07)
 
 ### Added

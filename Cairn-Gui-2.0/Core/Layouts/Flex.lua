@@ -166,7 +166,7 @@ lib:RegisterLayout("Flex", function(container, opts)
     -- Build the layoutable list (skip _layoutManual children).
     local kids = {}
     for _, child in ipairs(container._children) do
-        if not child._layoutManual and child._frame and child._frame.SetPoint then
+        if lib:_isLayoutable(child) and child._frame and child._frame.SetPoint then
             kids[#kids + 1] = child
         end
     end

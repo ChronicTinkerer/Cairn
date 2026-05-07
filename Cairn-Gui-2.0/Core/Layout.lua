@@ -67,6 +67,23 @@ if not Base then
 	error("Cairn-Gui-2.0/Core/Layout requires Mixins/Base to load first; check Cairn.toc order")
 end
 
+-- ----- Layout-eligibility helper ---------------------------------------
+-- Strategies use this to decide whether a given child should participate
+-- in this layout pass. Combines two opt-outs:
+--   * child._layoutManual = true: explicit "I anchor myself"
+--   * child._secure       = true AND we're in combat (Decision 8):
+--     calling SetPoint/SetSize on a secure frame during combat taints
+--     execution. Layout skips secure children during combat and
+--     forces a re-layout once combat ends (see CombatQueue:OnCombatExit).
+function lib:_isLayoutable(child)
+	if not child then return false end
+	if child._layoutManual then return false end
+	if child._secure and lib.Combat and lib.Combat:InCombat() then
+		return false
+	end
+	return true
+end
+
 -- ----- RegisterLayout / GetLayout --------------------------------------
 
 function lib:RegisterLayout(name, fn)
@@ -166,4 +183,38 @@ end
 
 function Base:IsLayoutManual()
 	return self._layoutManual == true
+end
+
+-- ----- Combat-exit relayout (Decision 8) ------------------------------
+-- When combat ends, any container with secure children skipped during
+-- combat needs its layout recomputed to include those children. Subscribe
+-- to lib.Combat:OnCombatExit at PLAYER_LOGIN so we know Combat has
+-- loaded. Walking the Inspector's tracked set is the cleanest way to
+-- find all containers without keeping a separate "has secure child" list.
+do
+	local f = CreateFrame("Frame")
+	f:RegisterEvent("PLAYER_LOGIN")
+	local function subscribe()
+		if not (lib.Combat and lib.Combat.OnCombatExit) then return end
+		lib.Combat:OnCombatExit(function()
+			if not lib.Inspector or not lib.Inspector.tracked then return end
+			for cairn in pairs(lib.Inspector.tracked) do
+				if type(cairn._children) == "table" then
+					for _, child in ipairs(cairn._children) do
+						if child._secure then
+							if cairn._invalidateLayout then
+								cairn:_invalidateLayout()
+							end
+							break
+						end
+					end
+				end
+			end
+		end)
+	end
+	f:SetScript("OnEvent", function(self_)
+		self_:UnregisterEvent("PLAYER_LOGIN")
+		subscribe()
+	end)
+	if IsLoggedIn and IsLoggedIn() then subscribe() end
 end

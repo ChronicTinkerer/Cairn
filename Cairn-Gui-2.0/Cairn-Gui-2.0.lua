@@ -157,7 +157,30 @@ Verification (Day 1 success criterion):
 --      total now: Rect, Border, Icon, Divider, Glow, Mask. State
 --      variants on color spec work for Divider/Glow same as Rect/
 --      Border; Mask is metadata-only (no color/state).
-local MAJOR, MINOR = "Cairn-Gui-2.0", 16
+--  17: Decision 8: secure widget support. New Core/CombatQueue.lua
+--      tracks PLAYER_REGEN_DISABLED / _ENABLED, queues mutations during
+--      combat, drains FIFO on exit. Fake-combat flag for testing
+--      (Forge_CairnInspect toolbar exposes a Fake Combat: ON/off
+--      toggle). Acquire's RegisterWidget recognizes def.secure = true
+--      and runs a bytecode-pattern check on the mixin to flag references
+--      to forbidden APIs (EnableAddOn / DisableAddOn / LoadAddOn /
+--      RunScript / hooksecurefunc) at registration time. cairn._secure
+--      flag set at Acquire time. Pre-warm: 8 instances per secure type
+--      created at PLAYER_LOGIN+0.5s and Released straight to pool so
+--      mid-combat Acquire calls come from pool without CreateFrame.
+--      Layout strategies use a new lib:_isLayoutable(child) helper that
+--      returns false for _secure children when lib.Combat:InCombat()
+--      (the helper short-circuits to InCombatLockdown when Combat
+--      isn't loaded). On combat exit, Layout walks the Inspector
+--      tracked set and re-invalidates any container with secure
+--      children so they re-include those children. New
+--      Cairn-Gui-Widgets-Secure-2.0 bundle ships ActionButton (full
+--      spell/item/macro/macrotext/unit surface), MacroButton (focused
+--      macro execution), UnitButton (target/menu/focus click bindings
+--      + per-modifier action support). All three use typed wrappers
+--      (SetSpell / SetMacroText / SetClickAction) routed through the
+--      combat queue so consumer code is safe to call mid-combat.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 17
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

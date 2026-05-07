@@ -111,6 +111,10 @@ Cairn-Gui-2.0\Core\Layouts\Stack.lua
 Cairn-Gui-2.0\Core\Layouts\Grid.lua
 Cairn-Gui-2.0\Core\Layouts\Form.lua
 Cairn-Gui-2.0\Core\Layouts\Flex.lua
+# Decision 8: combat-lockdown queue. Tracks PLAYER_REGEN_DISABLED /
+# _ENABLED, queues mutations during combat, drains on exit. Layouts
+# read lib.Combat:InCombat() via the _isLayoutable helper.
+Cairn-Gui-2.0\Core\CombatQueue.lua
 # Decision 10B: introspection / debug surface. EventLog feeds Stats's
 # event-log section. Inspector tracks every Acquire'd widget. Dev hooks
 # Inspector and EventLog into the lib.Dev flag-toggle path. Load order
@@ -141,6 +145,16 @@ Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Slider.lua
 # Dropdown depends on ScrollFrame (popup uses it) and Button (rows).
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Dropdown.lua
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\TabGroup.lua
+
+# Cairn-Gui-Widgets-Secure-2.0: bundled secure widget set per Decision 8.
+# ActionButton / MacroButton / UnitButton via Blizzard Secure*Template.
+# Loads its own LibStub MAJOR; bundle anchor must load before any
+# Widgets/*.lua file. Defs flag secure=true which causes the Acquire
+# path to taint-guard the mixin and pre-warm the pool.
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Cairn-Gui-Widgets-Secure-2.0.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\ActionButton.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\MacroButton.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\UnitButton.lua
 
 # Cairn-Gui-Theme-Default-2.0: default visual theme. Auto-activates on load.
 # Consumers can replace with an alternative theme bundle without touching

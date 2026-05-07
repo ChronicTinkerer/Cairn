@@ -81,6 +81,7 @@ Cairn-Gui-2.0\Core\Layouts\Stack.lua
 Cairn-Gui-2.0\Core\Layouts\Grid.lua
 Cairn-Gui-2.0\Core\Layouts\Form.lua
 Cairn-Gui-2.0\Core\Layouts\Flex.lua
+Cairn-Gui-2.0\Core\CombatQueue.lua
 Cairn-Gui-2.0\Core\EventLog.lua
 Cairn-Gui-2.0\Core\Stats.lua
 Cairn-Gui-2.0\Core\Inspector.lua
@@ -100,6 +101,11 @@ Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Dropdown.lua
 Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\TabGroup.lua
 
 # Cairn-Gui-Theme-Default-2.0: default visual theme.
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Cairn-Gui-Widgets-Secure-2.0.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\ActionButton.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\MacroButton.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\UnitButton.lua
+
 Cairn-Gui-2.0\Cairn-Gui-Theme-Default-2.0\Cairn-Gui-Theme-Default-2.0.lua
 
 # Standalone-only.

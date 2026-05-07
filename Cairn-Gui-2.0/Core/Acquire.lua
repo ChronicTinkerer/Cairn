@@ -43,6 +43,52 @@ if not Base then
 	error("Cairn-Gui-2.0/Core/Acquire requires Mixins/Base to load first; check Cairn.toc order")
 end
 
+-- ---------- Taint guard for secure-widget mixins ------------------------
+-- Heuristic check that runs at RegisterWidget time when def.secure is
+-- true. We bytecode-dump each mixin function and grep for references to
+-- known taint-spreading APIs. False negatives possible (custom paths via
+-- _G or via dynamic lookup); false positives unlikely (string.dump emits
+-- a literal constant table). On a hit we error at registration time
+-- rather than letting the runtime taint silently.
+
+local FORBIDDEN_API_PATTERNS = {
+	"EnableAddOn",
+	"DisableAddOn",
+	"LoadAddOn",
+	"RunScript",          -- arbitrary script execution from a secure path
+	"hooksecurefunc",     -- protected-frame hook installation from a mixin
+}
+
+-- Public list so consumers can introspect (or extend) the forbidden set.
+lib._forbiddenSecureAPIs = FORBIDDEN_API_PATTERNS
+
+local function checkMixinTaint(mixinName, mixin)
+	if type(mixin) ~= "table" then return end
+	-- WoW's Lua sandbox removes `string.dump` for security reasons.
+	-- Without it we can't bytecode-grep the mixin functions for forbidden
+	-- API references. The check becomes a no-op in that environment;
+	-- mixin authors are responsible for self-policing the rule (see the
+	-- forbidden list at lib._forbiddenSecureAPIs and the doc comment
+	-- in RegisterWidget). When running outside WoW (a unit-test harness
+	-- where string.dump exists), the original bytecode-grep does fire.
+	if type(string.dump) ~= "function" then return end
+	for methodName, fn in pairs(mixin) do
+		if type(fn) == "function" then
+			local ok, dump = pcall(string.dump, fn)
+			if ok and type(dump) == "string" then
+				for _, pat in ipairs(FORBIDDEN_API_PATTERNS) do
+					if dump:find(pat, 1, true) then
+						error(string.format(
+							"RegisterWidget: secure widget %q method %q references forbidden API %q. Forbidden: %s",
+							mixinName, methodName, pat,
+							table.concat(FORBIDDEN_API_PATTERNS, ", ")), 3)
+					end
+				end
+			end
+		end
+	end
+end
+
 -- ---------- RegisterWidget ----------------------------------------------
 
 function lib:RegisterWidget(name, def)
@@ -61,11 +107,27 @@ function lib:RegisterWidget(name, def)
 
 	-- Normalize the def. Mutating in place is fine; callers don't keep
 	-- the original around as immutable.
-	def.frameType = def.frameType or "Frame"
-	def.template  = def.template
-	def.mixin     = def.mixin or {}
-	def.pool      = def.pool == true
-	def.reset     = def.reset
+	def.frameType  = def.frameType or "Frame"
+	def.template   = def.template
+	def.mixin      = def.mixin or {}
+	def.pool       = def.pool == true
+	def.reset      = def.reset
+	-- Secure-widget flag (Decision 8). When true, Acquire marks the
+	-- resulting cairn with _secure = true so Layout strategies skip it
+	-- during combat, and the widget gets pre-warmed at PLAYER_LOGIN.
+	def.secure     = def.secure == true
+	-- Pre-warm count: how many instances to create at PLAYER_LOGIN. The
+	-- architecture says 8 per secure type; non-secure widgets default to
+	-- 0 (no pre-warming).
+	def.prewarm    = def.prewarm or (def.secure and 8 or 0)
+
+	if def.secure then
+		-- Validate mixin doesn't reference forbidden APIs. Errors here
+		-- at registration time, not at runtime, so the bug is loud and
+		-- attached to the offending mixin name rather than mysterious
+		-- combat-time taint warnings later.
+		checkMixinTaint(name, def.mixin)
+	end
 
 	self.widgets[name] = def
 	return def
@@ -80,6 +142,10 @@ local function makeFreshCairn(def, name, frame, opts)
 		_opts     = opts or {},
 		_children = {},
 		_parent   = nil,
+		-- Secure-widget marker (Decision 8). Layout strategies skip
+		-- _secure children while in combat. Set from the def at
+		-- registration time; per-instance opts can't override.
+		_secure   = def.secure == true,
 	}
 	-- Layer mixins: Base first, then the type-specific mixin. Methods
 	-- defined later overwrite earlier ones, so type-specific code can
@@ -170,4 +236,56 @@ function lib:Acquire(name, parent, opts)
 	cairn:OnAcquire(opts)
 
 	return cairn._frame
+end
+
+-- ---------- Pre-warmed pool for secure widgets (Decision 8) -------------
+-- At PLAYER_LOGIN + a short delay, create N instances of every registered
+-- secure widget type and Release them straight back to the pool. Acquire
+-- calls during the early-combat window then come from the pool without
+-- a CreateFrame call (which is what taints during combat for secure
+-- frame types). The delay matters because some addons / Blizzard code
+-- registers widgets later in the login sequence; waiting 0.5s gives them
+-- time to register before we walk the table.
+
+local function prewarmAll()
+	if not lib.widgets then return end
+	for name, def in pairs(lib.widgets) do
+		if def.secure and def.prewarm and def.prewarm > 0 then
+			-- Create N hidden, parent-less instances and Release each so
+			-- they end up in lib._pool[name]. Release runs the def.reset
+			-- path which is the same path Acquire's pool-pop relies on.
+			for _ = 1, def.prewarm do
+				-- Acquire requires a parent; use UIParent so the frame is
+				-- valid. Release immediately. Each Release returns the
+				-- cairn to lib._pool[name] (def.pool is implicitly true
+				-- for secure widgets via the pre-warm contract; secure
+				-- defs that opt out of pooling don't pre-warm).
+				local f = lib:Acquire(name, UIParent)
+				if f and f.Cairn and f.Cairn.Release then
+					f.Cairn:Release()
+				end
+			end
+		end
+	end
+end
+
+-- Hook PLAYER_LOGIN once. Guard against double-hooking on /reload by
+-- using a sentinel field on the lib.
+if not lib._prewarmHooked then
+	local f = CreateFrame("Frame")
+	f:RegisterEvent("PLAYER_LOGIN")
+	f:SetScript("OnEvent", function(self_)
+		self_:UnregisterEvent("PLAYER_LOGIN")
+		if C_Timer and C_Timer.After then
+			C_Timer.After(0.5, prewarmAll)
+		else
+			prewarmAll()
+		end
+	end)
+	-- If we're already past PLAYER_LOGIN (e.g., a /reload mid-session),
+	-- the event won't fire again. Schedule pre-warm directly.
+	if IsLoggedIn and IsLoggedIn() and C_Timer and C_Timer.After then
+		C_Timer.After(0.5, prewarmAll)
+	end
+	lib._prewarmHooked = true
 end

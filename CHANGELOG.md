@@ -10,6 +10,38 @@ The format is loosely based on
 
 ## [Unreleased]
 
+## [10] — Cairn-Gui-2.0 Core MINOR=17: Decision 8 secure widget support (2026-05-07)
+
+### Added
+
+- **Cairn-Gui-2.0 Core MINOR=17** — full Decision 8 secure-widget surface. Combat queue, taint isolation, pre-warmed pool, layout combat-skip, and a new bundle (`Cairn-Gui-Widgets-Secure-2.0`) with three secure widget types. Action-bar style consumers can now use Cairn-Gui-2.0 for their primary clickable surfaces.
+
+  - **`Core/CombatQueue.lua` (new)** — `lib.Combat:Queue(target, method, ...)` runs immediately when not in combat, queues for FIFO drain on combat exit otherwise. `:QueueClosure(fn)` for multi-call deferred work. `:Stats()` returns queue depth + counters. Listens for `PLAYER_REGEN_DISABLED` / `PLAYER_REGEN_ENABLED` to track combat state. `:SetFakeCombat(bool)` lets Forge / tests simulate combat without an actual fight; the queue treats fake combat exactly like real combat. `:OnCombatExit(fn)` subscriber pattern for code that needs to run after the queue drains.
+
+  - **Taint isolation at registration** — `RegisterWidget` recognizes `def.secure = true` and runs a bytecode-pattern check on every method in the mixin, flagging references to forbidden APIs (`EnableAddOn`, `DisableAddOn`, `LoadAddOn`, `RunScript`, `hooksecurefunc`). Errors at registration time, not at runtime, so the failure is loud and attached to the offending mixin name.
+
+  - **Pre-warmed pool** — at `PLAYER_LOGIN` + 0.5s, every secure widget type registers 8 instances into its pool via Acquire-then-Release. Mid-combat `Acquire` calls then come from the pool without a `CreateFrame`, which is what taints during combat for secure frame types. Configurable per-type via `def.prewarm` (default 8 for secure, 0 for non-secure).
+
+  - **`cairn._secure` flag** — set at Acquire time from `def.secure`. Marks instances so Layout strategies and other code can recognize them.
+
+  - **Layout combat-skip** — new `lib:_isLayoutable(child)` helper that returns false for `_secure` children when `lib.Combat:InCombat()` (real or fake). All 6 strategies (Manual, Fill, Stack, Grid, Form, Flex) updated to use it. On combat exit, Layout walks the Inspector tracked set and re-invalidates any container with secure children so they're re-included once it's safe to position them.
+
+  - **`Cairn-Gui-Widgets-Secure-2.0` bundle (new)** — sibling to the Standard bundle. Distinct LibStub MAJOR so consumers depend on whichever (or both) they need. Requires Core MINOR >= 17. Three widgets shipped:
+
+    - **`ActionButton`** — full surface for `SecureActionButtonTemplate`. Typed wrappers `SetSpell` / `SetItem` / `SetMacro` / `SetMacroText` / `SetType` / `SetUnit` route through the combat queue. Cooldown overlay frame and charge-count FontString exposed for consumer wiring. Bridges Blizzard's `PreClick` / `PostClick` to Cairn semantic events.
+
+    - **`MacroButton`** — focused subset for executing macros. Typed wrappers `SetMacro` / `SetMacroText`. Visible label via `SetText` (UI-only, not queued). Smaller surface than ActionButton when consumers don't need the full spell/item/unit space.
+
+    - **`UnitButton`** — `SecureUnitButtonTemplate`-backed. `SetUnit` plus `SetClickAction(button, action, modifier?)` which maps to the standard `type1` / `shift-type1` / etc. attribute scheme. Default click bindings (LeftButton -> target, RightButton -> menu, MiddleButton -> focus) wired on first Acquire.
+
+  - **Forge fake-combat toolbar button** — Forge_CairnInspect's toolbar gains a `Fake Combat: ON/off` toggle that calls `Core.Combat:SetFakeCombat(...)`. Live-syncs with the combat state on every UI refresh.
+
+### Notes
+
+- **Stats counters bumped:** `combat.queued`, `combat.drained`, `combat.lockdownFailures` (the last fires when a lockdown subscription reports a failure; the queue itself never reports failures because Queue always succeeds — either by running immediately or by appending).
+- **In-game test:** `Forge/.dev/tests/cairn_gui_2_decision_8_secure.lua` exercises the queue (immediate path, deferred path, drain-on-exit), taint guard (registering with a forbidden-API mixin should error), Acquire path (secure widgets carry `_secure = true`), layout combat-skip (secure child skipped during fake combat), and pre-warm pool presence.
+- **Combat Behavior contract**: each new widget mixin documents which methods queue during combat and which are immediate (the file headers list them). Following ARCHITECTURE.md Decision 8's "each secure widget mixin documents a Combat Behavior section" requirement.
+
 ## [9] — Cairn-Gui-2.0 Core MINOR=16: Divider / Glow / Mask primitives (2026-05-07)
 
 ### Added

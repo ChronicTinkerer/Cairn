@@ -23,7 +23,7 @@ lib:RegisterLayout("Fill", function(container, opts)
 	if not containerF then return end
 
 	for _, child in ipairs(container._children) do
-		if not child._layoutManual then
+		if lib:_isLayoutable(child) then
 			local frame = child._frame
 			if frame and frame.SetPoint then
 				frame:ClearAllPoints()

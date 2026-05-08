@@ -25,9 +25,10 @@ the `anchor` schema type in `Cairn.Settings`, `Cairn.Locale`
 step runner), `Cairn.FSM` (flat state machine with async transitions),
 `Cairn.Hooks` (multi-callback hook helper),
 `Cairn.Timer` (owner-grouped timers), `Cairn.Comm` (addon-to-addon
-messaging), `Cairn.Callback` (registry-style callback dispatcher,
-exposed at `LibStub("Cairn-Callback-1.0")` for direct internal use),
-and
+messaging), `Cairn.Deque` (double-ended queue covering deque, queue, and
+stack usage in one type), `Cairn.Callback` (registry-style callback
+dispatcher, exposed at `LibStub("Cairn-Callback-1.0")` for direct
+internal use), and
 the `Cairn-Gui-*` widget family (Tools, Style, Core with 12 widgets,
 Menu — derived from the BSD-licensed Diesal libraries and modernized
 for Interface 120005). The v0.1-era `Cairn.Dashboard` was retired and
@@ -946,6 +947,64 @@ problem in v0.2. Handler errors run under `pcall`.
 
 ---
 
+### `Cairn.Deque` — double-ended queue (queue + stack + deque in one) (v0.2)
+
+A double-ended queue with O(1) push/pop at both ends. The same instance covers
+**deque, queue (FIFO), and stack (LIFO)** usage via method aliases — pick
+whichever vocabulary fits the call site. Useful for ring-buffer log tails, work
+queues with back-pressure, undo/redo stacks, BFS/DFS frontiers, and recent-items
+caches.
+
+```lua
+local d = Cairn.Deque.New({
+    capacity = 100,        -- optional; nil = unbounded
+    onFull   = "drop",     -- "drop" (default; evicts opposite end) or "error"
+})
+
+-- Use it as a FIFO queue:
+d:Enqueue("a"); d:Enqueue("b"); print(d:Dequeue())  -- "a"
+
+-- Or as a LIFO stack:
+d:Push(1); d:Push(2); print(d:Pop(), d:Top())       -- 2   1
+
+-- Or as a true deque:
+d:PushFront("head"); d:PushBack("tail")
+print(d:PopFront(), d:PopBack())                    -- "head"   "tail"
+
+-- Lazy subscriptions — zero overhead until subscribed.
+d:OnDropped(function(_, v) print("evicted:", v) end, "MyAddon")
+d:OnEmptied(function() print("drained")           end, "MyAddon")
+```
+
+| Role  | Add                | Remove              | Look at next         |
+|-------|--------------------|---------------------|----------------------|
+| Deque | `PushBack` / `PushFront` | `PopBack` / `PopFront` | `PeekBack` / `PeekFront` |
+| Queue | `Enqueue` *(= PushBack)* | `Dequeue` *(= PopFront)* | `Peek` *(= PeekFront)* |
+| Stack | `Push` *(= PushBack)* | `Pop` *(= PopBack)* | `Top` *(= PeekBack)* |
+
+| Method | What it does |
+|--------|--------------|
+| `New(opts?)` | Build a deque. `opts.capacity` is a positive integer or nil; `opts.onFull` is `"drop"` (default) or `"error"`. |
+| `Size` / `IsEmpty` / `IsFull` / `Capacity` | Inspection. `IsFull` is always false when unbounded. |
+| `Clear` | Drop everything; fires `Emptied` if non-empty. |
+| `ToArray` | Snapshot copy, front -> back. |
+| `Iter` / `IterReverse` | Stateless iterators in either direction. |
+| `OnPushed(fn, owner?)` | `fn(deque, value, side)` where `side = "front"\|"back"`. Returns unsub closure. |
+| `OnPopped(fn, owner?)` | `fn(deque, value, side)`. |
+| `OnDropped(fn, owner?)` | `fn(deque, value)` — fired on capacity overflow eviction. |
+| `OnEmptied(fn, owner?)` | `fn(deque)` — fired when the last element leaves. |
+| `UnsubscribeAll(owner)` | Cancel every subscription tagged with `owner` across all events. |
+
+**Capacity overflow rule.** When the deque is full and `onFull = "drop"`, a
+push evicts the **opposite** end and fires `Dropped` before placing the new
+value. So `:PushBack` evicts the front (drop-oldest, the typical ring-buffer
+pattern); `:PushFront` evicts the back. The invariant is *"the newest value
+always wins a place in the deque."* `onFull = "error"` raises a Lua error
+instead — wrap in `pcall` for back-pressure-style flow control. Subscriber
+errors are `pcall`-trapped and routed to `geterrorhandler()`.
+
+---
+
 ## Composing with other libraries
 
 Cairn is plumbing, not a one-stop framework. It deliberately doesn't
@@ -1078,6 +1137,7 @@ driven by `Cairn.Settings`. EditMode-movable if LibEditMode is installed.
 - [x] `Cairn.FSM` — flat state machine with async transitions
 - [x] `Cairn.Hooks` — multi-callback hook helper
 - [x] `Cairn.Timer` — owner-grouped timers + named replacement
+- [x] `Cairn.Deque` — double-ended queue (queue + stack + deque in one)
 
 **v0.3 stretch:**
 
@@ -1116,6 +1176,8 @@ Cairn/
   CairnHooks/Cairn-Hooks-1.0.lua             Multi-callback hook helper (v0.2).
   CairnTimer/Cairn-Timer-1.0.lua             Owner-grouped timers + named replacement (v0.2).
   CairnComm/Cairn-Comm-1.0.lua               Addon-to-addon messaging via CHAT_MSG_ADDON (v0.2).
+  CairnDeque/Cairn-Deque-1.0.lua             Double-ended queue with O(1) push/pop at both ends; covers
+                                             deque, queue (FIFO), and stack (LIFO) usage in one type (v0.2).
   Cairn-Gui-1.0/                             Diesal-derived widget family (v1).
     Cairn-Gui-1.0.lua                          Widget kit base.
     Cairn-Gui-Tools-1.0/...                    Foundation utilities.

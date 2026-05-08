@@ -52,6 +52,12 @@ CairnLocale\Cairn-Locale-1.0.lua
 CairnHooks\Cairn-Hooks-1.0.lua
 CairnSequencer\Cairn-Sequencer-1.0.lua
 CairnTimer\Cairn-Timer-1.0.lua
+# Cairn-Deque: double-ended queue with O(1) push/pop at both ends. Same
+# instance exposes deque, queue (FIFO), and stack (LIFO) aliases. Optional
+# capacity with drop-oldest or error-on-full. Lazy subscription handlers
+# (Pushed / Popped / Dropped / Emptied) with no per-instance overhead until
+# anyone subscribes. No hard dependencies; load order is not significant.
+CairnDeque\Cairn-Deque-1.0.lua
 # CairnFSM: flat state machine; loads after Sequencer + Timer (soft deps).
 CairnFSM\Cairn-FSM-1.0.lua
 CairnComm\Cairn-Comm-1.0.lua

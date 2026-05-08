@@ -10,6 +10,10 @@ The format is loosely based on
 
 ## [Unreleased]
 
+### Added
+
+- **Cairn-Deque-1.0 MINOR=1** — new module: double-ended queue with O(1) push/pop at both ends. Single instance covers deque, queue (FIFO), and stack (LIFO) usage via method aliases (`Enqueue`/`Dequeue`/`Peek` for queue; `Push`/`Pop`/`Top` for stack; `PushBack`/`PushFront`/`PopBack`/`PopFront`/`PeekBack`/`PeekFront` for deque). Optional `capacity` with `onFull = "drop"` (evicts opposite end and fires `Dropped`) or `"error"` (raises). Lazy subscription handlers (`OnPushed` / `OnPopped` / `OnDropped` / `OnEmptied`) — zero per-instance memory until anyone subscribes; each `:OnX` returns an unsubscribe closure, plus `:UnsubscribeAll(owner)` for mass cleanup. Backed by the classic two-index scheme (`_first` / `_last`); indexes auto-reset to `0/-1` on natural drain or `Clear()` so they don't drift. Hot-reload safe via the shared `_Deque` prototype trick. No hard load-order constraints. Use cases: ring-buffer log tails, work queues with back-pressure, undo/redo stacks, BFS/DFS frontiers, recent-items caches.
+
 ## [12] — Cairn-LogWindow-2.0 ships + v2 framework-gap pass + Wago packaging fix (2026-05-07)
 
 ### Added

@@ -363,8 +363,13 @@ function Demo:Console(parent, opts)
 	end
 
 	function console:Clear()
+		-- Release IS on the Cairn mixin, NOT on the frame. Gui:Acquire
+		-- returns the frame, so `line` is the frame and `line.Release`
+		-- is nil. Use `line.Cairn:Release()` to actually release the
+		-- pooled widget. Caught alongside the same bug pattern in
+		-- Cairn-Media-Browser 2026-05-08.
 		for _, line in ipairs(self._lines) do
-			if line.Release then line:Release() end
+			if line.Cairn and line.Cairn.Release then line.Cairn:Release() end
 		end
 		self._lines = {}
 	end

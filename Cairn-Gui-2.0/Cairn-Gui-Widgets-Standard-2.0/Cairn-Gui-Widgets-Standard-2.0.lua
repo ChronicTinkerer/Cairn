@@ -62,9 +62,40 @@ Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	     popups (Dropdown option lists, child windows) layer above
 	     host windows reliably. Pass strata = "DIALOG" explicitly
 	     when a Window IS itself a popup.
+	4: Button.OnAcquire calls frame:RegisterForClicks("AnyUp"). The
+	   Primitives layer's OnMouseDown / OnMouseUp HookScripts swallow
+	   OnClick on Interface 120005 unless the Button is registered
+	   for the click type explicitly. Without this, btn.Cairn:On("Click", fn)
+	   silently never fires -- consumers had to add per-button
+	   :RegisterForClicks workarounds (Vellum/Panel.lua, Cairn-Media-Browser
+	   visibility filter). "AnyUp" covers left/right/middle so consumers
+	   can dispatch on the `button` arg passed to the Click handler.
+	5: Two Window improvements identified during the Vellum/Panel.lua
+	   build (memory: cairn_gui_2_vellum_framework_gaps).
+	   * Window.OnAcquire defaults to SetPoint("CENTER", UIParent, "CENTER")
+	     when the consumer hasn't anchored the frame. Was: invisible
+	     (rendered at (0,0) of UIParent which is the bottom-left corner).
+	     Vellum's per-build SetPoint workaround can be removed.
+	   * Window fires "Moved" event after OnDragStop with args
+	     (x, y, point, relTo, relPoint). Lets consumers persist drag
+	     position via widget.Cairn:On("Moved", function(_, x, y) ... end).
+	     Was: drag worked visually but no callback, so no way to round-trip
+	     position to saved variables without monkey-patching the title bar.
+	6: Window OnDragStop now NORMALIZES the post-drag anchor back to
+	   CENTER-relative coords before firing "Moved". WoW's StartMoving /
+	   StopMovingOrSizing typically rewrites the frame's anchor to a
+	   BOTTOMLEFT-relative spec (often "BOTTOMLEFT, UIParent, BOTTOMLEFT,
+	   x, y"). MINOR=5 fired Moved with those raw GetPoint(1) coords, so
+	   consumers that persisted (x, y) and restored via SetPoint("CENTER",
+	   UIParent, "CENTER", x, y) saw the window jump on /reload (anchor
+	   types mismatched). MINOR=6 computes the frame's center vs UIParent
+	   center (scale-corrected), ClearAllPoints, re-anchors to CENTER, and
+	   THEN fires "Moved (dx, dy, 'CENTER', 'UIParent', 'CENTER')". The
+	   contract for consumers becomes: "(x, y) is the offset from UIParent
+	   center". Vellum's `db.profile.panel.x/y` round-trips without changes.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 3
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 6
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

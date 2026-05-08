@@ -83,6 +83,7 @@ CairnComm\Cairn-Comm-1.0.lua
 # see it). v1 ships built-ins as private; the public bucket starts empty.
 # Must load BEFORE Cairn-Gui-Theme-Default-2.0 (theme soft-deps for fonts).
 CairnMedia\Cairn-Media-1.0.lua
+CairnMedia\MaterialSymbolsCodepoints.lua
 
 # Cairn-Gui-1.0 family derived from Diesal libraries (BSD 3-clause).
 # All v1 components live under Cairn-Gui-1.0/ for source-tree cohesion.

@@ -107,6 +107,17 @@ function mixin:OnAcquire(opts)
 	frame:SetFrameStrata(opts.strata or "HIGH")
 	frame:Show()
 
+	-- Default anchor: CENTER on UIParent if the consumer hasn't set one.
+	-- Without this, an Acquired Window has no SetPoint and ends up at
+	-- (0,0) of its parent which is the bottom-left corner offscreen for
+	-- most parents -- the consumer sees a Show() that did nothing visible.
+	-- Consumers can override via win:ClearAllPoints + win:SetPoint after
+	-- Acquire if they want a different anchor (drag-restore from saved
+	-- vars is the common case).
+	if frame:GetNumPoints() == 0 then
+		frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+	end
+
 	-- Movability: default on. Acquired even if movable=false so the
 	-- frame can be later toggled (we don't support that yet, but the
 	-- enable-mouse cost is negligible).
@@ -136,7 +147,31 @@ function mixin:OnAcquire(opts)
 	self._titleBar:RegisterForDrag("LeftButton")
 	if movable then
 		self._titleBar:SetScript("OnDragStart", function() frame:StartMoving() end)
-		self._titleBar:SetScript("OnDragStop",  function() frame:StopMovingOrSizing() end)
+		self._titleBar:SetScript("OnDragStop",  function()
+			frame:StopMovingOrSizing()
+			-- Normalize to CENTER-relative coords. WoW's StartMoving /
+			-- StopMovingOrSizing typically rewrites the anchor to a
+			-- BOTTOMLEFT-relative spec, so a naive GetPoint(1) returns
+			-- coords in that space. If a consumer persists those and
+			-- later restores via SetPoint("CENTER", UIParent, "CENTER",
+			-- x, y), the anchor types mismatch and the window jumps.
+			--
+			-- Fix: compute the frame's center relative to UIParent's
+			-- center (accounting for effective scales), ClearAllPoints,
+			-- re-anchor to CENTER. After this, GetPoint(1) reads back
+			-- the same (x, y) we just set, and consumers get a stable
+			-- contract: "Moved (x, y) means offset from UIParent center".
+			local cx, cy   = frame:GetCenter()
+			local pcx, pcy = UIParent:GetCenter()
+			if cx and pcx then
+				local scale = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+				local dx = (cx * scale) - pcx
+				local dy = (cy * scale) - pcy
+				frame:ClearAllPoints()
+				frame:SetPoint("CENTER", UIParent, "CENTER", dx, dy)
+				self:Fire("Moved", dx, dy, "CENTER", "UIParent", "CENTER")
+			end
+		end)
 	else
 		self._titleBar:SetScript("OnDragStart", nil)
 		self._titleBar:SetScript("OnDragStop",  nil)

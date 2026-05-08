@@ -1,0 +1,24 @@
+## Interface: 120005, 50503, 20505, 11508, 120007
+## Title: Cairn-Media-Browser
+## Notes: Live, browseable view of every asset registered with Cairn-Media-1.0. /cmb opens a tabbed window with one tab per media type (Fonts, Statusbars, Borders, Backgrounds, Sounds) plus an Icons tab that grids the Material Symbols glyph registry. Companion to Cairn-Demo.
+## Author: ChronicTinkerer
+## Version: 1
+## Dependencies: Cairn
+## X-Category: Development Tools
+## X-License: MIT
+## DefaultState: enabled
+## LoadOnDemand: 0
+
+# Core: init, slash command, root Window + TabGroup shell. Each Tabs/*.lua
+# below builds out one tab against the shared shell. Mirrors the
+# Cairn-Demo / Cairn-Gui-Demo-2.0 architecture exactly.
+Core.lua
+
+# Tabs (load after Core since they call Browser:RegisterTab on it).
+Tabs\Welcome.lua
+Tabs\Fonts.lua
+Tabs\Statusbars.lua
+Tabs\Borders.lua
+Tabs\Backgrounds.lua
+Tabs\Sounds.lua
+Tabs\Icons.lua

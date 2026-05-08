@@ -74,6 +74,11 @@ CairnComm\Cairn-Comm-1.0.lua
 # see it). v1 ships built-ins as private; the public bucket starts empty.
 # Must load BEFORE Cairn-Gui-Theme-Default-2.0 (theme soft-deps for fonts).
 CairnMedia\Cairn-Media-1.0.lua
+# Material Symbols full codepoint table (4244 icons). Auto-generated from
+# Google Fonts material-design-icons. Loads after Cairn-Media so the lib
+# table exists; merges its entries into lib._icons (curated entries in
+# Cairn-Media's _registerIcons() override on collision).
+CairnMedia\MaterialSymbolsCodepoints.lua
 
 # Cairn-Gui-1.0 family derived from Diesal libraries (BSD 3-clause).
 # Tools is the foundation utility module; Style brings textures, outlines,

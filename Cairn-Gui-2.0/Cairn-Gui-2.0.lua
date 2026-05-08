@@ -239,7 +239,15 @@ Verification (Day 1 success criterion):
 --      Cairn-Gui-Layouts-Extra-2.0 ships Hex (axial-coord hex grid,
 --      pointy/flat orientation) and Polar (radial arrangement around
 --      a center point with start/end angles + cw/ccw direction).
-local MAJOR, MINOR = "Cairn-Gui-2.0", 19
+--  20: Mixins/Base.Release fires a "Release" event before nuking the
+--      subscription registry, so consumers can register cleanup via
+--      `widget.Cairn:On("Release", fn)` without clobbering the existing
+--      single-method `OnRelease()` override. Multiple subscribers
+--      coexist; cleanup runs before pool return. Plus an extended
+--      docstring on Release explaining the raw-children-don't-cascade
+--      gotcha and pointing at Button.lua's `_label` as the canonical
+--      stash-and-reuse pattern.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 20
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

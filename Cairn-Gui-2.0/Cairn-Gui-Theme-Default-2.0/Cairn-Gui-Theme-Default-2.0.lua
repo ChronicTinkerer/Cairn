@@ -45,7 +45,13 @@ defaults in Cairn-Gui-2.0/Core/Theme.lua DEFAULTS table.
 --      now resolve to Cairn-Media's "Default" / "Heading" entries when the
 --      lib is loaded, with clean fallbacks to STANDARD_TEXT_FONT and the
 --      canonical Morpheus / Arial Narrow paths when it isn't.
-local MAJOR, MINOR = "Cairn-Gui-Theme-Default-2.0", 2
+--   3: texture.icon.check token swapped from atlas "common-icon-checkmark"
+--      (silently invisible on Interface 120005 -- atlas key apparently not
+--      registered or texture invisible at the size DrawIcon picks) to file
+--      path Interface\Buttons\UI-CheckBox-Check (stable since Classic).
+--      Resolves the "Checkbox toggled state shows no glyph" bug from the
+--      Vellum framework-gap list.
+local MAJOR, MINOR = "Cairn-Gui-Theme-Default-2.0", 3
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -186,7 +192,12 @@ Core:RegisterTheme("Cairn.Default", {
 		-- so the 2x split isn't relevant; documented here so consumers
 		-- forking the theme know where to wire their own assets.
 
-		["texture.icon.check"]               = "common-icon-checkmark",
+		-- File-path fallback (was atlas "common-icon-checkmark", which
+		-- silently rendered as nothing on Interface 120005 -- the atlas
+		-- key apparently isn't registered or the texture is invisible at
+		-- the size DrawIcon picks). UI-CheckBox-Check is a Blizzard-
+		-- shipped file path that's been stable since Classic.
+		["texture.icon.check"]               = [[Interface\Buttons\UI-CheckBox-Check]],
 		["texture.icon.x"]                   = "common-icon-redx",
 		["texture.icon.warning"]             = "services-icon-warning",
 		["texture.icon.gear"]                = "GarrMission_CurrencyIcon-Xp",

@@ -1065,7 +1065,7 @@ registerPublic("statusbar", "Smooth", PUBLIC_ASSETS .. [[statusbars\smooth.tga]]
 
 **Icon glyphs (Material Symbols, MINOR ≥ 3):** Three Material Symbols variable
 fonts ship as PUBLIC entries — `MaterialOutlined` / `MaterialRounded` /
-`MaterialSharp` (Apache 2.0). Paired with an icon-glyph registry of 45 commonly
+`MaterialSharp` (Apache 2.0). Paired with an icon-glyph registry of 53 commonly
 needed UI / WoW glyphs (`close` / `menu` / `settings` / `search` / `info` /
 `warning` / `error` / `lock` / `star` / `folder` / `home` / `person` /
 `emoji_events` / `bolt` / `shield` / `map` / etc.) accessed by short name:
@@ -1079,7 +1079,7 @@ fs:SetTextColor(1, 1, 1)
 
 Media:HasIcon("settings")           -- true
 Media:GetIconCodepoint("settings")  -- 0xE8B8
-Media:ListIcons()                   -- sorted array of all 45 names
+Media:ListIcons()                   -- sorted array of all 53 names
 Media:RegisterIcon("custom", 0xE9F0)  -- consumer extension
 ```
 

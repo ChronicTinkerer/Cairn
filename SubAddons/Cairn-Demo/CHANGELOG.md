@@ -6,6 +6,10 @@ Versions are sequential build numbers (per the Cairn version convention).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Console:Clear` actually releases lines now.** Was calling `line.Release` (frame, nil — Acquire returns the frame and Release lives on the cairn) so the loop silently no-op'd. Now calls `line.Cairn:Release()`. Same bug pattern that hit Cairn-Media-Browser; both fixes ship together.
+
 ## [1] - 2026-05-07
 
 ### Added

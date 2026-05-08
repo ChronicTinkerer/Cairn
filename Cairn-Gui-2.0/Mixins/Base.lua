@@ -180,8 +180,29 @@ end
 -- Children-first cascade per Decision 2. Order:
 --   1. Release each child (recursively).
 --   2. Detach this widget from its parent's child registry.
---   3. Run OnRelease() lifecycle hook.
+--   2.4. Fire "Release" event so consumer subscribers can run cleanup
+--        BEFORE their event subscriptions are nuked in 2.5.
+--   2.5. Clear event subscriptions.
+--   3. Run OnRelease() lifecycle hook (single-method override).
 --   4. If pooled, return to lib._pool[type] for later reuse; else hide.
+--
+-- Raw-children gotcha: WoW frames CAN'T destroy regions. So
+-- :CreateFontString / :CreateTexture / CreateFrame("Frame", nil, parent,
+-- "BackdropTemplate") children persist on a pooled frame after Release.
+-- A consumer that creates fresh raw children on every Acquire will
+-- accumulate stale ones (visible symptom: text overlay / ghosting after
+-- pool recycle). The Cairn-internal pattern is stash-and-reuse:
+--
+--     if not cell._myFs then
+--         cell._myFs = cell:CreateFontString(...)
+--         cell._myFs:SetPoint(...)  -- one-time anchor
+--     end
+--     cell._myFs:SetText(currentValue)  -- update on every Acquire
+--
+-- See `Cairn-Gui-Widgets-Standard-2.0/Widgets/Button.lua`'s `_label`
+-- for the canonical example. Released widget cairn-mixin children
+-- (added via Acquire) cascade-release through Step 1 and don't need
+-- this treatment.
 
 function Base:Release()
 	-- Step 1: cascade to children. Iterate a copy because each child's
@@ -200,6 +221,15 @@ function Base:Release()
 		self._parent:_removeChild(self)
 	end
 	self._parent = nil
+
+	-- Step 2.4: fire "Release" event so consumer cleanup callbacks can
+	-- run BEFORE Step 2.5 wipes the subscription registry. Lets multiple
+	-- consumers register cleanup via widget.Cairn:On("Release", fn) without
+	-- clobbering the single-method OnRelease() override below. No-op if no
+	-- subscriber ever registered (Fire's no-op path skips the registry).
+	if self.Fire then
+		self:Fire("Release")
+	end
 
 	-- Step 2.5: clear event subscriptions so a pooled widget doesn't
 	-- carry handlers from one owner into the next Acquire. self:Off()

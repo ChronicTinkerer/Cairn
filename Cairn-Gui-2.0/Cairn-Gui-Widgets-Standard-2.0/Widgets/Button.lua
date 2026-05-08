@@ -170,6 +170,19 @@ function mixin:OnAcquire(opts)
 	frame:SetScript("OnClick", function(_, button)
 		self:Fire("Click", button)
 	end)
+
+	-- RegisterForClicks defensively: the Primitives layer's
+	-- OnMouseDown / OnMouseUp HookScripts swallow OnClick on Interface
+	-- 120005 unless the Button is explicitly registered for the click
+	-- type. Default behavior on a bare CreateFrame("Button") is for
+	-- LeftButtonUp to fire OnClick, but the hook chain breaks that
+	-- default. Registering "AnyUp" here covers left + right + middle
+	-- so mixin consumers can dispatch on the `button` arg. Caught by
+	-- Vellum/Panel.lua build (per memory: cairn_gui_2_vellum_framework_gaps)
+	-- and by Cairn-Media-Browser visibility filter buttons (2026-05-08).
+	if frame.RegisterForClicks then
+		frame:RegisterForClicks("AnyUp")
+	end
 end
 
 -- ----- Public methods --------------------------------------------------

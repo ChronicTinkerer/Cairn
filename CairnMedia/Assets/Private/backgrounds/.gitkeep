@@ -1,0 +1,4 @@
+# Drop free-license background textures (.tga, .blp, .png) here for PRIVATE registration.
+# Then add a registerPrivate("background", "ShortName", PRIVATE_ASSETS .. [[backgrounds\file.tga]])
+# line in _registerPrivateBackgrounds() inside Cairn-Media-1.0.lua.
+# Private = visible only to Cairn consumers; NOT registered with LibSharedMedia-3.0.

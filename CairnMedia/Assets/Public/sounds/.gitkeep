@@ -1,0 +1,5 @@
+# Drop free-license sound files (.ogg, .mp3) here for PUBLIC registration.
+# Then add a registerPublic("sound", "ShortName", PUBLIC_ASSETS .. [[sounds\file.ogg]])
+# line in _registerPublicSounds() inside Cairn-Media-1.0.lua.
+# Public = visible to Cairn consumers AND registered with LibSharedMedia-3.0
+# under "Cairn <ShortName>" (so WeakAuras / ElvUI / Details! / etc. see it).

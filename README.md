@@ -26,9 +26,11 @@ step runner), `Cairn.FSM` (flat state machine with async transitions),
 `Cairn.Hooks` (multi-callback hook helper),
 `Cairn.Timer` (owner-grouped timers), `Cairn.Comm` (addon-to-addon
 messaging), `Cairn.Deque` (double-ended queue covering deque, queue, and
-stack usage in one type), `Cairn.Callback` (registry-style callback
-dispatcher, exposed at `LibStub("Cairn-Callback-1.0")` for direct
-internal use), and
+stack usage in one type), `Cairn.Media` (dual-mode media registry for
+fonts / statusbars / borders / backgrounds / sounds — private entries
+stay internal, public entries also register with LibSharedMedia-3.0),
+`Cairn.Callback` (registry-style callback dispatcher, exposed at
+`LibStub("Cairn-Callback-1.0")` for direct internal use), and
 the `Cairn-Gui-*` widget family (Tools, Style, Core with 12 widgets,
 Menu — derived from the BSD-licensed Diesal libraries and modernized
 for Interface 120005). The v0.1-era `Cairn.Dashboard` was retired and
@@ -1005,6 +1007,88 @@ errors are `pcall`-trapped and routed to `geterrorhandler()`.
 
 ---
 
+### `Cairn.Media` — dual-mode media registry (v0.2)
+
+A curated set of fonts, statusbar textures, borders, backgrounds, and sounds
+accessible by short name. Each entry registers as either **private** (visible
+only to `Cairn.Media` consumers) or **public** (also registered with
+`LibSharedMedia-3.0` under `"Cairn <ShortName>"`, so WeakAuras / ElvUI /
+Details! see it). Lookup is mode-agnostic; listings can filter by visibility.
+
+```lua
+local Media = Cairn.Media
+
+-- Lookup is uniform across both buckets (public wins on collision).
+Media:GetFont("Default")           -- Fonts\FRIZQT__.TTF
+Media:GetStatusbar("Plain")        -- Interface\TargetingFrame\UI-StatusBar
+Media:GetBorder("Tooltip")
+Media:GetBackground("Solid")
+Media:GetSound("Alert")            -- Sound\Interface\RaidWarning.ogg
+
+-- Filtered listings.
+Media:ListFonts()                  -- merged: every font name across both buckets
+Media:ListPublicFonts()            -- only LSM-registered entries
+Media:ListPrivateFonts()           -- only internal-only entries
+Media:IsPublic("font", "Default")  -- true if the entry is in the public bucket
+
+for name, path in Media:Iter("font") do print(name, path) end
+```
+
+| Type        | Shipped short names (all PRIVATE in v1)      | Source                              |
+|-------------|----------------------------------------------|-------------------------------------|
+| `font`      | `Default` / `Numeric` / `Heading` / `Combat` | WoW built-in (FRIZQT / ARIALN / MORPHEUS / skurri) |
+| `statusbar` | `Plain` / `Solid`                            | Built-in target-frame bar + WHITE8X8 pixel |
+| `border`    | `Tooltip` / `Dialog`                         | WoW built-in tooltip + dialog borders |
+| `background`| `Tooltip` / `Dialog` / `Solid`               | WoW built-in tooltip + dialog bg + WHITE8X8 |
+| `sound`     | `Alert` / `Notify` / `LevelUp`               | RaidWarning / AuctionWindowOpen / LevelUp .ogg |
+
+Initial release ships WoW built-in paths as PRIVATE entries only — no binary
+files included. The public bucket starts empty.
+
+**Drop-in folders** (each persisted via `.gitkeep`):
+
+```
+CairnMedia/Assets/Private/{fonts, statusbars, borders, backgrounds, sounds}/
+CairnMedia/Assets/Public/{fonts,  statusbars, borders, backgrounds, sounds}/
+```
+
+Drop a file into the appropriate folder and add a one-line registration in
+the matching `_registerPrivate*` / `_registerPublic*` block of `Cairn-Media-1.0.lua`:
+
+```lua
+registerPrivate("font", "Inter", PRIVATE_ASSETS .. [[fonts\Inter-Regular.otf]])
+registerPublic("statusbar", "Smooth", PUBLIC_ASSETS .. [[statusbars\smooth.tga]])
+```
+
+`Cairn-Gui-Theme-Default-2.0` (MINOR ≥ 2) soft-deps on this lib for
+`font.body` / `font.heading` / `font.small`.
+
+**Icon glyphs (Material Symbols, MINOR ≥ 3):** Three Material Symbols variable
+fonts ship as PUBLIC entries — `MaterialOutlined` / `MaterialRounded` /
+`MaterialSharp` (Apache 2.0). Paired with an icon-glyph registry of 45 commonly
+needed UI / WoW glyphs (`close` / `menu` / `settings` / `search` / `info` /
+`warning` / `error` / `lock` / `star` / `folder` / `home` / `person` /
+`emoji_events` / `bolt` / `shield` / `map` / etc.) accessed by short name:
+
+```lua
+local Media = Cairn.Media
+local fs = frame:CreateFontString(nil, "OVERLAY")
+fs:SetFont(Media:GetFont("MaterialOutlined"), 16, "")
+fs:SetText(Media:GetIconGlyph("settings"))   -- cog icon
+fs:SetTextColor(1, 1, 1)
+
+Media:HasIcon("settings")           -- true
+Media:GetIconCodepoint("settings")  -- 0xE8B8
+Media:ListIcons()                   -- sorted array of all 45 names
+Media:RegisterIcon("custom", 0xE9F0)  -- consumer extension
+```
+
+Vector glyphs scale cleanly. Recolor via `SetTextColor`. Find more icon names
++ codepoints at https://fonts.google.com/icons and add via `:RegisterIcon` or
+by editing `_registerIcons()` in `Cairn-Media-1.0.lua`.
+
+---
+
 ## Composing with other libraries
 
 Cairn is plumbing, not a one-stop framework. It deliberately doesn't
@@ -1138,6 +1222,7 @@ driven by `Cairn.Settings`. EditMode-movable if LibEditMode is installed.
 - [x] `Cairn.Hooks` — multi-callback hook helper
 - [x] `Cairn.Timer` — owner-grouped timers + named replacement
 - [x] `Cairn.Deque` — double-ended queue (queue + stack + deque in one)
+- [x] `Cairn.Media` — private media registry (fonts / statusbars / borders / backgrounds / sounds)
 
 **v0.3 stretch:**
 
@@ -1178,6 +1263,13 @@ Cairn/
   CairnComm/Cairn-Comm-1.0.lua               Addon-to-addon messaging via CHAT_MSG_ADDON (v0.2).
   CairnDeque/Cairn-Deque-1.0.lua             Double-ended queue with O(1) push/pop at both ends; covers
                                              deque, queue (FIFO), and stack (LIFO) usage in one type (v0.2).
+  CairnMedia/Cairn-Media-1.0.lua             Dual-mode media registry. Curated fonts, statusbars, borders,
+                                             backgrounds, sounds. Each entry registers as PRIVATE
+                                             (internal-only) or PUBLIC (also LSM-registered) (v0.2).
+  CairnMedia/Assets/Private/                 Drop-in slot for free-license assets that should stay
+    {fonts,statusbars,borders,backgrounds,sounds}/   internal to Cairn consumers (.gitkeep persists folders).
+  CairnMedia/Assets/Public/                  Drop-in slot for assets that should ALSO be exposed via
+    {fonts,statusbars,borders,backgrounds,sounds}/   LibSharedMedia-3.0 ("Cairn <ShortName>").
   Cairn-Gui-1.0/                             Diesal-derived widget family (v1).
     Cairn-Gui-1.0.lua                          Widget kit base.
     Cairn-Gui-Tools-1.0/...                    Foundation utilities.

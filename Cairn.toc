@@ -67,6 +67,13 @@ CairnDeque\Cairn-Deque-1.0.lua
 # and Timer. Loads after both.
 CairnFSM\Cairn-FSM-1.0.lua
 CairnComm\Cairn-Comm-1.0.lua
+# Cairn-Media: dual-mode media registry. Curated set of fonts / statusbars /
+# borders / backgrounds / sounds under short names ("Default", "Heading",
+# "Plain", etc.). Each entry is either PRIVATE (internal table only) or
+# PUBLIC (also LSM-registered as "Cairn <Name>" so WeakAuras / ElvUI / etc.
+# see it). v1 ships built-ins as private; the public bucket starts empty.
+# Must load BEFORE Cairn-Gui-Theme-Default-2.0 (theme soft-deps for fonts).
+CairnMedia\Cairn-Media-1.0.lua
 
 # Cairn-Gui-1.0 family derived from Diesal libraries (BSD 3-clause).
 # Tools is the foundation utility module; Style brings textures, outlines,

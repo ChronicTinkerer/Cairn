@@ -41,7 +41,11 @@ defaults in Cairn-Gui-2.0/Core/Theme.lua DEFAULTS table.
 --
 -- Cairn-Gui-Theme-Default-2.0 MINOR bumps:
 --   1: MAJOR rename only. No token / API changes from 1.0/MINOR=2.
-local MAJOR, MINOR = "Cairn-Gui-Theme-Default-2.0", 1
+--   2: Soft-dep on Cairn-Media-1.0. font.body / font.heading / font.small
+--      now resolve to Cairn-Media's "Default" / "Heading" entries when the
+--      lib is loaded, with clean fallbacks to STANDARD_TEXT_FONT and the
+--      canonical Morpheus / Arial Narrow paths when it isn't.
+local MAJOR, MINOR = "Cairn-Gui-Theme-Default-2.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -53,6 +57,20 @@ end
 if not Core:RequireCore("Cairn-Gui-2.0", 1) then
 	return
 end
+
+-- Soft-dep on Cairn-Media-1.0 for font / heading / numeric paths. When
+-- the lib is loaded (the default standalone configuration), font tokens
+-- below resolve to the Cairn-Media curated set ("Cairn.Media:GetFontPath").
+-- When it isn't loaded (embedded consumers who omitted CairnMedia/), the
+-- fallback paths use Blizzard's STANDARD_TEXT_FONT and the canonical
+-- numeric / morpheus paths so the theme still works end-to-end.
+local Media = LibStub("Cairn-Media-1.0", true)
+
+local FONT_BODY     = (Media and Media:GetFontPath("Default")) or STANDARD_TEXT_FONT
+local FONT_HEADING  = (Media and Media:GetFontPath("Heading")) or [[Fonts\MORPHEUS.TTF]]
+local FONT_NUMERIC  = (Media and Media:GetFontPath("Numeric")) or [[Fonts\ARIALN.TTF]]
+-- (font.small reuses FONT_BODY; the body face is the right pick for
+--  small-but-still-readable UI text.)
 
 -- ----- The theme -------------------------------------------------------
 
@@ -139,9 +157,9 @@ Core:RegisterTheme("Cairn.Default", {
 
 		-- ====== Fonts =================================================
 
-		["font.body"]                        = { face = STANDARD_TEXT_FONT, size = 12, flags = "" },
-		["font.heading"]                     = { face = STANDARD_TEXT_FONT, size = 16, flags = "" },
-		["font.small"]                       = { face = STANDARD_TEXT_FONT, size = 10, flags = "" },
+		["font.body"]                        = { face = FONT_BODY,    size = 12, flags = "" },
+		["font.heading"]                     = { face = FONT_HEADING, size = 16, flags = "" },
+		["font.small"]                       = { face = FONT_BODY,    size = 10, flags = "" },
 
 		-- ====== Animation durations ===================================
 		-- Slightly snappier than Core defaults so transitions feel modern

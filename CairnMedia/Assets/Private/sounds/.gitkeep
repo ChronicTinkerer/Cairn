@@ -1,0 +1,4 @@
+# Drop free-license sound files (.ogg, .mp3) here for PRIVATE registration.
+# Then add a registerPrivate("sound", "ShortName", PRIVATE_ASSETS .. [[sounds\file.ogg]])
+# line in _registerPrivateSounds() inside Cairn-Media-1.0.lua.
+# Private = visible only to Cairn consumers; NOT registered with LibSharedMedia-3.0.

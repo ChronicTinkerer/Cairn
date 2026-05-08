@@ -1,0 +1,4 @@
+# Drop free-license statusbar textures (.tga, .blp, .png) here for PRIVATE registration.
+# Then add a registerPrivate("statusbar", "ShortName", PRIVATE_ASSETS .. [[statusbars\file.tga]])
+# line in _registerPrivateStatusbars() inside Cairn-Media-1.0.lua.
+# Private = visible only to Cairn consumers; NOT registered with LibSharedMedia-3.0.

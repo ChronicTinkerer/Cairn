@@ -1,0 +1,5 @@
+# Drop free-license background textures (.tga, .blp, .png) here for PUBLIC registration.
+# Then add a registerPublic("background", "ShortName", PUBLIC_ASSETS .. [[backgrounds\file.tga]])
+# line in _registerPublicBackgrounds() inside Cairn-Media-1.0.lua.
+# Public = visible to Cairn consumers AND registered with LibSharedMedia-3.0
+# under "Cairn <ShortName>" (so WeakAuras / ElvUI / Details! / etc. see it).

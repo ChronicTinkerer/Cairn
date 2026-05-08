@@ -1,0 +1,4 @@
+# Drop free-license font files (.ttf, .otf) here for PRIVATE registration.
+# Then add a registerPrivate("font", "ShortName", PRIVATE_ASSETS .. [[fonts\filename.ttf]])
+# line in _registerPrivateFonts() inside Cairn-Media-1.0.lua.
+# Private = visible only to Cairn consumers; NOT registered with LibSharedMedia-3.0.

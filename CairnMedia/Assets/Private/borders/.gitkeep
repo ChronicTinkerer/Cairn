@@ -1,0 +1,4 @@
+# Drop free-license border textures (.tga, .blp, .png) here for PRIVATE registration.
+# Then add a registerPrivate("border", "ShortName", PRIVATE_ASSETS .. [[borders\file.tga]])
+# line in _registerPrivateBorders() inside Cairn-Media-1.0.lua.
+# Private = visible only to Cairn consumers; NOT registered with LibSharedMedia-3.0.

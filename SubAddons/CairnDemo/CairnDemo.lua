@@ -1,6 +1,6 @@
 -- CairnDemo
 -- A working consumer of every Cairn v1.0 library. Each section below exercises
--- one lib through the `Cairn.*` umbrella (no direct LibStub calls) so the file
+-- one lib through the `Cairn.*` namespace (no direct LibStub calls) so the file
 -- doubles as a smoke check: if the addon loads silently and `/cairndemo run`
 -- prints all PASS lines, the framework is wired correctly.
 --
@@ -20,8 +20,8 @@ local ADDON_NAME = "CairnDemo"
 -- ---------------------------------------------------------------------------
 -- 1. Cairn-Addon  — lifecycle wrapper with retro-fire
 -- ---------------------------------------------------------------------------
--- We pull the lib through the umbrella table installed by Cairn-Util. If
--- the umbrella is missing or the lib didn't register, the very next line
+-- We pull the lib through the Cairn namespace installed by Cairn-Core. If
+-- the namespace is missing or the lib didn't register, the very next line
 -- raises a clear nil-index error and there's no point continuing.
 local addon = Cairn.Addon:New(ADDON_NAME)
 
@@ -273,7 +273,7 @@ root:Sub("run", function()
           (function() local t = { a = "user" }; CU.Table.MergeDefaults(t, { a = "DEF", b = "fill" }); return t.a == "user" and t.b == "fill" end)())
     check("Cairn.Media:GetFont(Default) resolves", type(fontPath) == "string" and fontPath ~= "")
     check("Cairn.Settings instance built",       type(settings) == "table" and type(settings.Get) == "function")
-    check("_G.Cairn umbrella resolves dynamically",
+    check("_G.Cairn namespace resolves dynamically",
           Cairn.Addon == LibStub("Cairn-Addon-1.0"))
 
     -- ----- Cairn-Gui-2.0 family --------------------------------------------

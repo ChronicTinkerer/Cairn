@@ -14,6 +14,7 @@ That's the one-sentence test for every design decision in Cairn. The principle a
 
 | Lib | Purpose | LibStub MAJOR |
 | --- | --- | --- |
+| `Cairn-Core` | Bootstraps the `_G.Cairn` namespace. Foundation lib, loads first. | `Cairn-Core-1.0` |
 | `Cairn-Addon` | Addon lifecycle (OnInit / OnLogin / OnDisable) with retro-fire | `Cairn-Addon-1.0` |
 | `Cairn-DB` | SavedVariables wrapper with default merging and named profiles | `Cairn-DB-1.0` |
 | `Cairn-Slash` | Slash command registry with nested subcommand routing | `Cairn-Slash-1.0` |
@@ -30,7 +31,7 @@ That's the one-sentence test for every design decision in Cairn. The principle a
 
 ## Quick start
 
-The preferred consumer surface is the `_G.Cairn` umbrella, which resolves `Cairn.<Name>` lazily to `LibStub("Cairn-<Name>-1.0")`:
+The preferred consumer surface is the `_G.Cairn` namespace, which resolves `Cairn.<Name>` lazily to `LibStub("Cairn-<Name>-1.0")`:
 
 ```lua
 local addon = Cairn.Addon:New("MyAddon")
@@ -54,15 +55,39 @@ function addon:OnInit() print("MyAddon loaded") end
 function addon:OnLogin() print("MyAddon ready") end
 ```
 
-The direct `LibStub("Cairn-Addon-1.0"):New(...)` form works equivalently — the umbrella is just terser, and a missing lib gives a clear `attempt to index 'Cairn' (a nil value)` error.
+The direct `LibStub("Cairn-Addon-1.0"):New(...)` form works equivalently — the namespace is just terser, and a missing lib gives a clear `attempt to index 'Cairn' (a nil value)` error.
 
-GUI access does NOT go through the umbrella — those libs are at MAJOR 2.0, not 1.0. Use `LibStub("Cairn-Gui-2.0")` directly.
+GUI access does NOT go through the namespace — those libs are at MAJOR 2.0, not 1.0. Use `LibStub("Cairn-Gui-2.0")` directly.
+
+## Standalone embeds
+
+Every Cairn lib assumes two things at load time:
+
+1. The `_G.Cairn` namespace exists with its resolving metatable installed. That bootstrap lives in `Core.lua` (registered as `Cairn-Core-1.0`).
+2. Shared helpers (`Pcall.Call`, `Table.Snapshot`, `Table.MergeDefaults`, etc.) are reachable via `LibStub("Cairn-Util-1.0")`.
+
+**If you embed a single Cairn lib (e.g. Cairn-Settings) inside your own addon without the full Cairn collection, you MUST also embed `Core.lua` and `Cairn-Util`.** Embedding any Cairn lib alone will fail at load.
+
+Minimal embed list for a single-lib consumer:
+
+```
+embeds\LibStub\LibStub.lua          (or whatever LibStub you already ship)
+Core.lua                            (Cairn-Core)
+CairnUtil\Cairn-Util.lua            (Cairn-Util main)
+CairnUtil\Cairn-Util-Pcall.lua      (sub-namespace, required by most libs)
+CairnUtil\Cairn-Util-Table.lua      (sub-namespace, required by most libs)
+CairnUtil\AF_MD5.lua                (only if Cairn-Util-Hash is needed)
+CairnUtil\Cairn-Util-Hash.lua       (only if your lib calls Hash.MD5)
+... then the lib you actually want
+```
+
+Inside a consumer that's loading Cairn alongside other addons, the regular `## OptionalDeps: Cairn` TOC entry handles this for you automatically; this list only matters for true single-lib vendoring.
 
 ## Try it / smoke test
 
 A working consumer of every lib ships at `Cairn\SubAddons\CairnDemo\`. Enable it like any addon, then:
 
-- `/cairndemo run` — runs a 20-line PASS/FAIL smoke covering every lib through the umbrella; useful for confirming a working install.
+- `/cairndemo run` — runs a 20-line PASS/FAIL smoke covering every lib through the namespace; useful for confirming a working install.
 - `/cairndemo gui` — pops a visible window with a clicky button, confirming Cairn-Gui-2.0 + Theme-Default loaded correctly.
 
 CairnDemo also doubles as a reference implementation for new consumers.

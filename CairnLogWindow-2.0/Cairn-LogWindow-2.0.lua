@@ -49,7 +49,7 @@ Cairn-LogWindow-2.0 (c) 2026 ChronicTinkerer. MIT license.
 --      EditBox + Clear Button) + ScrollFrame body (single multiline Label
 --      rendered as concatenated entries) + status footer Label. Same
 --      public API as v1; auto-installs as Cairn.LogWindow when the
---      umbrella facade is present.
+--      `_G.Cairn` namespace is present.
 local MAJOR, MINOR = "Cairn-LogWindow-2.0", 1
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
@@ -465,13 +465,14 @@ function lib:Refresh()
 	self.status.Cairn:SetText(filterDesc)
 end
 
--- ----- Umbrella facade install -----------------------------------------
--- Cairn umbrella's __index hardcodes the "-1.0" suffix, so Cairn.LogWindow
--- would otherwise resolve to the v1 lib forever once cached. Install
--- ourselves directly via rawset so subsequent Cairn.LogWindow accesses
--- return v2. Ordering is safe: this file loads after Cairn.lua and after
--- Cairn-LogWindow-1.0, so any consumer that hasn't called Cairn.LogWindow
--- yet (the standard case at file-scope load) will see v2.
+-- ----- Cairn namespace install -----------------------------------------
+-- The Cairn namespace's `__index` hardcodes the "-1.0" suffix, so
+-- `Cairn.LogWindow` would otherwise resolve to the v1 lib forever once
+-- cached. Install ourselves directly via rawset so subsequent
+-- `Cairn.LogWindow` accesses return v2. Ordering is safe: this file loads
+-- after Cairn.lua and after Cairn-LogWindow-1.0, so any consumer that
+-- hasn't called `Cairn.LogWindow` yet (the standard case at file-scope
+-- load) will see v2.
 if _G.Cairn then
 	rawset(_G.Cairn, "LogWindow", lib)
 end

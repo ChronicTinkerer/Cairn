@@ -6,7 +6,7 @@
 --
 -- WoW event:
 --
---   local CE = LibStub("Cairn-Events")
+--   local CE = LibStub("Cairn-Events-1.0")
 --   CE:Subscribe("PLAYER_LOGIN", function() print("hello") end)
 --   CE:Subscribe("UNIT_HEALTH", function(unit) print(unit) end)
 --
@@ -25,7 +25,7 @@
 --   CE:UnsubscribeOwner(myAddon)
 --
 -- Public API:
---   local CE = LibStub("Cairn-Events")
+--   local CE = LibStub("Cairn-Events-1.0")
 --   CE:Subscribe(event, handler [, owner])  -> subscription
 --   CE:Unsubscribe(subscription)
 --   CE:UnsubscribeOwner(owner)
@@ -56,11 +56,14 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Events"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-Events-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Events = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Events then return end
+
+local CU = LibStub("Cairn-Util-1.0")
+local Pcall, Table_ = CU.Pcall, CU.Table  -- aliased to avoid shadowing Lua's table
 
 
 -- Preserve across MINOR upgrades.
@@ -88,17 +91,11 @@ local function dispatch(event, ...)
     local subs = Cairn_Events.handlers[event]
     if not subs or #subs == 0 then return end
 
-    local n = #subs
-    local snapshot = {}
-    for i = 1, n do snapshot[i] = subs[i] end
-
-    for i = 1, n do
+    local snapshot = Table_.Snapshot(subs)
+    local context = ("Cairn-Events: handler for %s"):format(event)
+    for i = 1, #snapshot do
         local sub = snapshot[i]
-        local ok, err = pcall(sub.handler, ...)
-        if not ok then
-            geterrorhandler()(("Cairn-Events: handler for %s threw: %s"):format(
-                event, tostring(err)))
-        end
+        Pcall.Call(context, sub.handler, ...)
     end
 end
 

@@ -3,7 +3,7 @@
 -- One source-level logger per addon, with optional category sub-loggers.
 -- Forge_Logs reads from the shared buffer to render its UI.
 --
---   local CL  = LibStub("Cairn-Log")
+--   local CL  = LibStub("Cairn-Log-1.0")
 --   local log = CL:New("MyAddon")
 --
 --   log:Info("loaded successfully")
@@ -65,8 +65,8 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Log"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-Log-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Log = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Log then return end

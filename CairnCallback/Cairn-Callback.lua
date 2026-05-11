@@ -4,7 +4,7 @@
 -- LibActionButton, LibSharedMedia, HereBeDragons, AceEvent consumers, etc.)
 -- that does LibStub("CallbackHandler-1.0") gets a working implementation.
 --
---   local CC = LibStub("Cairn-Callback")    -- or LibStub("CallbackHandler-1.0")
+--   local CC = LibStub("Cairn-Callback-1.0")    -- or LibStub("CallbackHandler-1.0")
 --   local cb = CC:New(myLib)
 --
 --   -- Consumer registers callbacks (myLib is the target of :New)
@@ -45,11 +45,14 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Callback"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-Callback-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Callback = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Callback then return end
+
+local CU = LibStub("Cairn-Util-1.0")
+local Pcall, Table_ = CU.Pcall, CU.Table  -- aliased to avoid shadowing Lua's table
 
 
 -- Preserved across MINOR upgrades.
@@ -78,6 +81,10 @@ function RegistryMethods:Fire(eventName, ...)
     local handlers = self._events[eventName]
     if not handlers then return end
 
+    -- handlers is keyed by consumer (pairs-iterated), not an array, so we
+    -- can't use Table_.Snapshot directly. Build TWO parallel arrays so the
+    -- subsequent loop only walks frozen indices — registrants are free to
+    -- Register/Unregister themselves or peers mid-fire.
     local consumers, entries = {}, {}
     local n = 0
     for consumer, entry in pairs(handlers) do
@@ -85,27 +92,25 @@ function RegistryMethods:Fire(eventName, ...)
         consumers[n] = consumer
         entries[n] = entry
     end
+    local consumersSnap = Table_.Snapshot(consumers)
+    local entriesSnap   = Table_.Snapshot(entries)
 
-    for i = 1, n do
-        local consumer = consumers[i]
-        local entry    = entries[i]
+    local context = ("Cairn-Callback: %s handler"):format(eventName)
+
+    for i = 1, #consumersSnap do
+        local consumer = consumersSnap[i]
+        local entry    = entriesSnap[i]
         local kind     = type(entry)
 
         -- Function form: fn(eventName, ...)
         if kind == "function" then
-            local ok, err = pcall(entry, eventName, ...)
-            if not ok then
-                geterrorhandler()(("Cairn-Callback: %s handler threw: %s"):format(eventName, tostring(err)))
-            end
+            Pcall.Call(context, entry, eventName, ...)
 
         -- Method-string form: consumer:method(eventName, ...)
         elseif kind == "string" then
             local m = consumer[entry]
             if type(m) == "function" then
-                local ok, err = pcall(m, consumer, eventName, ...)
-                if not ok then
-                    geterrorhandler()(("Cairn-Callback: %s handler threw: %s"):format(eventName, tostring(err)))
-                end
+                Pcall.Call(context, m, consumer, eventName, ...)
             end
 
         -- With-arg form: arg goes BEFORE eventName in the dispatch.
@@ -114,17 +119,11 @@ function RegistryMethods:Fire(eventName, ...)
             local fn  = entry[1]
             local arg = entry[2]
             if type(fn) == "function" then
-                local ok, err = pcall(fn, arg, eventName, ...)
-                if not ok then
-                    geterrorhandler()(("Cairn-Callback: %s handler threw: %s"):format(eventName, tostring(err)))
-                end
+                Pcall.Call(context, fn, arg, eventName, ...)
             else
                 local m = consumer[fn]
                 if type(m) == "function" then
-                    local ok, err = pcall(m, consumer, arg, eventName, ...)
-                    if not ok then
-                        geterrorhandler()(("Cairn-Callback: %s handler threw: %s"):format(eventName, tostring(err)))
-                    end
+                    Pcall.Call(context, m, consumer, arg, eventName, ...)
                 end
             end
         end
@@ -187,10 +186,7 @@ local function makeRegistry(target, regName, unregName, unregAllName, onUsed, on
         end
 
         if wasEmpty and onUsed then
-            local ok, err = pcall(onUsed, target, eventName)
-            if not ok then
-                geterrorhandler()(("Cairn-Callback: OnUsed threw: %s"):format(tostring(err)))
-            end
+            Pcall.Call("Cairn-Callback: OnUsed", onUsed, target, eventName)
         end
     end
 
@@ -209,10 +205,7 @@ local function makeRegistry(target, regName, unregName, unregAllName, onUsed, on
         if next(handlers) == nil then
             registry._events[eventName] = nil
             if onUnused then
-                local ok, err = pcall(onUnused, target, eventName)
-                if not ok then
-                    geterrorhandler()(("Cairn-Callback: OnUnused threw: %s"):format(tostring(err)))
-                end
+                Pcall.Call("Cairn-Callback: OnUnused", onUnused, target, eventName)
             end
         end
     end
@@ -228,10 +221,7 @@ local function makeRegistry(target, regName, unregName, unregAllName, onUsed, on
                 if next(handlers) == nil then
                     registry._events[eventName] = nil
                     if onUnused then
-                        local ok, err = pcall(onUnused, target, eventName)
-                        if not ok then
-                            geterrorhandler()(("Cairn-Callback: OnUnused threw: %s"):format(tostring(err)))
-                        end
+                        Pcall.Call("Cairn-Callback: OnUnused", onUnused, target, eventName)
                     end
                 end
             end

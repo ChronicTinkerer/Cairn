@@ -3,7 +3,7 @@
 -- dev tools (Forge_Inspector, Forge_BugCatcher) and addons that need to
 -- observe or transform calls into other addons' APIs.
 --
---   local CH = LibStub("Cairn-Hooks")
+--   local CH = LibStub("Cairn-Hooks-1.0")
 --
 --   -- Post: my fn runs AFTER the original; original's return values pass through.
 --   local h = CH:Post(MyAddon, "ProcessQueue", function(self, item)
@@ -50,11 +50,14 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Hooks"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-Hooks-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Hooks = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Hooks then return end
+
+local CU = LibStub("Cairn-Util-1.0")
+local Pcall = CU.Pcall
 
 
 -- Preserve state across MINOR upgrades.
@@ -66,12 +69,12 @@ Cairn_Hooks._chains   = Cairn_Hooks._chains   or {}
 -- ---------------------------------------------------------------------------
 -- Internal: error-isolated invocation
 -- ---------------------------------------------------------------------------
+-- Thin wrapper over Cairn-Util.Pcall.Call so call sites read as
+-- safeCall("Pre hook", fn, ...) — the lib-prefix and " threw: " suffix
+-- come from Pcall.Call's context formatting.
 
 local function safeCall(label, fn, ...)
-    local ok, err = pcall(fn, ...)
-    if not ok then
-        geterrorhandler()(("Cairn-Hooks: %s threw: %s"):format(label, tostring(err)))
-    end
+    return Pcall.Call(("Cairn-Hooks: %s"):format(label), fn, ...)
 end
 
 

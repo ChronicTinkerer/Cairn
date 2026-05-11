@@ -3,7 +3,7 @@
 --
 -- The simple case is one line:
 --
---   local db = LibStub("Cairn-DB"):New("MyAddonDB", {
+--   local db = LibStub("Cairn-DB-1.0"):New("MyAddonDB", {
 --       global  = { sharedKey = 1 },
 --       profile = { perProfileKey = "hello" },
 --   })
@@ -16,7 +16,7 @@
 -- library, but the lib will still work in-session if it's missing.
 --
 -- Public API:
---   local Cairn_DB = LibStub("Cairn-DB")
+--   local Cairn_DB = LibStub("Cairn-DB-1.0")
 --   local db = Cairn_DB:New(savedVarName, defaults)   -- create instance
 --   db.global       -- shared table (data shared across every character)
 --   db.profile      -- per-profile table (defaults to profile "Default")
@@ -42,11 +42,14 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-DB"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-DB-1.0"
+local LIB_MINOR = 14
 
 local Cairn_DB = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_DB then return end
+
+local CU = LibStub("Cairn-Util-1.0")
+local Table_ = CU.Table  -- aliased to avoid shadowing Lua's table
 
 
 -- Internal state. Preserved across MINOR upgrades (LibStub returns same
@@ -63,27 +66,9 @@ local DEFAULT_PROFILE = "Default"
 local ALLOWED_DEFAULT_KEYS = { global = true, profile = true }
 
 
--- ---------------------------------------------------------------------------
--- Non-destructive default merge
--- ---------------------------------------------------------------------------
-
--- Existing saved values always win over defaults. Tables recurse so we
--- don't blow away a nested user setting just because a sibling sub-key got
--- a new default. Called at New() time and again on SetProfile so newly-
--- created profiles inherit the full defaults shape — including any keys
--- added to defaults across versions.
-local function mergeDefaults(target, defaults)
-    for k, v in pairs(defaults) do
-        if type(v) == "table" then
-            if type(target[k]) ~= "table" then
-                target[k] = {}
-            end
-            mergeDefaults(target[k], v)
-        elseif target[k] == nil then
-            target[k] = v
-        end
-    end
-end
+-- Non-destructive default merge lives in Cairn-Util.Table.MergeDefaults —
+-- called at New() time and again on SetProfile so newly-created profiles
+-- inherit the full defaults shape, including keys added in later versions.
 
 
 -- ---------------------------------------------------------------------------
@@ -110,7 +95,7 @@ function DBMethods:SetProfile(name)
 
     local defs = rawget(self, "_defaults")
     if defs and defs.profile then
-        mergeDefaults(sv.profiles[name], defs.profile)
+        Table_.MergeDefaults(sv.profiles[name], defs.profile)
     end
 
     sv.currentProfile = name
@@ -167,8 +152,8 @@ function Cairn_DB:New(name, defaults)
     sv.profiles[sv.currentProfile] = sv.profiles[sv.currentProfile] or {}
 
     if defaults then
-        if defaults.global  then mergeDefaults(sv.global,  defaults.global)  end
-        if defaults.profile then mergeDefaults(sv.profiles[sv.currentProfile], defaults.profile) end
+        if defaults.global  then Table_.MergeDefaults(sv.global,  defaults.global)  end
+        if defaults.profile then Table_.MergeDefaults(sv.profiles[sv.currentProfile], defaults.profile) end
     end
 
     -- Build the instance.

@@ -3,7 +3,7 @@
 -- auto-help.
 --
 -- Leaf commands:
---   local slash = LibStub("Cairn-Slash"):Register("Forge", "/forge", {
+--   local slash = LibStub("Cairn-Slash-1.0"):Register("Forge", "/forge", {
 --       aliases = { "/fg" },
 --   })
 --   slash:Sub("logs", openLogs, "open Forge_Logs")
@@ -24,7 +24,7 @@
 --   -- /forge db zzz      -> showDb("zzz")
 --
 -- Public API:
---   local CS = LibStub("Cairn-Slash")
+--   local CS = LibStub("Cairn-Slash-1.0")
 --   CS:Register(name, slash, opts)  -> root instance
 --   CS:Get(name)                    -- registered lookup
 --   CS.registry                     -- { [name] = root instance }
@@ -50,11 +50,14 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Slash"
-local LIB_MINOR = 2
+local LIB_MAJOR = "Cairn-Slash-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Slash = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Slash then return end
+
+local CU = LibStub("Cairn-Util-1.0")
+local Pcall = CU.Pcall
 
 
 Cairn_Slash.registry = Cairn_Slash.registry or {}
@@ -218,11 +221,8 @@ local function dispatch(node, msg)
     end
 
     if node._handler then
-        local ok, err = pcall(node._handler, msg)
-        if not ok then
-            geterrorhandler()(("Cairn-Slash: %s handler threw: %s"):format(
-                node._fullSlash, tostring(err)))
-        end
+        Pcall.Call(("Cairn-Slash: %s handler"):format(node._fullSlash),
+            node._handler, msg)
         return
     end
 

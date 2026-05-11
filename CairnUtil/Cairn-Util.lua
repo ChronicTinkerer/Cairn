@@ -6,7 +6,7 @@
 --
 -- Consumer view:
 --
---   local CU = LibStub("Cairn-Util")
+--   local CU = LibStub("Cairn-Util-1.0")
 --   CU.Hash.MD5("hello")              -- defined in Cairn-Util-Hash.lua
 --   CU.Math.Clamp(x, 0, 1)            -- defined in Cairn-Util-Math.lua (future)
 --   CU.String.IsBlank(s)              -- defined in Cairn-Util-String.lua (future)
@@ -14,7 +14,7 @@
 -- File layout for adding a new category:
 --
 --   1. Create Cairn-Util-<Category>.lua in this folder.
---   2. In the file: grab the lib via LibStub("Cairn-Util"), attach a
+--   2. In the file: grab the lib via LibStub("Cairn-Util-1.0"), attach a
 --      sub-table (`CU.<Category> = CU.<Category> or {}`), define functions
 --      under it.
 --   3. Add the new file to the .toc AFTER Cairn-Util.lua (so the lib is
@@ -28,8 +28,8 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Util"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-Util-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Util = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Util then return end

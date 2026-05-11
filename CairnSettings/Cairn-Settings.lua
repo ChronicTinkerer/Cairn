@@ -3,11 +3,11 @@
 -- (the Dragonflight-era Settings API, refined through Midnight). Backed by
 -- a Cairn-DB instance the consumer provides.
 --
---   local db = LibStub("Cairn-DB"):New("MyAddonDB", {
+--   local db = LibStub("Cairn-DB-1.0"):New("MyAddonDB", {
 --       profile = { scale = 1.0, enabled = true, theme = "dark" },
 --   })
 --
---   local settings = LibStub("Cairn-Settings"):New("MyAddon", db, {
+--   local settings = LibStub("Cairn-Settings-1.0"):New("MyAddon", db, {
 --       { key = "display",  type = "header", label = "Display" },
 --       { key = "scale",    type = "range",  label = "Scale",
 --         min = 0.5, max = 2.0, step = 0.1, default = 1.0,
@@ -58,7 +58,7 @@
 -- panel.
 --
 -- Public API:
---   local CS = LibStub("Cairn-Settings")
+--   local CS = LibStub("Cairn-Settings-1.0")
 --   local s  = CS:New(addonName, db, schema)  -> settings instance
 --   CS.instances                                  -- {[instance] = addonName} weak
 --
@@ -72,8 +72,8 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Settings"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-Settings-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Settings = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Settings then return end
@@ -91,7 +91,7 @@ Cairn_Settings.instances = Cairn_Settings.instances or setmetatable({}, { __mode
 -- quiet (or fall back to print for the stub-mode banner).
 local function getLogger()
     if Cairn_Settings._log then return Cairn_Settings._log end
-    local Log = LibStub and LibStub("Cairn-Log", true)
+    local Log = LibStub and LibStub("Cairn-Log-1.0", true)
     if Log then
         Cairn_Settings._log = Log:New("Cairn.Settings")
     end
@@ -467,7 +467,7 @@ function Cairn_Settings:New(addonName, db, schema)
 end
 
 
--- Convenience: `LibStub("Cairn-Settings")(name, db, schema)` works without
+-- Convenience: `LibStub("Cairn-Settings-1.0")(name, db, schema)` works without
 -- the explicit :New, matching the lib's v1 ergonomics. Doesn't change the
 -- behavior — just the call-site shape preference.
 setmetatable(Cairn_Settings, { __call = function(self, name, db, schema)

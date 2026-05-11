@@ -3,7 +3,7 @@
 -- locales stay in memory simultaneously — switching languages at runtime is
 -- a single lookup change, not a reload.
 --
---   local L = LibStub("Cairn-Locale"):New("MyAddon")
+--   local L = LibStub("Cairn-Locale-1.0"):New("MyAddon")
 --   L:Set("enUS", { greeting = "Hello", farewell = "Goodbye" })
 --   L:Set("deDE", { greeting = "Hallo" })
 --
@@ -27,11 +27,11 @@
 --       ...                  (any order; :New is idempotent)
 --
 --   MyAddon/Locales/enUS.lua:
---     local L = LibStub("Cairn-Locale"):New("MyAddon")
+--     local L = LibStub("Cairn-Locale-1.0"):New("MyAddon")
 --     L:Set("enUS", { greeting = "Hello", ... })
 --
 --   MyAddon/Locales/deDE.lua:
---     local L = LibStub("Cairn-Locale"):New("MyAddon")
+--     local L = LibStub("Cairn-Locale-1.0"):New("MyAddon")
 --     L:Set("deDE", { greeting = "Hallo", ... })
 --
 -- Each translator owns one file. The first file loaded creates the instance;
@@ -42,7 +42,7 @@
 --   fires `Cairn-Locale:Changed` via Cairn-Events with (newLocale, oldLocale).
 --   UIs displaying localized text can subscribe and refresh:
 --
---     LibStub("Cairn-Events"):Subscribe("Cairn-Locale:Changed", function(newLocale)
+--     LibStub("Cairn-Events-1.0"):Subscribe("Cairn-Locale:Changed", function(newLocale)
 --         MyUI:Refresh()
 --     end)
 --
@@ -52,7 +52,7 @@
 --   silently skipped (the locale change still happens).
 --
 -- Public API:
---   local CL = LibStub("Cairn-Locale")
+--   local CL = LibStub("Cairn-Locale-1.0")
 --   CL:New(name)         -> instance       -- idempotent on `name`
 --   CL:Get(name)                            -- registry lookup
 --   CL.registry                             -- { [name] = instance }
@@ -70,8 +70,8 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Locale"
-local LIB_MINOR = 2
+local LIB_MAJOR = "Cairn-Locale-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Locale = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Locale then return end
@@ -104,7 +104,7 @@ function Cairn_Locale:SetOverride(locale)
     local after = self:GetLocale()
 
     if before ~= after then
-        local CE = LibStub and LibStub("Cairn-Events", true)
+        local CE = LibStub and LibStub("Cairn-Events-1.0", true)
         if CE then
             CE:Fire("Cairn-Locale:Changed", after, before)
         end

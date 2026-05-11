@@ -10,7 +10,7 @@
 -- which silently broke every consumer that did setup work there.
 --
 -- Public API:
---   local Cairn_Addon = LibStub("Cairn-Addon")
+--   local Cairn_Addon = LibStub("Cairn-Addon-1.0")
 --   local addon = Cairn_Addon:New("MyAddon")
 --   function addon:OnInit()    end   -- runs on or after ADDON_LOADED for "MyAddon"
 --   function addon:OnLogin()   end   -- runs on or after PLAYER_LOGIN
@@ -29,11 +29,14 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Addon"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-Addon-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Addon = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Addon then return end  -- already loaded at this MINOR or newer
+
+local CU = LibStub("Cairn-Util-1.0")
+local Pcall = CU.Pcall
 
 
 -- Internal state. Preserved across MINOR upgrades because LibStub returns
@@ -52,17 +55,14 @@ local IsLoaded =
 -- Dispatch primitives
 -- ---------------------------------------------------------------------------
 
--- One bad consumer handler must not break dispatch for the rest. pcall the
--- call and route any throw through geterrorhandler so BugGrabber and friends
--- still surface it.
+-- One bad consumer handler must not break dispatch for the rest. Error
+-- isolation routes through Cairn-Util.Pcall.Call (which formats the
+-- context with " threw: <err>" and reports via geterrorhandler).
 local function safeCall(addon, key)
     local handler = rawget(addon, key)
     if type(handler) ~= "function" then return end
-    local ok, err = pcall(handler, addon)
-    if not ok then
-        geterrorhandler()(("Cairn-Addon: %s:%s threw: %s"):format(
-            rawget(addon, "_name") or "<unknown>", key, tostring(err)))
-    end
+    Pcall.Call(("Cairn-Addon: %s:%s"):format(
+        rawget(addon, "_name") or "<unknown>", key), handler, addon)
 end
 
 

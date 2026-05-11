@@ -3,7 +3,7 @@
 -- stopwatch. All built on C_Timer (and GetTime for the stopwatch). Timer
 -- handles support ownership tracking so consumers can batch-cancel.
 --
---   local CT = LibStub("Cairn-Timer")
+--   local CT = LibStub("Cairn-Timer-1.0")
 --
 --   CT:After(5, Cleanup)                          -- one-shot
 --   CT:Every(1, Update, { owner = MyAddon })      -- repeats forever
@@ -58,11 +58,14 @@
 --
 -- License: MIT. Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Timer"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-Timer-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Timer = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Timer then return end
+
+local CU = LibStub("Cairn-Util-1.0")
+local Pcall, Table_ = CU.Pcall, CU.Table  -- aliased to avoid shadowing Lua's table
 
 
 Cairn_Timer.timers     = Cairn_Timer.timers     or {}
@@ -150,11 +153,11 @@ local HandleMeta = { __index = HandleMethods }
 -- Internal: tick scheduling
 -- ---------------------------------------------------------------------------
 
+-- Thin wrapper over Cairn-Util.Pcall.Call. The fixed context string keeps
+-- the byte-for-byte error text consumers see ("Cairn-Timer: callback threw:
+-- ...") identical to the pre-refactor form.
 local function safeCall(handle)
-    local ok, err = pcall(handle.fn)
-    if not ok then
-        geterrorhandler()(("Cairn-Timer: callback threw: %s"):format(tostring(err)))
-    end
+    Pcall.Call("Cairn-Timer: callback", handle.fn)
 end
 
 
@@ -306,8 +309,7 @@ function Cairn_Timer:CancelOwner(owner)
     end
     local bucket = self.byOwner[owner]
     if not bucket then return end
-    local copy = {}
-    for i = 1, #bucket do copy[i] = bucket[i] end
+    local copy = Table_.Snapshot(bucket)
     for _, h in ipairs(copy) do h:Cancel() end
 end
 

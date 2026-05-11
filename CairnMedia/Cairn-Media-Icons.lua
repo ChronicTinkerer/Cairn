@@ -5,7 +5,7 @@
 --
 -- Render example:
 --
---   local Media = LibStub("Cairn-Media")
+--   local Media = LibStub("Cairn-Media-1.0")
 --   fs:SetFont(Media:GetFont("MaterialOutlined"), 16, "")
 --   fs:SetText(Media:GetIconGlyph("close"))
 --   fs:SetTextColor(1, 1, 1)
@@ -30,7 +30,7 @@
 -- copyrightable.
 -- Author: ChronicTinkerer.
 
-local Cairn_Media = LibStub and LibStub("Cairn-Media", true)
+local Cairn_Media = LibStub and LibStub("Cairn-Media-1.0", true)
 if not Cairn_Media then
     -- Cairn-Media's main file must load first. Loud failure beats silent
     -- no-op for a misordered .toc.

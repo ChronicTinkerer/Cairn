@@ -7,7 +7,7 @@
 --
 -- Consumer view:
 --
---   local Media = LibStub("Cairn-Media")
+--   local Media = LibStub("Cairn-Media-1.0")
 --
 --   -- Path lookup (checks public then private; nil if neither has it)
 --   Media:GetFont("Default")           -- "Fonts\\FRIZQT__.TTF"
@@ -46,8 +46,8 @@
 -- it only references their canonical paths under friendly names.
 -- Author: ChronicTinkerer.
 
-local LIB_MAJOR = "Cairn-Media"
-local LIB_MINOR = 1
+local LIB_MAJOR = "Cairn-Media-1.0"
+local LIB_MINOR = 14
 
 local Cairn_Media = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Media then return end

@@ -4,7 +4,7 @@
 --
 -- Consumer view:
 --
---   local CU = LibStub("Cairn-Util")
+--   local CU = LibStub("Cairn-Util-1.0")
 --   local hex = CU.Hash.MD5("hello")        --> 32-char lowercase hex
 --   local raw = CU.Hash.MD5Raw("hello")     --> 16 raw bytes
 --
@@ -16,7 +16,7 @@
 -- its original MIT notice intact.
 -- Author: ChronicTinkerer.
 
-local Cairn_Util = LibStub and LibStub("Cairn-Util", true)
+local Cairn_Util = LibStub and LibStub("Cairn-Util-1.0", true)
 if not Cairn_Util then
     -- Cairn-Util's main file must load first. If we got here without it,
     -- the .toc is misordered — fail loud rather than silently no-op.

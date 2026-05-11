@@ -14,27 +14,27 @@ That's the one-sentence test for every design decision in Cairn. The principle a
 
 | Lib | Purpose | LibStub MAJOR |
 | --- | --- | --- |
-| `Cairn-Addon` | Addon lifecycle (OnInit / OnLogin / OnDisable) with retro-fire | `Cairn-Addon` |
-| `Cairn-DB` | SavedVariables wrapper with default merging and named profiles | `Cairn-DB` |
-| `Cairn-Slash` | Slash command registry with nested subcommand routing | `Cairn-Slash` |
-| `Cairn-Events` | WoW event router + internal addon-to-addon event channel | `Cairn-Events` |
-| `Cairn-Locale` | i18n table with locale fallback + runtime change notifications | `Cairn-Locale` |
-| `Cairn-Log` | Categorized ring-buffer log shared across consumers | `Cairn-Log` |
-| `Cairn-Hooks` | Pre/Post/Wrap hook helpers with batch-cancel | `Cairn-Hooks` |
-| `Cairn-Timer` | After / Every / Debounce / Stopwatch with ownership tracking | `Cairn-Timer` |
-| `Cairn-Settings` | Declarative settings schema → Blizzard's native Settings panel | `Cairn-Settings` |
-| `Cairn-Callback` | CallbackHandler-1.0 compatibility shim | `Cairn-Callback` |
-| `Cairn-Util` | Small utilities organized into sub-namespaces (Hash, …) | `Cairn-Util` |
-| `Cairn-Media` | Two-mode asset registry (private + public via LSM) + icon glyphs | `Cairn-Media` |
+| `Cairn-Addon` | Addon lifecycle (OnInit / OnLogin / OnDisable) with retro-fire | `Cairn-Addon-1.0` |
+| `Cairn-DB` | SavedVariables wrapper with default merging and named profiles | `Cairn-DB-1.0` |
+| `Cairn-Slash` | Slash command registry with nested subcommand routing | `Cairn-Slash-1.0` |
+| `Cairn-Events` | WoW event router + internal addon-to-addon event channel | `Cairn-Events-1.0` |
+| `Cairn-Locale` | i18n table with locale fallback + runtime change notifications | `Cairn-Locale-1.0` |
+| `Cairn-Log` | Categorized ring-buffer log shared across consumers | `Cairn-Log-1.0` |
+| `Cairn-Hooks` | Pre/Post/Wrap hook helpers with batch-cancel | `Cairn-Hooks-1.0` |
+| `Cairn-Timer` | After / Every / Debounce / Stopwatch with ownership tracking | `Cairn-Timer-1.0` |
+| `Cairn-Settings` | Declarative settings schema → Blizzard's native Settings panel | `Cairn-Settings-1.0` |
+| `Cairn-Callback` | CallbackHandler-1.0 compatibility shim | `Cairn-Callback-1.0` |
+| `Cairn-Util` | Small utilities organized into sub-namespaces (Hash, …) | `Cairn-Util-1.0` |
+| `Cairn-Media` | Two-mode asset registry (private + public via LSM) + icon glyphs | `Cairn-Media-1.0` |
 | `Cairn-Gui-2.0` | Widget framework — Container / Button / Label / Window / Checkbox / ScrollFrame / EditBox / Slider / Dropdown / TabGroup, plus Secure variants | `Cairn-Gui-2.0` |
 
 ## Quick start
 
 ```lua
-local CA = LibStub("Cairn-Addon")
-local CDB = LibStub("Cairn-DB")
-local CS = LibStub("Cairn-Settings")
-local CSlash = LibStub("Cairn-Slash")
+local CA = LibStub("Cairn-Addon-1.0")
+local CDB = LibStub("Cairn-DB-1.0")
+local CS = LibStub("Cairn-Settings-1.0")
+local CSlash = LibStub("Cairn-Slash-1.0")
 
 local addon = CA:New("MyAddon")
 
@@ -59,7 +59,7 @@ function addon:OnLogin() print("MyAddon ready") end
 
 ## Naming
 
-LibStub MAJORs have no version suffix. Use `LibStub("Cairn-Addon")`, not `LibStub("Cairn-Addon-1.0")`. The Cairn-Gui-2.0 family is the one exception — those MAJORs keep their `-2.0` suffix since they were not rewritten.
+LibStub MAJORs carry a version suffix. Use `LibStub("Cairn-Addon-1.0")`, `LibStub("Cairn-DB-1.0")`, etc. The Cairn-Gui family is at MAJOR 2.0 — those MAJORs keep their `-2.0` suffix (`Cairn-Gui-2.0`, `Cairn-Gui-Widgets-Standard-2.0`, etc.) since the v2 family was ported rather than rewritten.
 
 ## License
 

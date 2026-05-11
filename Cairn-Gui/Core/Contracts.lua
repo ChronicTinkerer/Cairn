@@ -135,7 +135,7 @@ local function logWarn(kind, name, msg)
 	-- Try Cairn-Log first; fall back to chat print.
 	local Log = LibStub("Cairn-Log-1.0", true)
 	if Log then
-		local logger = Log("Cairn.Gui.Contracts")
+		local logger = Log:New("Cairn.Gui.Contracts")
 		if logger and logger.Warn then
 			logger:Warn("%s %q: %s", kind, tostring(name), tostring(msg))
 			return

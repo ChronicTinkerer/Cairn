@@ -63,18 +63,53 @@ if not Base then
 	error("Cairn-Gui-2.0/Core/Events requires Mixins/Base to load first; check Cairn.toc order")
 end
 
-local Callback = LibStub("Cairn-Callback-1.0", true)
-if not Callback then
-	error("Cairn-Gui-2.0/Core/Events requires Cairn-Callback-1.0; check Cairn.toc load order")
-end
+-- ----- Per-widget pub/sub registry -------------------------------------
+-- Inlined intentionally. Cairn-Callback-1.0 is the CallbackHandler-1.0
+-- upstream-compat shim — it installs Register/Unregister methods on a
+-- TARGET object, which is the wrong shape for a private per-widget event
+-- registry (we'd be exposing those methods on every widget). Keep the
+-- callback lib lean as a pure upstream shim; build the small map we need
+-- right here. About 25 lines and zero external coupling.
+--
+-- Shape:
+--   reg.events[event][key] = wrapperFn   -- key is the user's original
+--                                           handler so :Off(event, fn) works
+--   reg:Subscribe(event, key, fn)
+--   reg:Unsubscribe(event, key)
+--   reg:UnsubscribeAll(key)
+--   reg:Fire(event, ...)                 -- snapshots subs so handlers
+--                                           may self-unsubscribe mid-fire
 
--- ----- Per-widget registry plumbing ------------------------------------
+local function newWidgetRegistry()
+	local reg = { events = {} }
+	function reg:Subscribe(event, key, fn)
+		local subs = self.events[event]
+		if not subs then subs = {}; self.events[event] = subs end
+		subs[key] = fn
+	end
+	function reg:Unsubscribe(event, key)
+		local subs = self.events[event]
+		if subs then subs[key] = nil end
+	end
+	function reg:UnsubscribeAll(key)
+		for _, subs in pairs(self.events) do subs[key] = nil end
+	end
+	function reg:Fire(event, ...)
+		local subs = self.events[event]
+		if not subs then return end
+		-- Snapshot so an in-flight handler can :Off itself or a peer.
+		local snap = {}
+		for _, fn in pairs(subs) do snap[#snap + 1] = fn end
+		for i = 1, #snap do snap[i](event, ...) end
+	end
+	return reg
+end
 
 -- Lazily create the callback registry the first time a widget needs one.
 -- Most widgets will never wire any events, so the registry stays nil.
 local function ensureRegistry(self)
 	if not self._cb then
-		self._cb       = Callback.New(("Cairn-Gui-2.0:%s"):format(tostring(self._type or "?")))
+		self._cb       = newWidgetRegistry()
 		self._tags     = {}  -- [event] = { [handler] = tag }
 	end
 	return self._cb

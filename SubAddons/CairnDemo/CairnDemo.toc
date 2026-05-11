@@ -1,0 +1,11 @@
+## Interface: 120005,120007
+## Title: Cairn Demo
+## Notes: Exercises every Cairn v1.0 library end-to-end. Type /cairndemo to run.
+## Author: ChronicTinkerer
+## Version: 1
+## SavedVariables: CairnDemoDB
+## Dependencies: Cairn
+## LoadOnDemand: 0
+## X-License: MIT
+
+CairnDemo.lua

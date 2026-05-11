@@ -259,7 +259,7 @@ local Locale   = LibStub("Cairn-Locale-1.0",   true)
 local Callback = LibStub("Cairn-Callback-1.0", true)
 
 local function logger()
-	if not lib._log and Log then lib._log = Log("Cairn.Gui-2") end
+	if not lib._log and Log then lib._log = Log:New("Cairn.Gui-2") end
 	return lib._log
 end
 

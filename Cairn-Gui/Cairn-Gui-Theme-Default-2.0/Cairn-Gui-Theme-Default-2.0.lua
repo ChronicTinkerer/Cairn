@@ -66,15 +66,15 @@ end
 
 -- Soft-dep on Cairn-Media-1.0 for font / heading / numeric paths. When
 -- the lib is loaded (the default standalone configuration), font tokens
--- below resolve to the Cairn-Media curated set ("Cairn.Media:GetFontPath").
+-- below resolve to the Cairn-Media curated set via `:GetFont(name)`.
 -- When it isn't loaded (embedded consumers who omitted CairnMedia/), the
 -- fallback paths use Blizzard's STANDARD_TEXT_FONT and the canonical
 -- numeric / morpheus paths so the theme still works end-to-end.
 local Media = LibStub("Cairn-Media-1.0", true)
 
-local FONT_BODY     = (Media and Media:GetFontPath("Default")) or STANDARD_TEXT_FONT
-local FONT_HEADING  = (Media and Media:GetFontPath("Heading")) or [[Fonts\MORPHEUS.TTF]]
-local FONT_NUMERIC  = (Media and Media:GetFontPath("Numeric")) or [[Fonts\ARIALN.TTF]]
+local FONT_BODY     = (Media and Media:GetFont("Default")) or STANDARD_TEXT_FONT
+local FONT_HEADING  = (Media and Media:GetFont("Heading")) or [[Fonts\MORPHEUS.TTF]]
+local FONT_NUMERIC  = (Media and Media:GetFont("Numeric")) or [[Fonts\ARIALN.TTF]]
 -- (font.small reuses FONT_BODY; the body face is the right pick for
 --  small-but-still-readable UI text.)
 

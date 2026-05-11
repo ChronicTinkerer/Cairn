@@ -24,25 +24,22 @@ That's the one-sentence test for every design decision in Cairn. The principle a
 | `Cairn-Timer` | After / Every / Debounce / Stopwatch with ownership tracking | `Cairn-Timer-1.0` |
 | `Cairn-Settings` | Declarative settings schema → Blizzard's native Settings panel | `Cairn-Settings-1.0` |
 | `Cairn-Callback` | CallbackHandler-1.0 compatibility shim | `Cairn-Callback-1.0` |
-| `Cairn-Util` | Small utilities organized into sub-namespaces (Hash, …) | `Cairn-Util-1.0` |
+| `Cairn-Util` | Small utilities organized into sub-namespaces: Hash (MD5), Pcall (shared error-routed pcall), Table (Snapshot, MergeDefaults) | `Cairn-Util-1.0` |
 | `Cairn-Media` | Two-mode asset registry (private + public via LSM) + icon glyphs | `Cairn-Media-1.0` |
 | `Cairn-Gui-2.0` | Widget framework — Container / Button / Label / Window / Checkbox / ScrollFrame / EditBox / Slider / Dropdown / TabGroup, plus Secure variants | `Cairn-Gui-2.0` |
 
 ## Quick start
 
+The preferred consumer surface is the `_G.Cairn` umbrella, which resolves `Cairn.<Name>` lazily to `LibStub("Cairn-<Name>-1.0")`:
+
 ```lua
-local CA = LibStub("Cairn-Addon-1.0")
-local CDB = LibStub("Cairn-DB-1.0")
-local CS = LibStub("Cairn-Settings-1.0")
-local CSlash = LibStub("Cairn-Slash-1.0")
+local addon = Cairn.Addon:New("MyAddon")
 
-local addon = CA:New("MyAddon")
-
-local db = CDB:New("MyAddonDB", {
+local db = Cairn.DB:New("MyAddonDB", {
     profile = { scale = 1.0, theme = "dark" },
 })
 
-local settings = CS:New("MyAddon", db, {
+local settings = Cairn.Settings:New("MyAddon", db, {
     { key = "scale", type = "range",    label = "Scale",
       min = 0.5, max = 2.0, step = 0.1, default = 1.0 },
     { key = "theme", type = "dropdown", label = "Theme",
@@ -50,16 +47,29 @@ local settings = CS:New("MyAddon", db, {
       choices = { dark = "Dark", light = "Light" } },
 })
 
-local slash = CSlash:Register("MyAddon", "/myaddon", { aliases = { "/ma" } })
+local slash = Cairn.Slash:Register("MyAddon", "/myaddon", { aliases = { "/ma" } })
 slash:Sub("config", function() settings:Open() end, "open settings")
 
 function addon:OnInit() print("MyAddon loaded") end
 function addon:OnLogin() print("MyAddon ready") end
 ```
 
+The direct `LibStub("Cairn-Addon-1.0"):New(...)` form works equivalently — the umbrella is just terser, and a missing lib gives a clear `attempt to index 'Cairn' (a nil value)` error.
+
+GUI access does NOT go through the umbrella — those libs are at MAJOR 2.0, not 1.0. Use `LibStub("Cairn-Gui-2.0")` directly.
+
+## Try it / smoke test
+
+A working consumer of every lib ships at `Cairn\SubAddons\CairnDemo\`. Enable it like any addon, then:
+
+- `/cairndemo run` — runs a 20-line PASS/FAIL smoke covering every lib through the umbrella; useful for confirming a working install.
+- `/cairndemo gui` — pops a visible window with a clicky button, confirming Cairn-Gui-2.0 + Theme-Default loaded correctly.
+
+CairnDemo also doubles as a reference implementation for new consumers.
+
 ## Naming
 
-LibStub MAJORs carry a version suffix. Use `LibStub("Cairn-Addon-1.0")`, `LibStub("Cairn-DB-1.0")`, etc. The Cairn-Gui family is at MAJOR 2.0 — those MAJORs keep their `-2.0` suffix (`Cairn-Gui-2.0`, `Cairn-Gui-Widgets-Standard-2.0`, etc.) since the v2 family was ported rather than rewritten.
+LibStub MAJORs carry a version suffix. Use `LibStub("Cairn-Addon-1.0")`, `LibStub("Cairn-DB-1.0")`, etc. The Cairn-Gui family is at MAJOR 2.0 — those MAJORs keep their `-2.0` suffix (`Cairn-Gui-2.0`, `Cairn-Gui-Widgets-Standard-2.0`, etc.) since the v2 family was ported rather than rewritten. `Cairn-Callback-1.0` also registers itself under the upstream-compatible `CallbackHandler-1.0` slot.
 
 ## License
 

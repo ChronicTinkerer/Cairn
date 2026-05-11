@@ -1,0 +1,74 @@
+## Interface: 50503
+## Title: Cairn
+## Notes: A modern alternative to Ace3 for WoW addon authors. Composable libraries with a flagship Settings library that bridges to Blizzard's native Settings panel.
+## Author: ChronicTinkerer
+## Version: 1
+## SavedVariables: CairnDB
+## LoadOnDemand: 0
+## X-Curse-Project-ID: 1532175
+## X-License: MIT
+# NOTE: X-Wago-ID and X-WoWI-ID intentionally omitted on this MoP Classic
+#       ship. The CF project (1532175) handles all flavors; Wago / WoWI per-
+#       flavor projects need to be created separately if/when desired.
+
+embeds\LibStub\LibStub.lua
+CairnAddon\Cairn-Addon.lua
+CairnDB\Cairn-DB.lua
+CairnEvents\Cairn-Events.lua
+CairnSlash\Cairn-Slash.lua
+CairnLocale\Cairn-Locale.lua
+CairnLog\Cairn-Log.lua
+CairnHooks\Cairn-Hooks.lua
+CairnTimer\Cairn-Timer.lua
+CairnCallback\Cairn-Callback.lua
+CairnUtil\Cairn-Util.lua
+CairnUtil\AF_MD5.lua
+CairnUtil\Cairn-Util-Hash.lua
+Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+CairnMedia\Cairn-Media.lua
+CairnMedia\Cairn-Media-Icons.lua
+CairnSettings\Cairn-Settings.lua
+
+# ----- Cairn-Gui-2.0 family + consumers (verbatim port from original Cairn d89e0ad)
+Cairn-Gui-2.0\Cairn-Gui-2.0.lua
+Cairn-Gui-2.0\Mixins\Base.lua
+Cairn-Gui-2.0\Core\Acquire.lua
+Cairn-Gui-2.0\Core\Theme.lua
+Cairn-Gui-2.0\Core\Events.lua
+Cairn-Gui-2.0\Core\Primitives.lua
+Cairn-Gui-2.0\Core\Animation.lua
+Cairn-Gui-2.0\Core\Layout.lua
+Cairn-Gui-2.0\Core\Layouts\Manual.lua
+Cairn-Gui-2.0\Core\Layouts\Fill.lua
+Cairn-Gui-2.0\Core\Layouts\Stack.lua
+Cairn-Gui-2.0\Core\Layouts\Grid.lua
+Cairn-Gui-2.0\Core\Layouts\Form.lua
+Cairn-Gui-2.0\Core\Layouts\Flex.lua
+Cairn-Gui-2.0\Core\CombatQueue.lua
+Cairn-Gui-2.0\Core\L10n.lua
+Cairn-Gui-2.0\Core\Contracts.lua
+Cairn-Gui-2.0\Core\EventLog.lua
+Cairn-Gui-2.0\Core\Stats.lua
+Cairn-Gui-2.0\Core\Inspector.lua
+Cairn-Gui-2.0\Core\Dev.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Cairn-Gui-Widgets-Standard-2.0.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Container.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Button.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Label.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Window.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Checkbox.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\ScrollFrame.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\EditBox.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Slider.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\Dropdown.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Standard-2.0\Widgets\TabGroup.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Cairn-Gui-Widgets-Secure-2.0.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\ActionButton.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\MacroButton.lua
+Cairn-Gui-2.0\Cairn-Gui-Widgets-Secure-2.0\Widgets\UnitButton.lua
+Cairn-Gui-2.0\Cairn-Gui-Layouts-Extra-2.0\Cairn-Gui-Layouts-Extra-2.0.lua
+Cairn-Gui-2.0\Cairn-Gui-Layouts-Extra-2.0\Layouts\Hex.lua
+Cairn-Gui-2.0\Cairn-Gui-Layouts-Extra-2.0\Layouts\Polar.lua
+Cairn-Gui-2.0\Cairn-Gui-Theme-Default-2.0\Cairn-Gui-Theme-Default-2.0.lua
+CairnSettingsPanel-2.0\Cairn-SettingsPanel-2.0.lua
+CairnLogWindow-2.0\Cairn-LogWindow-2.0.lua

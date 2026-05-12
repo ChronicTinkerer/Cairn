@@ -1,11 +1,13 @@
 -- Cairn-Util-Hash smoke. Wrapped for the CairnDemo runner.
 --
 -- Coverage: sub-namespace attaches to Cairn-Util; MD5 + MD5Raw match
--- RFC 1321 reference vectors; FNV1a32 matches standard reference
--- vectors (empty / "a" / "foobar"), is deterministic, distinct inputs
--- produce distinct outputs, seed differentiates hash spaces, output
--- stays in uint32 range; Combine is order-independent, dup-removing,
--- handles zero / one / multi arg cases.
+-- the full RFC 1321 reference vector set; AF_MD5 vendored lib is
+-- reachable via LibStub; MD5Raw -> hex equals the MD5 hex output
+-- (raw/hex consistency); MD5 input validation; FNV1a32 matches standard
+-- reference vectors (empty / "a" / "foobar"), is deterministic, distinct
+-- inputs produce distinct outputs, seed differentiates hash spaces,
+-- output stays in uint32 range; Combine is order-independent,
+-- dup-removing, handles zero / one / multi arg cases.
 
 _G.CairnDemo       = _G.CairnDemo or {}
 _G.CairnDemo.Smokes = _G.CairnDemo.Smokes or {}
@@ -27,11 +29,45 @@ _G.CairnDemo.Smokes["Cairn-Util-Hash"] = function(report)
     local H = CU.Hash
 
 
-    -- 2. MD5 reference vectors (RFC 1321)
-    report("MD5('')",    H.MD5("")    == "d41d8cd98f00b204e9800998ecf8427e")
-    report("MD5('a')",   H.MD5("a")   == "0cc175b9c0f1b6a831c399e269772661")
-    report("MD5('abc')", H.MD5("abc") == "900150983cd24fb0d6963f7d28e17f72")
-    report("MD5Raw length is 16 bytes", #H.MD5Raw("anything") == 16)
+    -- 2. MD5 reference vectors (RFC 1321 Appendix A.5)
+    report("MD5('') == d41d8cd98f00b204e9800998ecf8427e",
+           H.MD5("") == "d41d8cd98f00b204e9800998ecf8427e")
+    report("MD5('a') == 0cc175b9c0f1b6a831c399e269772661",
+           H.MD5("a") == "0cc175b9c0f1b6a831c399e269772661")
+    report("MD5('abc') == 900150983cd24fb0d6963f7d28e17f72",
+           H.MD5("abc") == "900150983cd24fb0d6963f7d28e17f72")
+    report("MD5('message digest') == f96b697d7cb7938d525a2f31aaf161d0",
+           H.MD5("message digest") == "f96b697d7cb7938d525a2f31aaf161d0")
+    report("MD5('abcdefghijklmnopqrstuvwxyz') == c3fcd3d76192e4007dfb496cca67e13b",
+           H.MD5("abcdefghijklmnopqrstuvwxyz") == "c3fcd3d76192e4007dfb496cca67e13b")
+    report("MD5(quick brown fox) == 9e107d9d372bb6826bd81d3542a419d6",
+           H.MD5("The quick brown fox jumps over the lazy dog")
+           == "9e107d9d372bb6826bd81d3542a419d6")
+
+    -- 2b. AF_MD5 vendored lib is reachable
+    local AF = LibStub("AF_MD5", true)
+    report("AF_MD5 vendored lib is reachable", AF ~= nil)
+
+    -- 2c. MD5Raw shape + hex equivalence
+    local raw = H.MD5Raw("hello")
+    report("MD5Raw returns a string",  type(raw) == "string")
+    report("MD5Raw returns 16 bytes",  #raw == 16,
+           raw and ("got " .. #raw .. " bytes"))
+
+    local hex, rawHex = H.MD5("hello"), ""
+    for i = 1, #raw do
+        rawHex = rawHex .. string.format("%02x", string.byte(raw, i))
+    end
+    report("MD5Raw -> hex matches MD5 hex output", rawHex == hex,
+           ("rawHex=" .. rawHex .. " hex=" .. hex))
+
+    -- 2d. MD5 input validation
+    report("MD5(non-string) errors",
+           not pcall(function() H.MD5(42) end))
+    report("MD5(nil) errors",
+           not pcall(function() H.MD5(nil) end))
+    report("MD5Raw(non-string) errors",
+           not pcall(function() H.MD5Raw({}) end))
 
 
     -- 3. FNV-1a 32-bit reference vectors

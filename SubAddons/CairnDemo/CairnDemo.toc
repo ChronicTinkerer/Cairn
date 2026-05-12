@@ -25,6 +25,18 @@ Smokes\Cairn-Util-ObjectPool.lua
 Smokes\Cairn-Util-Texture.lua
 Smokes\Cairn-Util-Bitfield.lua
 Smokes\Cairn-Util-Array.lua
+Smokes\Cairn-Addon.lua
+Smokes\Cairn-DB.lua
+Smokes\Cairn-Callback.lua
+Smokes\Cairn-Hooks.lua
+Smokes\Cairn-Events.lua
+Smokes\Cairn-Locale.lua
+Smokes\Cairn-Log.lua
+Smokes\Cairn-Media.lua
+Smokes\Cairn-Settings.lua
+Smokes\Cairn-Slash.lua
+Smokes\Cairn-Timer.lua
+Smokes\Cairn-Flow-Sequencer.lua
 
 # Smoke runner window. Loads last so it sees every registered smoke.
 CairnDemo_SmokeRunner.lua

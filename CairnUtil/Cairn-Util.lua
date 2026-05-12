@@ -39,7 +39,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Util-1.0"
-local LIB_MINOR = 27
+local LIB_MINOR = 30
 
 local Cairn_Util = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Util then return end
@@ -153,10 +153,21 @@ function Cairn_Util.Table.MergeDefaults(target, defaults)
     end
     for k, v in pairs(defaults) do
         if type(v) == "table" then
-            if type(target[k]) ~= "table" then
+            -- WHY the three-way branch: a default-side table only gets
+            -- recursed into when the target either has no value yet (we
+            -- create an empty subtable to merge into) or already has a
+            -- table-shaped value. If the target has a non-nil scalar at
+            -- this key, the user's scalar wins -- preserving user data
+            -- under a schema change beats silently clobbering it with a
+            -- defaults-shaped subtable, which is the documented intent
+            -- of this function.
+            if target[k] == nil then
                 target[k] = {}
+                Cairn_Util.Table.MergeDefaults(target[k], v)
+            elseif type(target[k]) == "table" then
+                Cairn_Util.Table.MergeDefaults(target[k], v)
             end
-            Cairn_Util.Table.MergeDefaults(target[k], v)
+            -- target[k] is a non-nil scalar: preserve, do not recurse.
         elseif target[k] == nil then
             target[k] = v
         end
@@ -586,12 +597,37 @@ ObjectPool.__index = ObjectPool
 -- once (matching the pattern in Cairn-Timer's CancelOwner, Cairn-Events'
 -- UnsubscribeOwner, Cairn-Hooks' UnhookOwner).
 --
--- creationFn: called on cache miss; returns a new object.
--- resetFn:    called on Release; receives the object and returns it
---             to a clean state (Hide, ClearAllPoints, etc.).
+-- Callback conventions (Cairn-style, NOT Blizzard-style):
+--
+--   creationFn: function() return obj end
+--               Called on cache miss; returns a fresh object. No args.
+--               (Blizzard passes the underlying pool as arg 1, which is
+--               an implementation detail consumers shouldn't have to
+--               know about. If you actually need the Cairn pool inside
+--               creationFn, capture it via upvalue from outside.)
+--
+--   resetFn:    function(obj) end
+--               Called on Release; receives the object and returns it
+--               to a clean state (Hide, ClearAllPoints, etc.). Fires
+--               exactly once per Release. NOT called on Acquire-of-new.
+--
+-- The Cairn shim does NOT register resetFn with the underlying Blizzard
+-- pool. Instead it holds the reset callback itself and fires it from
+-- this lib's own :Release. Rationale: Blizzard's `disallowResetIfNew`
+-- flag was observed not to take effect on current retail (verified via
+-- the in-game smoke), so the pool would otherwise reset on Acquire-of-
+-- new too. Owning the reset path also gives us deterministic ordering
+-- (reset before return-to-inactive-pool, every time).
 function ObjectPool:New(creationFn, resetFn)
+    -- Wrap creationFn so the Blizzard pool's (pool) signature never
+    -- reaches the consumer. Don't pass resetFn to Blizzard at all --
+    -- we fire it ourselves from :Release.
+    local wrappedCreate = function() return creationFn() end
+    local blz = CreateObjectPool(wrappedCreate, nil)
+
     local pool = setmetatable({}, ObjectPool)
-    pool._pool = CreateObjectPool(creationFn, resetFn)
+    pool._pool    = blz
+    pool._resetFn = resetFn
     -- _ownerMap[owner][obj] = true for batch release tracking. Lazy:
     -- only owners passed to AcquireFor get a sub-table.
     pool._ownerMap = {}
@@ -631,10 +667,14 @@ end
 
 -- ObjectPool:Release(obj) -> nil
 --
--- Return an object to the pool. Also clears any owner-tag on it so
--- subsequent ReleaseOwner calls on the prior owner won't see the
--- already-released object.
+-- Return an object to the pool. Fires resetFn(obj) first, then clears
+-- any owner-tag, then hands the object back to the Blizzard pool.
+-- Order matters: resetFn runs BEFORE the obj returns to inactive so
+-- consumers can rely on "by the time my pool reuses this, reset has
+-- completed."
 function ObjectPool:Release(obj)
+    if self._resetFn then self._resetFn(obj) end
+
     local owner = self._objOwners[obj]
     if owner then
         local bucket = self._ownerMap[owner]
@@ -672,9 +712,21 @@ end
 -- ObjectPool:ReleaseAll() -> nil
 --
 -- Release every active object back to the pool and clear all owner-
--- tags en masse.
+-- tags en masse. Goes through our own :Release for each active object
+-- so resetFn fires consistently with single-object Release. Snapshot
+-- the active set first because :Release mutates the Blizzard pool's
+-- active iterator out from under us.
 function ObjectPool:ReleaseAll()
-    self._pool:ReleaseAll()
+    local snapshot, n = {}, 0
+    for obj in self._pool:EnumerateActive() do
+        n = n + 1
+        snapshot[n] = obj
+    end
+    for i = 1, n do
+        self:Release(snapshot[i])
+    end
+    -- Defensive: in case Release for some reason didn't clear an entry,
+    -- wipe the owner tables. Should be empty already.
     for owner in pairs(self._ownerMap) do self._ownerMap[owner] = nil end
     for obj in pairs(self._objOwners) do self._objOwners[obj] = nil end
 end
@@ -1350,9 +1402,17 @@ end
 -- expect "incremental insert" semantics where Combine(h, h)
 -- accumulates, do NOT use this primitive — use a different aggregator.
 function Cairn_Util.Hash.Combine(...)
+    -- WHY the explicit `local arg = select(i, ...)`: bare `select(i, ...)`
+    -- in a function-call position expands to ALL remaining args, so
+    -- bit.bxor(result, select(i, ...)) becomes bit.bxor(result, args[i],
+    -- args[i+1], ..., args[n]) on every iteration -- folding the suffix
+    -- into result over and over. Order-dependence and dup-non-removal
+    -- fall out of that. Forcing single-value capture restores the
+    -- intended fold semantics.
     local result = 0
     for i = 1, select("#", ...) do
-        result = bit.bxor(result, select(i, ...))
+        local arg = select(i, ...)
+        result = bit.bxor(result, arg)
     end
     return result % UINT32
 end

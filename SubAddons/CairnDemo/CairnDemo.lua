@@ -6,11 +6,13 @@
 --
 -- Slash interface:
 --   /cairndemo            -- prints help (auto-generated from the registered tree)
---   /cairndemo run        -- runs the full smoke and prints PASS/FAIL
+--   /cairndemo run        -- runs the inline v1.0-library smoke and prints PASS/FAIL
+--   /cairndemo smokes     -- opens the button-driven Cairn-Gui smoke runner window
 --   /cairndemo hello      -- localized greeting
 --   /cairndemo timer ...  -- timer demos (after / every / debounce / stopwatch)
 --   /cairndemo log ...    -- write to the shared ring buffer at chosen level
 --   /cairndemo settings   -- opens the Blizzard panel
+--   /cairndemo gui        -- pop a click-counter Cairn-Gui-2.0 window
 --
 -- Author: ChronicTinkerer. MIT.
 
@@ -200,6 +202,17 @@ root:Sub("gui", function()
     end)
     win:Show()
 end, "Pop a visible Cairn-Gui window with a click-counter button")
+
+root:Sub("smokes", function()
+    -- Smoke runner window: button-driven, prints PASS/FAIL per assertion
+    -- across every smoke under _G.CairnDemo.Smokes. Built lazily on first
+    -- /cairndemo smokes; subsequent calls re-show the same window.
+    if not (_G.CairnDemo and _G.CairnDemo.OpenSmokeRunner) then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff5555[CairnDemo]|r Smoke runner unavailable (CairnDemo_SmokeRunner.lua did not load)")
+        return
+    end
+    _G.CairnDemo.OpenSmokeRunner()
+end, "Open the smoke runner window (button-driven PASS/FAIL across every registered smoke)")
 
 local timerSub = root:Sub("timer", "Timer demos (after / every / debounce / stopwatch)")
 timerSub:Sub("after", function()

@@ -9,3 +9,22 @@
 ## X-License: MIT
 
 CairnDemo.lua
+
+# Smoke registrations. Each file populates _G.CairnDemo.Smokes[<name>]
+# with a function(report) closure. The runner iterates this table on
+# button click.
+Smokes\Cairn-Util-String.lua
+Smokes\Cairn-Util-Table.lua
+Smokes\Cairn-Util-Frame.lua
+Smokes\Cairn-Util-Hash.lua
+Smokes\Cairn-Util-Path.lua
+Smokes\Cairn-Util-Numbers.lua
+Smokes\Cairn-Util-Memoize.lua
+Smokes\Cairn-Util-Queue.lua
+Smokes\Cairn-Util-ObjectPool.lua
+Smokes\Cairn-Util-Texture.lua
+Smokes\Cairn-Util-Bitfield.lua
+Smokes\Cairn-Util-Array.lua
+
+# Smoke runner window. Loads last so it sees every registered smoke.
+CairnDemo_SmokeRunner.lua

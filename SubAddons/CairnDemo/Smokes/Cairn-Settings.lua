@@ -314,6 +314,276 @@ _G.CairnDemo.Smokes["Cairn-Settings"] = function(report)
            #seenTransitions == 0)
 
 
+    -- =====================================================================
+    -- MINOR 16: Cluster E partial (D27 + D33 + D34 + D35 + D38)
+    -- =====================================================================
+
+    -- D27: control-type registry exposed publicly
+    report("CS.controlTypes is a table",
+           type(CS.controlTypes) == "table")
+    report("controlTypes.toggle exists",
+           type(CS.controlTypes.toggle) == "table")
+    report("controlTypes.header has skipDefault = true",
+           CS.controlTypes.header.skipDefault == true)
+    report("controlTypes.text has storageOnly = true",
+           CS.controlTypes.text.storageOnly == true)
+
+
+    -- D34: RegisterControl extension point
+    report("CS:RegisterControl is a function",
+           type(CS.RegisterControl) == "function")
+    if type(CS.RegisterControl) == "function" then
+        CS:RegisterControl("custom_kind_" .. stamp, { storageOnly = true })
+        report("RegisterControl adds entry to controlTypes",
+               CS.controlTypes["custom_kind_" .. stamp] ~= nil)
+        -- After registration, the schema validator accepts the new kind.
+        local SVR = "CairnSettingsSmoke_RegCtl_" .. stamp
+        _G[SVR] = nil; CDB.instances[SVR] = nil
+        local dbR = CDB:New(SVR, { profile = {} })
+        local sR = CS:New("RegCtl_" .. stamp, dbR, {
+            { key = "x", type = "custom_kind_" .. stamp, label = "X",
+              default = "hello" },
+        })
+        report("RegisterControl-defined kind accepted by validator",
+               type(sR) == "table")
+        -- Cleanup
+        CDB.instances[SVR] = nil; _G[SVR] = nil
+        CS.controlTypes["custom_kind_" .. stamp] = nil
+
+        report("RegisterControl('', spec) errors",
+               not pcall(function() CS:RegisterControl("", {}) end))
+        report("RegisterControl('x', 'not-a-table') errors",
+               not pcall(function() CS:RegisterControl("x", "notatable") end))
+    end
+
+
+    -- D33: ModifiedClickOptions helper
+    report("CS:ModifiedClickOptions is a function",
+           type(CS.ModifiedClickOptions) == "function")
+    if type(CS.ModifiedClickOptions) == "function" then
+        local opts1 = CS:ModifiedClickOptions(false)
+        report("ModifiedClickOptions(false) includes NONE",
+               opts1.NONE ~= nil and opts1.ALT ~= nil
+               and opts1.CTRL ~= nil and opts1.SHIFT ~= nil)
+        local opts2 = CS:ModifiedClickOptions(true)
+        report("ModifiedClickOptions(true) excludes NONE",
+               opts2.NONE == nil and opts2.ALT ~= nil)
+    end
+
+
+    -- D35: runtime predicates validation (isVisible / canSearch / newFeature)
+    local SVP = "CairnSettingsSmoke_Predicates_" .. stamp
+    _G[SVP] = nil; CDB.instances[SVP] = nil
+    local dbP = CDB:New(SVP, { profile = {} })
+
+    report("isVisible function accepted",
+           type(CS:New("Pred1_" .. stamp, dbP, {
+               { key = "x", type = "toggle", label = "X", default = true,
+                 isVisible = function() return true end },
+           })) == "table")
+    report("canSearch bool accepted",
+           type(CS:New("Pred2_" .. stamp, dbP, {
+               { key = "x", type = "toggle", label = "X", default = true,
+                 canSearch = false },
+           })) == "table")
+    report("newFeature function accepted",
+           type(CS:New("Pred3_" .. stamp, dbP, {
+               { key = "x", type = "toggle", label = "X", default = true,
+                 newFeature = function() return true end },
+           })) == "table")
+    report("isVisible non-function rejected",
+           not pcall(function() CS:New("Pred4_" .. stamp, dbP, {
+               { key = "x", type = "toggle", label = "X", default = true,
+                 isVisible = "notafunc" },
+           }) end))
+    report("canSearch non-bool-or-fn rejected",
+           not pcall(function() CS:New("Pred5_" .. stamp, dbP, {
+               { key = "x", type = "toggle", label = "X", default = true,
+                 canSearch = "notabool" },
+           }) end))
+    CDB.instances[SVP] = nil; _G[SVP] = nil
+
+
+    -- D38: dual-keyed registry + :OpenToCategory
+    report("CS.registeredCategories is a table",
+           type(CS.registeredCategories) == "table")
+    report("CS:OpenToCategory is a function",
+           type(CS.OpenToCategory) == "function")
+    -- The existing settings instance `s` was registered at the top of this
+    -- smoke against `addonName` — verify it's in the registry.
+    -- Note: `s` was created with addonName == the smoke's `addonName` var
+    -- (the literal string used earlier in the smoke). Look it up via the
+    -- internal _addonName field.
+    if type(CS.OpenToCategory) == "function" and s and s._addonName then
+        report("registeredCategories has entry for the smoke addon",
+               CS.registeredCategories[s._addonName] == s)
+
+        -- :OpenToCategory with unknown name returns false
+        local ok = CS:OpenToCategory("DefinitelyNotRegistered_" .. stamp)
+        report(":OpenToCategory unknown name returns false",
+               ok == false)
+
+        report(":OpenToCategory('') errors",
+               not pcall(function() CS:OpenToCategory("") end))
+    end
+
+
+    -- =====================================================================
+    -- MINOR 17: Cluster E partial 2 (D29 sub-settings + D30 requireArguments
+    --                                + D37 layout dispatch)
+    -- =====================================================================
+
+    -- D30: requireArguments declarative shape validation. controlTypes
+    -- ships with requireArguments for `dropdown` (choices = "table") and
+    -- `range` (optional numeric min/max/step). Consumer-registered types
+    -- gain the same validation path with zero special-casing.
+    report("controlTypes.dropdown has requireArguments",
+           type(CS.controlTypes.dropdown.requireArguments) == "table")
+    report("controlTypes.dropdown requires choices: 'table'",
+           CS.controlTypes.dropdown.requireArguments.choices == "table")
+    report("controlTypes.range has requireArguments (optional)",
+           type(CS.controlTypes.range.requireArguments) == "table"
+           and type(CS.controlTypes.range.requireArguments.min) == "table"
+           and CS.controlTypes.range.requireArguments.min.optional == true)
+
+    -- dropdown without choices fails the declarative validator
+    local SVD = "CairnSettingsSmoke_D30_" .. stamp
+    _G[SVD] = nil; CDB.instances[SVD] = nil
+    local dbD = CDB:New(SVD, { profile = {} })
+    report("dropdown missing choices rejected (D30)",
+           not pcall(function() CS:New("D30Drop_" .. stamp, dbD, {
+               { key = "x", type = "dropdown", label = "X", default = "a" },
+           }) end))
+    -- range with wrong-type min rejected
+    report("range with string min rejected (D30)",
+           not pcall(function() CS:New("D30Range_" .. stamp, dbD, {
+               { key = "x", type = "range", label = "X", default = 0.5,
+                 min = "zero", max = 1.0, step = 0.1 },
+           }) end))
+    -- range without min/max/step is accepted (all optional)
+    report("range with no min/max/step accepted",
+           type(CS:New("D30RangeOK_" .. stamp, dbD, {
+               { key = "x", type = "range", label = "X", default = 0.5 },
+           })) == "table")
+    -- Consumer-registered type with requireArguments validates by the same path
+    CS:RegisterControl("my_custom_" .. stamp, {
+        storageOnly = true,
+        requireArguments = {
+            mandatoryField = "string",
+            optionalField  = { type = "number", optional = true },
+            predicateField = function(value, entry)
+                if value ~= nil and value < 0 then
+                    return false, "must be non-negative"
+                end
+                return true
+            end,
+        },
+    })
+    report("consumer-registered type accepts valid schema (D30)",
+           type(CS:New("D30Cust1_" .. stamp, dbD, {
+               { key = "x", type = "my_custom_" .. stamp, label = "X",
+                 default = "v", mandatoryField = "hello" },
+           })) == "table")
+    report("consumer-registered type rejects missing required field (D30)",
+           not pcall(function() CS:New("D30Cust2_" .. stamp, dbD, {
+               { key = "x", type = "my_custom_" .. stamp, label = "X",
+                 default = "v" },
+           }) end))
+    report("consumer-registered type rejects predicate failure (D30)",
+           not pcall(function() CS:New("D30Cust3_" .. stamp, dbD, {
+               { key = "x", type = "my_custom_" .. stamp, label = "X",
+                 default = "v", mandatoryField = "hi", predicateField = -1 },
+           }) end))
+    CS.controlTypes["my_custom_" .. stamp] = nil
+    CDB.instances[SVD] = nil; _G[SVD] = nil
+
+
+    -- D29: sub-settings (visually nested children with parent-lock).
+    local SVS = "CairnSettingsSmoke_D29_" .. stamp
+    _G[SVS] = nil; CDB.instances[SVS] = nil
+    local dbS = CDB:New(SVS, { profile = {} })
+    local sS = CS:New("D29_" .. stamp, dbS, {
+        { key = "parentToggle", type = "toggle", label = "Parent",
+          default = true,
+          subSettings = {
+              { key = "childA", type = "range", label = "Child A",
+                min = 0, max = 1, step = 0.1, default = 0.5 },
+              { key = "childB", type = "toggle", label = "Child B",
+                default = false },
+          } },
+    })
+    report("schema with subSettings accepted (D29)", type(sS) == "table")
+    report("parent default seeded (D29)", dbS.profile.parentToggle == true)
+    report("subSettings child default seeded (D29)", dbS.profile.childA == 0.5)
+    report("subSettings second child seeded (D29)", dbS.profile.childB == false)
+    -- byKey flattening: children accessible via :Get
+    report("subSettings child reachable via :Get (D29)",
+           sS:Get("childA") == 0.5)
+    sS:Set("childA", 0.7)
+    report("subSettings child round-trip via :Set (D29)",
+           sS:Get("childA") == 0.7)
+    -- subSettings rejection paths
+    report("subSettings non-array rejected (D29)",
+           not pcall(function() CS:New("D29Bad1_" .. stamp, dbS, {
+               { key = "p", type = "toggle", label = "P", default = true,
+                 subSettings = "notatable" },
+           }) end))
+    report("subSettings child missing key rejected (D29)",
+           not pcall(function() CS:New("D29Bad2_" .. stamp, dbS, {
+               { key = "p2", type = "toggle", label = "P", default = true,
+                 subSettings = { { type = "toggle", label = "X", default = true } } },
+           }) end))
+    report("subSettings child duplicate key rejected (D29)",
+           not pcall(function() CS:New("D29Bad3_" .. stamp, dbS, {
+               { key = "dupkey", type = "toggle", label = "P", default = true,
+                 subSettings = { { key = "dupkey", type = "toggle",
+                                   label = "C", default = false } } },
+           }) end))
+    report("subSettingsModifiable non-function rejected (D29)",
+           not pcall(function() CS:New("D29Bad4_" .. stamp, dbS, {
+               { key = "p3", type = "toggle", label = "P", default = true,
+                 subSettingsModifiable = "notafn",
+                 subSettings = { { key = "c3", type = "toggle",
+                                   label = "C", default = false } } },
+           }) end))
+    CDB.instances[SVS] = nil; _G[SVS] = nil
+
+
+    -- D37: layout dispatch (canvas vs vertical)
+    local SVL = "CairnSettingsSmoke_D37_" .. stamp
+    _G[SVL] = nil; CDB.instances[SVL] = nil
+    local dbL = CDB:New(SVL, { profile = {} })
+    -- Default layout = vertical
+    local sV = CS:New("D37Vert_" .. stamp, dbL, {
+        { key = "x", type = "toggle", label = "X", default = true },
+    })
+    report("default layout is vertical (D37)",
+           sV._layoutKind == "vertical")
+    -- Explicit vertical
+    local sV2 = CS:New("D37VertEx_" .. stamp, dbL, {
+        { key = "y", type = "toggle", label = "Y", default = true },
+    }, { layout = "vertical" })
+    report("explicit layout='vertical' accepted (D37)",
+           sV2._layoutKind == "vertical")
+    -- Canvas without frame falls back to vertical with a warning
+    local sC = CS:New("D37Canvas_" .. stamp, dbL, {
+        { key = "z", type = "toggle", label = "Z", default = true },
+    }, { layout = "canvas" })
+    report("layout='canvas' missing frame falls back to vertical (D37)",
+           sC._layoutKind == "vertical")
+    -- opts non-table rejected
+    report("opts non-table rejected (D37)",
+           not pcall(function() CS:New("D37Bad1_" .. stamp, dbL, {
+               { key = "x", type = "toggle", label = "X", default = true },
+           }, "notatable") end))
+    -- Bad layout kind rejected
+    report("opts.layout invalid value rejected (D37)",
+           not pcall(function() CS:New("D37Bad2_" .. stamp, dbL, {
+               { key = "x", type = "toggle", label = "X", default = true },
+           }, { layout = "weird" }) end))
+    CDB.instances[SVL] = nil; _G[SVL] = nil
+
+
     -- Cleanup
     CDB.instances[SV]  = nil; _G[SV]  = nil
     CDB.instances[SV2] = nil; _G[SV2] = nil

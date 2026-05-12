@@ -146,4 +146,99 @@ _G.CairnDemo.Smokes["Cairn-Timer"] = function(report)
            not pcall(function() CT:Debounce("", 1, function() end) end))
     report("CancelOwner(nil) errors",
            not pcall(function() CT:CancelOwner(nil) end))
+
+
+    -- =====================================================================
+    -- MINOR 15 additions — ContinueAfterCombat + :Start (D5 + D6)
+    -- =====================================================================
+
+    -- :ContinueAfterCombat
+    report("CT:ContinueAfterCombat is a function",
+           type(CT.ContinueAfterCombat) == "function")
+
+    if type(CT.ContinueAfterCombat) == "function" then
+        -- Out of combat: should fire synchronously.
+        local fired = false
+        CT:ContinueAfterCombat(function() fired = true end)
+        report("ContinueAfterCombat fires synchronously when out-of-combat",
+               fired == true)
+
+        -- Bad input
+        report("ContinueAfterCombat with non-function errors",
+               not pcall(function() CT:ContinueAfterCombat(42) end))
+
+        -- Queue inspection: out-of-combat, queue should be empty after
+        -- synchronous fire (the handler ran inline, didn't append).
+        report("ContinueAfterCombat synchronous path leaves queue empty",
+               type(CT._combatQueue) == "table" and #CT._combatQueue == 0)
+    end
+
+
+    -- :Start 4-mode dispatch
+    report("CT:Start is a function",
+           type(CT.Start) == "function")
+
+    if type(CT.Start) == "function" then
+        -- push mode delegates to Debounce — verify it returns a handle and
+        -- the handle is the same shape as a Debounce handle.
+        local pushHandle = CT:Start("smoke_push_" .. tostring(time and time() or 0),
+            "push", 0.5, function() end)
+        report("Start('push') returns a handle",
+               type(pushHandle) == "table" and type(pushHandle.Cancel) == "function")
+        pushHandle:Cancel()
+
+        -- ignore mode: first call returns a handle, second call returns nil
+        -- (because the first hasn't fired yet).
+        local slotIgnore = "smoke_ignore_" .. tostring(time and time() or 0)
+        local h1 = CT:Start(slotIgnore, "ignore", 0.5, function() end)
+        local h2 = CT:Start(slotIgnore, "ignore", 0.5, function() end)
+        report("Start('ignore') first call returns a handle",
+               type(h1) == "table")
+        report("Start('ignore') second call returns nil (slot busy)",
+               h2 == nil)
+        if h1 then h1:Cancel() end
+        -- Manually clear the slot state since we cancelled, not awaited:
+        CT._slotState[slotIgnore] = nil
+
+        -- duplicate mode: always returns a new handle, ignoring slot state.
+        local slotDup = "smoke_dup_" .. tostring(time and time() or 0)
+        local d1 = CT:Start(slotDup, "duplicate", 0.5, function() end)
+        local d2 = CT:Start(slotDup, "duplicate", 0.5, function() end)
+        report("Start('duplicate') call 1 returns handle",
+               type(d1) == "table")
+        report("Start('duplicate') call 2 returns handle (not nil)",
+               type(d2) == "table")
+        if d1 then d1:Cancel() end
+        if d2 then d2:Cancel() end
+
+        -- cooldown mode: first call fires immediately + starts cooldown.
+        -- Subsequent calls during cooldown queue exactly ONE trailing fire.
+        local slotCD = "smoke_cd_" .. tostring(time and time() or 0)
+        local cdFires = 0
+        local cdHandle = CT:Start(slotCD, "cooldown", 0.5,
+            function() cdFires = cdFires + 1 end)
+        report("Start('cooldown') first call fires immediately",
+               cdFires == 1)
+        report("Start('cooldown') first call returns a handle",
+               type(cdHandle) == "table")
+        -- A second call during cooldown returns nil + sets pendingTrailing.
+        local cdHandle2 = CT:Start(slotCD, "cooldown", 0.5,
+            function() cdFires = cdFires + 1 end)
+        report("Start('cooldown') subsequent call during cooldown returns nil",
+               cdHandle2 == nil)
+        report("Start('cooldown') subsequent call sets pendingTrailing",
+               CT._slotState[slotCD] and CT._slotState[slotCD].pendingTrailing == true)
+        if cdHandle then cdHandle:Cancel() end
+        CT._slotState[slotCD] = nil
+
+        -- Bad input
+        report("Start with bad slot errors",
+               not pcall(function() CT:Start("", "push", 0.5, function() end) end))
+        report("Start with bad mode errors",
+               not pcall(function() CT:Start("x", "unknown_mode", 0.5, function() end) end))
+        report("Start with negative period errors",
+               not pcall(function() CT:Start("x", "push", -1, function() end) end))
+        report("Start with non-function fn errors",
+               not pcall(function() CT:Start("x", "push", 0.5, 42) end))
+    end
 end

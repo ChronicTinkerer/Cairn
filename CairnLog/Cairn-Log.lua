@@ -25,9 +25,19 @@
 --
 -- Entry shape (read-only convention; do not mutate):
 --   { timestamp, source, category, level, message }
+--   Aliases via metatable __index (Cairn-Log Decision 2; MINOR 15):
+--     entry.t == entry.timestamp
+--     entry.s == entry.level
+--     entry.m == entry.message
+--   Both shapes work; the short forms exist for Cluster-A renderers that
+--   expect the walked compact-field shape.
 --
--- Levels (built-in, ordered by rank):
---   DEBUG (1)  <  INFO (2)  <  WARN (3)  <  ERROR (4)
+-- Levels (built-in, Python-style numeric scheme with gaps; MINOR 15):
+--   TRACE (0)  <  DEBUG (10)  <  INFO (20)  <  WARNING (30) == WARN  <  ERROR (40)  <  FATAL (50)
+--   Gaps reserved for consumer-defined intermediate levels (VERBOSE=5,
+--   NOTICE=25, etc.) without renumbering the standard set.
+--   `WARN` is preserved as a numeric ALIAS for `WARNING` for pre-MINOR-15
+--   backcompat; both compare equal in rank-based threshold checks.
 --   Custom level strings are accepted via :Log(level, ...) — they get rank 0
 --   so they never trigger the chat-echo threshold automatically.
 --
@@ -45,7 +55,9 @@
 --     prefix.
 --
 -- Public API (lib):
---   CL:New(name)            -> root logger    -- idempotent on `name`
+--   CL:New(name [, db])     -> root logger    -- idempotent on `name`. Optional
+--                                                `db` bootstraps lib-level
+--                                                persistence (Decision 3).
 --   CL:Get(name)                              -- registry lookup
 --   CL.loggers                                -- { [name] = root logger }
 --   CL.entries                                -- the ring buffer (read-only)
@@ -53,20 +65,33 @@
 --   CL:Clear()
 --   CL:SetChatEchoLevel(level_or_nil)
 --   CL:SetCapacity(n)
---   CL.LEVELS                                 -- {DEBUG=1, INFO=2, WARN=3, ERROR=4}
+--   CL:SetDatabase(svTable_or_nil)            -- Decision 3: opt-in persistence
+--   CL:SetPerformanceMode(threshold_or_nil)   -- Decision 7: nils method slots
+--   CL:Embed(target, name) -> target          -- Decision 9: mixin
+--   CL.LEVELS                                 -- {TRACE=0, DEBUG=10, INFO=20,
+--                                                WARNING=30, WARN=30, ERROR=40,
+--                                                FATAL=50}
+--   CL.hasTrace / hasDebug / hasInfo /        -- Decision 8: gate flags
+--   hasWarning / hasError / hasFatal            (reflect current SetPerformanceMode
+--                                                state)
 --
 -- Public API (instance, both root and sub):
---   log:Debug(fmt, ...)
---   log:Info (fmt, ...)
---   log:Warn (fmt, ...)
---   log:Error(fmt, ...)
+--   log:Trace  (fmt, ...)
+--   log:Debug  (fmt, ...)
+--   log:Info   (fmt, ...)
+--   log:Warning(fmt, ...)
+--   log:Warn   (fmt, ...)                     -- alias for :Warning
+--   log:Error  (fmt, ...)
+--   log:Fatal  (fmt, ...)
+--   log:ForceError(fmt, ...)                  -- Decision 5: bypass echo gate
+--   log:ForceFatal(fmt, ...)                  -- Decision 5: bypass echo gate
 --   log:Log(level, fmt, ...)                  -- custom level string
 --   log:Category(name) -> sub-logger          -- shares source, fixed category
 --
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Log-1.0"
-local LIB_MINOR = 14
+local LIB_MINOR = 15
 
 local Cairn_Log = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Log then return end
@@ -80,18 +105,30 @@ Cairn_Log._head       = Cairn_Log._head       or 1
 Cairn_Log._count      = Cairn_Log._count      or 0
 Cairn_Log._echoLevel  = Cairn_Log._echoLevel  -- nil unless SetChatEchoLevel'd
 
+-- Severity scheme (Cairn-Log Decision 1; locked 2026-05-12). Python-style
+-- numeric values with gaps so consumers can register custom intermediate
+-- levels (VERBOSE=5, NOTICE=25, etc.) without renumbering the standard
+-- set. `WARN` is preserved as a numeric ALIAS for `WARNING` for
+-- backcompat with the pre-MINOR-15 4-level system; both compare equal in
+-- rank-based threshold checks.
 Cairn_Log.LEVELS = Cairn_Log.LEVELS or {
-    DEBUG = 1,
-    INFO  = 2,
-    WARN  = 3,
-    ERROR = 4,
+    TRACE   = 0,
+    DEBUG   = 10,
+    INFO    = 20,
+    WARNING = 30,
+    WARN    = 30,   -- alias for WARNING (pre-MINOR-15 backcompat)
+    ERROR   = 40,
+    FATAL   = 50,
 }
 
 local LEVEL_COLOR = {
-    DEBUG = "|cff888888",
-    INFO  = "|cffffffff",
-    WARN  = "|cffffaa00",
-    ERROR = "|cffff5555",
+    TRACE   = "|cff555555",
+    DEBUG   = "|cff888888",
+    INFO    = "|cffffffff",
+    WARNING = "|cffffaa00",
+    WARN    = "|cffffaa00",   -- backcompat alias for WARNING
+    ERROR   = "|cffff5555",
+    FATAL   = "|cffff0000",
 }
 
 
@@ -106,6 +143,21 @@ local function rankOf(level)
 end
 
 
+-- Compact-aliases metatable (Cairn-Log Decision 2). Each entry's full
+-- shape stays `{timestamp, source, category, level, message}` for
+-- Forge_Logs and existing consumers. Cluster-A renderers expecting the
+-- walked `{t, s, m}` short-field shape read via __index aliases —
+-- entry.t / entry.s / entry.m route to the same underlying values.
+local ENTRY_META = {
+    __index = function(entry, key)
+        if key == "t" then return rawget(entry, "timestamp") end
+        if key == "s" then return rawget(entry, "level")     end
+        if key == "m" then return rawget(entry, "message")   end
+        return nil
+    end,
+}
+
+
 -- Ring write: a head pointer + count counter, no eviction sweep. New
 -- entries overwrite the oldest slot in place once the buffer is full, so
 -- sustained logging has steady-state cost (no allocations beyond the entry
@@ -113,14 +165,19 @@ end
 --
 -- Chat echo is inline rather than queued because the threshold check is
 -- cheap and queueing would just delay visibility.
-local function pushEntry(source, category, level, message)
-    local entry = {
+--
+-- `force` (Cairn-Log Decision 5) — when true, the entry bypasses the chat-
+-- echo threshold check and ALWAYS prints. Used by :ForceError / :ForceFatal
+-- to guarantee critical failures reach the user even when the logger is
+-- configured for quiet operation.
+local function pushEntry(source, category, level, message, force)
+    local entry = setmetatable({
         timestamp = (time and time()) or 0,
         source    = source,
         category  = category,
         level     = level,
         message   = message,
-    }
+    }, ENTRY_META)
 
     local idx = Cairn_Log._head
     Cairn_Log.entries[idx] = entry
@@ -133,8 +190,27 @@ local function pushEntry(source, category, level, message)
         Cairn_Log._count = Cairn_Log._count + 1
     end
 
+    -- Database backing (Cairn-Log Decision 3). When :SetDatabase has been
+    -- called or a per-logger db was passed via :New, entries also write
+    -- to the consumer-supplied SV table. Bounded by the same ring capacity
+    -- as the in-memory buffer to prevent unbounded SV growth.
+    local db = Cairn_Log._database
+    if db then
+        if type(db) ~= "table" then
+            -- defensive: consumer cleared their SV without unhooking us.
+            Cairn_Log._database = nil
+        else
+            db[#db + 1] = entry
+            local cap = Cairn_Log._capacity or 1000
+            -- Trim oldest entries when over capacity. table.remove(t, 1) is
+            -- O(n) but only fires when the SV table is full, so amortized
+            -- cost stays low.
+            while #db > cap do table.remove(db, 1) end
+        end
+    end
+
     local echo = Cairn_Log._echoLevel
-    if echo and rankOf(level) >= rankOf(echo) then
+    if force or (echo and rankOf(level) >= rankOf(echo)) then
         local color = LEVEL_COLOR[level] or "|cffffffff"
         print(string.format("%s[%s]|r %s%s: %s",
             color, level,
@@ -167,23 +243,34 @@ end
 
 local LoggerMethods = {}
 
-local function logAt(self, level, fmt, ...)
-    pushEntry(self._source, self._category, level, formatMessage(fmt, ...))
+local function logAt(self, level, force, fmt, ...)
+    pushEntry(self._source, self._category, level, formatMessage(fmt, ...), force)
 end
 
-function LoggerMethods:Debug(fmt, ...) logAt(self, "DEBUG", fmt, ...) end
-function LoggerMethods:Info (fmt, ...) logAt(self, "INFO",  fmt, ...) end
-function LoggerMethods:Warn (fmt, ...) logAt(self, "WARN",  fmt, ...) end
-function LoggerMethods:Error(fmt, ...) logAt(self, "ERROR", fmt, ...) end
+function LoggerMethods:Trace  (fmt, ...) logAt(self, "TRACE",   false, fmt, ...) end
+function LoggerMethods:Debug  (fmt, ...) logAt(self, "DEBUG",   false, fmt, ...) end
+function LoggerMethods:Info   (fmt, ...) logAt(self, "INFO",    false, fmt, ...) end
+function LoggerMethods:Warning(fmt, ...) logAt(self, "WARNING", false, fmt, ...) end
+function LoggerMethods:Warn   (fmt, ...) logAt(self, "WARN",    false, fmt, ...) end  -- alias
+function LoggerMethods:Error  (fmt, ...) logAt(self, "ERROR",   false, fmt, ...) end
+function LoggerMethods:Fatal  (fmt, ...) logAt(self, "FATAL",   false, fmt, ...) end
 
--- Escape hatch for custom level names (e.g. "AUDIT", "TRACE"). Custom levels
--- get rank 0, which means they never satisfy a chat-echo threshold of WARN+
--- — by design, so an experimental level can't accidentally spam chat.
+-- Force-print variants (Cairn-Log Decision 5). Bypass the chat-echo
+-- threshold so critical failures reach the user even when the logger is
+-- configured silent. Entry still lands in the ring buffer same as normal.
+-- Use for failures the user MUST see (data corruption, irrecoverable
+-- API breakage, etc.).
+function LoggerMethods:ForceError(fmt, ...) logAt(self, "ERROR", true, fmt, ...) end
+function LoggerMethods:ForceFatal(fmt, ...) logAt(self, "FATAL", true, fmt, ...) end
+
+-- Escape hatch for custom level names (e.g. "AUDIT", "NOTICE"). Custom
+-- levels get rank 0, which means they never satisfy a chat-echo threshold
+-- of WARN+ by default — experimental levels can't accidentally spam chat.
 function LoggerMethods:Log(level, fmt, ...)
     if type(level) ~= "string" or level == "" then
         error("Cairn-Log :Log: level must be a non-empty string", 2)
     end
-    logAt(self, level, fmt, ...)
+    logAt(self, level, false, fmt, ...)
 end
 
 -- Sub-loggers share the source's identity but tag entries with a category
@@ -204,18 +291,134 @@ local LoggerMeta = { __index = LoggerMethods }
 
 
 -- ---------------------------------------------------------------------------
+-- Performance mode + hasX flags (Cairn-Log Decisions 7, 8)
+-- ---------------------------------------------------------------------------
+
+-- Canonical (level → method name) pairs. Used by both performance-mode
+-- nil-out and hasX flag maintenance. WARN is intentionally omitted (alias
+-- for WARNING; consumers using log:Warn(...) keep that method even in
+-- performance mode regardless of WARNING's state, to preserve pre-MINOR-15
+-- call sites).
+local CANONICAL_LEVEL_METHODS = {
+    { level = "TRACE",   method = "Trace"   },
+    { level = "DEBUG",   method = "Debug"   },
+    { level = "INFO",    method = "Info"    },
+    { level = "WARNING", method = "Warning" },
+    { level = "ERROR",   method = "Error"   },
+    { level = "FATAL",   method = "Fatal"   },
+}
+
+-- Save originals so we can restore methods when threshold lowers.
+local ORIGINAL_METHODS = ORIGINAL_METHODS or {}
+for _, pair in ipairs(CANONICAL_LEVEL_METHODS) do
+    ORIGINAL_METHODS[pair.method] = LoggerMethods[pair.method]
+end
+
+
+-- Helper: compute hasX flags + nil/restore method slots based on
+-- threshold (lib-level operation; affects every logger sharing the
+-- LoggerMethods metatable). When threshold is nil, all methods restore
+-- to their originals and all hasX flags become true.
+local function refreshPerformanceMode()
+    local threshold = Cairn_Log._performanceThreshold
+    for _, pair in ipairs(CANONICAL_LEVEL_METHODS) do
+        local rank = Cairn_Log.LEVELS[pair.level] or 0
+        local enabled
+        if threshold == nil then
+            enabled = true
+        else
+            local tRank = Cairn_Log.LEVELS[threshold] or 0
+            enabled = rank >= tRank
+        end
+        if enabled then
+            LoggerMethods[pair.method] = ORIGINAL_METHODS[pair.method]
+        else
+            LoggerMethods[pair.method] = nil
+        end
+        Cairn_Log["has" .. pair.method] = enabled
+    end
+end
+
+-- Initial hasX flag population (all enabled).
+refreshPerformanceMode()
+
+
+-- :SetPerformanceMode(threshold) — nil method slots below threshold.
+--
+-- Per Decision 7. Consumers gate hot calls via:
+--   if Cairn.Log.hasDebug then myLog:Debug(expensive_format(...)) end
+-- Skipping the expensive argument construction entirely when DEBUG is
+-- disabled. Threshold is a level NAME (string) like "INFO" or "WARNING";
+-- pass nil to restore all methods.
+--
+-- Lib-level scope: affects EVERY logger sharing the shared LoggerMethods
+-- dispatch table. Per-instance performance mode is a future-work item
+-- (would require per-instance method tables instead of the current shared
+-- metatable architecture).
+function Cairn_Log:SetPerformanceMode(threshold)
+    if threshold ~= nil then
+        if type(threshold) ~= "string" or self.LEVELS[threshold] == nil then
+            error("Cairn-Log:SetPerformanceMode: threshold must be a known level name or nil (got "
+                  .. tostring(threshold) .. ")", 2)
+        end
+    end
+    self._performanceThreshold = threshold
+    refreshPerformanceMode()
+end
+
+
+-- :SetDatabase(svTable) — opt-in persistence (Cairn-Log Decision 3).
+--
+-- When set, every entry that goes through pushEntry also lands in
+-- `svTable` (which the consumer typically connects to a SavedVariables
+-- entry). Bounded by the same capacity as the in-memory ring buffer to
+-- prevent unbounded SV growth.
+--
+-- Pass nil to disconnect the database. The in-memory ring buffer is
+-- unaffected by both connect and disconnect (it always operates).
+--
+-- Caveat: the consumer's TOC must declare the SavedVariables for the
+-- table to actually persist across sessions. Cairn-Log just appends to
+-- it in-memory if SVs aren't declared.
+function Cairn_Log:SetDatabase(svTable)
+    if svTable ~= nil and type(svTable) ~= "table" then
+        error("Cairn-Log:SetDatabase: svTable must be a table or nil", 2)
+    end
+    self._database = svTable
+end
+
+
+-- ---------------------------------------------------------------------------
 -- Public API (lib-level)
 -- ---------------------------------------------------------------------------
 
 -- Idempotent on `name`. Many addons have multiple .lua files that all want
 -- to grab the same logger; each file's :New() returns the same instance
 -- without coordination.
-function Cairn_Log:New(name)
+--
+-- Optional `db` arg (Cairn-Log Decision 3): when supplied AND no lib-
+-- level database is currently set, calling :New(name, db) bootstraps
+-- the lib-level database from this consumer's table. First-caller wins;
+-- subsequent :New calls passing a db are ignored at the lib-level (the
+-- per-logger db form would require per-logger SV routing which is bigger
+-- work).
+function Cairn_Log:New(name, db)
     if type(name) ~= "string" or name == "" then
         error("Cairn-Log:New: name must be a non-empty string", 2)
     end
+    if db ~= nil and type(db) ~= "table" then
+        error("Cairn-Log:New: db must be a table or nil", 2)
+    end
+
     local existing = self.loggers[name]
-    if existing then return existing end
+    if existing then
+        -- Idempotent: if a db is supplied on a re-call AND no lib-level
+        -- database is set, accept it as a late-bind. Otherwise ignore.
+        if db and not self._database then self._database = db end
+        return existing
+    end
+
+    if db and not self._database then self._database = db end
 
     local logger = setmetatable({
         _source   = name,
@@ -318,6 +521,57 @@ function Cairn_Log:SetCapacity(n)
     self._capacity = n
     if self._count > n then self._count = n end
     if self._head  > n then self._head  = 1 end
+end
+
+
+-- ---------------------------------------------------------------------------
+-- :Embed(target, name) — mixin (Cairn-Log Decision 9, locked 2026-05-12)
+-- ---------------------------------------------------------------------------
+-- Injects logger methods (`:Info`, `:Debug`, `:Warn`, `:Error`, `:Category`)
+-- directly onto `target` so consumers get short call sites:
+--
+--   Cairn.Log:Embed(MyAddon, "MyAddon")
+--   function MyAddon:doSomething()
+--       self:Info("doing stuff")     -- instead of self.log:Info(...)
+--   end
+--
+-- Each injected method routes to a shared logger instance for `name`.
+-- Multiple Embed calls on the same target with the same name share the
+-- same underlying logger (and thus share rate-limiting, etc.).
+--
+-- Method-collision policy: `:Log(level, ...)` is INTENTIONALLY NOT
+-- embedded. The key `Log` is reserved for the consumer's own use (e.g.
+-- the Cairn-Addon AUTO_WIRE_FLAGS Log entry sets a fallback
+-- `addon.Log = lib` when Embed isn't available; embedding our `:Log`
+-- method would clobber that). Consumers wanting custom-level logging
+-- reach through `Cairn.Log:Get(name):Log(level, ...)` directly.
+--
+-- Surfaced by Cairn-Addon's `opts.Log = true` auto-wire flag.
+function Cairn_Log:Embed(target, name)
+    if type(target) ~= "table" then
+        error("Cairn-Log:Embed: target must be a table", 2)
+    end
+    if type(name) ~= "string" or name == "" then
+        error("Cairn-Log:Embed: name must be a non-empty string", 2)
+    end
+
+    local log = self:New(name)
+
+    -- Each injected method dispatches `self` as the target, but routes
+    -- args through the bound logger instance. Self gets dropped (we don't
+    -- pass it to log:Method since the logger is per-name, not per-target).
+    target.Info = function(_, fmt, ...) return log:Info(fmt, ...) end
+    target.Debug = function(_, fmt, ...) return log:Debug(fmt, ...) end
+    target.Warn = function(_, fmt, ...) return log:Warn(fmt, ...) end
+    target.Error = function(_, fmt, ...) return log:Error(fmt, ...) end
+
+    -- Sub-logger access is useful too — `self:Category("net")` returns a
+    -- category-bound logger that the consumer can hold a reference to.
+    target.Category = function(_, categoryName)
+        return log:Category(categoryName)
+    end
+
+    return target
 end
 
 

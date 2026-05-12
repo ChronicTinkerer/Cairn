@@ -55,6 +55,31 @@
 --   descPhraseId   string   optional Cairn-Locale phrase ID. Same as above
 --                           for `tooltip`.
 --
+-- Cluster E additions (locked 2026-05-12):
+--   subSettings    array    optional array of child schema entries that
+--                           visually nest below the parent and auto-lock
+--                           when the parent's value is falsy. Same flat
+--                           key namespace as top-level entries (children
+--                           are NOT scoped under the parent key).
+--                           See `subSettingsModifiable` to override the
+--                           parent-lock predicate.
+--   subSettingsModifiable
+--                  function optional, fn(get) -> bool. When set, replaces
+--                           the default parent-truthy predicate for child
+--                           enable state. Returns true when children
+--                           should be enabled (modifiable).
+--
+-- :New opts (MINOR 17):
+--   opts.layout    string   "vertical" (default) builds a schema-driven
+--                           panel. "canvas" registers a canvas-layout
+--                           category with the consumer-supplied frame and
+--                           skips schema-based rendering (consumer renders
+--                           into their own frame). Storage / Get / Set /
+--                           OnChange still flow through the schema either
+--                           way. Decision 37.
+--   opts.frame     Frame    required when opts.layout = "canvas". The
+--                           consumer-owned panel frame to register.
+--
 -- Type-specific fields:
 --   range:    min, max, step                       (defaults: 0, 1, 0.1)
 --   dropdown: choices                              (table {value = label, ...})
@@ -101,7 +126,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Settings-1.0"
-local LIB_MINOR = 15
+local LIB_MINOR = 17
 
 local Cairn_Settings = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Settings then return end
@@ -168,17 +193,108 @@ local function resolvePhrase(entry, addonName, fieldDirect, fieldId)
 end
 
 
--- Schema types the validator accepts. Splitting into "rendered" vs "storage"
--- inside the registerEntry path; here we just gate the accept set.
-local SUPPORTED_TYPES = {
-    toggle   = true,
-    range    = true,
-    dropdown = true,
-    header   = true,
-    text     = true,   -- storage-only
-    color    = true,   -- storage-only
-    keybind  = true,   -- storage-only
+-- Control-type registry (Cluster E Decision 27 — locked 2026-05-12).
+--
+-- Each entry is a metadata table describing what the schema accepts for
+-- that control kind. Lib-internal kinds use this to validate + dispatch
+-- registerEntry. Consumer-extended kinds (via :RegisterControl, Decision
+-- 34) also land here.
+--
+-- Spec fields:
+--   storageOnly = bool      -- skip Blizzard-panel rendering; just storage
+--   skipDefault = bool      -- type doesn't require a `default` field
+--                              (e.g. `header` is purely decorative)
+--   requireArguments = {}   -- map of fieldName -> requirement.
+--                              MINOR 17 (Decision 30): full declarative
+--                              shape validation. Each requirement is one
+--                              of:
+--                                * type string ("number"/"string"/"table"
+--                                  /"boolean"/"function")
+--                                * { type = "<type>", optional = true }
+--                                  table for optional fields
+--                                * predicate function(value, entry) -> bool, errMsg
+--                              Built-in types ship their existing checks
+--                              expressed in this shape so the inline
+--                              if-elseif validation in validateSchema can
+--                              start consuming the registry uniformly.
+--                              Consumer-registered types validate via the
+--                              same path with zero special-casing.
+Cairn_Settings.controlTypes = Cairn_Settings.controlTypes or {
+    toggle   = { storageOnly = false },
+    range    = { storageOnly = false,
+                 -- min/max/step are technically optional (defaults 0/1/0.1)
+                 -- but when supplied must be numbers. Predicate form so
+                 -- "absent" is acceptable.
+                 requireArguments = {
+                     min  = { type = "number", optional = true },
+                     max  = { type = "number", optional = true },
+                     step = { type = "number", optional = true },
+                 } },
+    dropdown = { storageOnly = false,
+                 requireArguments = { choices = "table" } },
+    header   = { storageOnly = false, skipDefault = true },
+    text     = { storageOnly = true  },
+    color    = { storageOnly = true  },
+    keybind  = { storageOnly = true  },
 }
+
+local function isSupportedType(kind)
+    return Cairn_Settings.controlTypes[kind] ~= nil
+end
+
+
+-- Cluster E Decision 30 — validate per-control-type requirements
+-- declaratively. Walks the controlTypes[type].requireArguments map for
+-- the entry's type and reports the first failure via error(). Built-in
+-- types use this path uniformly with consumer-registered types.
+--
+-- Returns true on success. Calls error() with a clear message on first
+-- violation (consistent with the rest of validateSchema's strict-on-bad-
+-- shape posture).
+local function validateRequireArguments(entry)
+    local spec = Cairn_Settings.controlTypes[entry.type]
+    if not spec then return true end
+    local req = spec.requireArguments
+    if type(req) ~= "table" then return true end
+
+    for fieldName, requirement in pairs(req) do
+        local value = entry[fieldName]
+        if type(requirement) == "string" then
+            -- Simple shape: required field of given Lua type.
+            if type(value) ~= requirement then
+                error("Cairn-Settings:New: entry '" .. tostring(entry.key) ..
+                      "' (" .. entry.type .. ") requires field '" .. fieldName ..
+                      "' of type " .. requirement ..
+                      " (got " .. type(value) .. ")", 4)
+            end
+        elseif type(requirement) == "table" then
+            -- Compound: { type = "...", optional = true|false }
+            local expected = requirement.type
+            local optional = requirement.optional
+            if value == nil then
+                if not optional then
+                    error("Cairn-Settings:New: entry '" .. tostring(entry.key) ..
+                          "' (" .. entry.type .. ") requires field '" ..
+                          fieldName .. "'", 4)
+                end
+            elseif type(expected) == "string" and type(value) ~= expected then
+                error("Cairn-Settings:New: entry '" .. tostring(entry.key) ..
+                      "' (" .. entry.type .. ") field '" .. fieldName ..
+                      "' must be of type " .. expected ..
+                      " (got " .. type(value) .. ")", 4)
+            end
+        elseif type(requirement) == "function" then
+            -- Custom predicate. Receives (value, entry); returns (ok, errMsg).
+            local ok, errMsg = requirement(value, entry)
+            if not ok then
+                error("Cairn-Settings:New: entry '" .. tostring(entry.key) ..
+                      "' (" .. entry.type .. ") field '" .. fieldName ..
+                      "' failed validation: " .. tostring(errMsg or "(no message)"), 4)
+            end
+        end
+    end
+    return true
+end
 
 
 -- ---------------------------------------------------------------------------
@@ -201,7 +317,7 @@ local function validateSchema(schema)
         if type(entry.key) ~= "string" or entry.key == "" then
             error("Cairn-Settings:New: schema entry #" .. i .. " missing 'key' (string)", 3)
         end
-        if not SUPPORTED_TYPES[entry.type] then
+        if not isSupportedType(entry.type) then
             error("Cairn-Settings:New: schema entry '" .. entry.key ..
                   "' has unsupported type: " .. tostring(entry.type), 3)
         end
@@ -210,15 +326,17 @@ local function validateSchema(schema)
         end
         seen[entry.key] = true
 
-        if entry.type ~= "header" and entry.default == nil then
+        local spec = Cairn_Settings.controlTypes[entry.type]
+        if not (spec and spec.skipDefault) and entry.default == nil then
             error("Cairn-Settings:New: schema entry '" .. entry.key ..
                   "' requires a 'default' value", 3)
         end
 
-        if entry.type == "dropdown" and type(entry.choices) ~= "table" then
-            error("Cairn-Settings:New: dropdown entry '" .. entry.key ..
-                  "' requires a 'choices' table", 3)
-        end
+        -- Cluster E Decision 30 — declarative requireArguments validation.
+        -- Routes built-in and consumer-registered types through the same
+        -- registry-driven path. The inline dropdown 'choices' check below
+        -- is superseded by the registry entry for the `dropdown` type.
+        validateRequireArguments(entry)
 
         if entry.type == "text" and type(entry.default) ~= "string" then
             error("Cairn-Settings:New: text entry '" .. entry.key ..
@@ -282,6 +400,83 @@ local function validateSchema(schema)
             error("Cairn-Settings:New: entry '" .. entry.key ..
                   "' has non-string 'descPhraseId'", 3)
         end
+
+        -- Cluster E Decision 35 additions (locked 2026-05-12). Three
+        -- optional runtime predicates beyond disableif. Each accepts
+        -- either a static bool/function depending on semantics:
+        --
+        --   isVisible    function -> bool   show/hide the widget entirely
+        --                                   (vs disableif which just locks it)
+        --   canSearch    bool OR function -> bool   gate search-tag inclusion
+        --   newFeature   bool OR function -> bool   show Blizzard's NEW tag
+        if entry.isVisible ~= nil and type(entry.isVisible) ~= "function" then
+            error("Cairn-Settings:New: entry '" .. entry.key ..
+                  "' has non-function 'isVisible'", 3)
+        end
+        if entry.canSearch ~= nil
+           and type(entry.canSearch) ~= "boolean"
+           and type(entry.canSearch) ~= "function"
+        then
+            error("Cairn-Settings:New: entry '" .. entry.key ..
+                  "' has invalid 'canSearch' (must be bool, function, or nil)", 3)
+        end
+        if entry.newFeature ~= nil
+           and type(entry.newFeature) ~= "boolean"
+           and type(entry.newFeature) ~= "function"
+        then
+            error("Cairn-Settings:New: entry '" .. entry.key ..
+                  "' has invalid 'newFeature' (must be bool, function, or nil)", 3)
+        end
+
+        -- Cluster E Decision 29 — sub-settings. Optional array of child
+        -- schema entries that visually nest below the parent control and
+        -- auto-lock when the parent value is falsy. The parent-lock
+        -- predicate defaults to "parent value is truthy"; consumer can
+        -- override via `subSettingsModifiable = function(get) ... end`.
+        --
+        -- Sub-entries are full schema entries (same validation rules
+        -- apply). They register in db.profile with the same flat key
+        -- namespace as top-level entries — sub-settings are about VISUAL
+        -- nesting and parent-lock, not about scoping the data.
+        if entry.subSettings ~= nil then
+            if type(entry.subSettings) ~= "table" then
+                error("Cairn-Settings:New: entry '" .. entry.key ..
+                      "' has non-array 'subSettings' (must be array of child entries)", 3)
+            end
+            for ci, child in ipairs(entry.subSettings) do
+                if type(child) ~= "table" then
+                    error("Cairn-Settings:New: entry '" .. entry.key ..
+                          "' subSettings #" .. ci .. " must be a table", 3)
+                end
+                if type(child.key) ~= "string" or child.key == "" then
+                    error("Cairn-Settings:New: entry '" .. entry.key ..
+                          "' subSettings #" .. ci .. " missing 'key' (string)", 3)
+                end
+                if not isSupportedType(child.type) then
+                    error("Cairn-Settings:New: entry '" .. entry.key ..
+                          "' subSettings '" .. child.key ..
+                          "' has unsupported type: " .. tostring(child.type), 3)
+                end
+                if seen[child.key] then
+                    error("Cairn-Settings:New: duplicate schema key (in subSettings): " ..
+                          child.key, 3)
+                end
+                seen[child.key] = true
+                local childSpec = Cairn_Settings.controlTypes[child.type]
+                if not (childSpec and childSpec.skipDefault) and child.default == nil then
+                    error("Cairn-Settings:New: subSettings entry '" .. child.key ..
+                          "' requires a 'default' value", 3)
+                end
+                -- Per-shape declarative validation on the child too.
+                validateRequireArguments(child)
+            end
+        end
+        if entry.subSettingsModifiable ~= nil
+           and type(entry.subSettingsModifiable) ~= "function"
+        then
+            error("Cairn-Settings:New: entry '" .. entry.key ..
+                  "' has non-function 'subSettingsModifiable'", 3)
+        end
     end
 end
 
@@ -291,10 +486,21 @@ end
 -- survives across version upgrades — a consumer changing a default later
 -- doesn't retroactively overwrite the user's saved value. Documented
 -- explicitly because consumers WILL hit this and be confused.
+--
+-- MINOR 17 (Decision 29) — also walks `subSettings` arrays so child
+-- entries get their defaults seeded the same way. Same flat key namespace
+-- as top-level entries.
 local function seedDefaults(db, schema)
     for _, entry in ipairs(schema) do
         if entry.type ~= "header" and db.profile[entry.key] == nil then
             db.profile[entry.key] = entry.default
+        end
+        if type(entry.subSettings) == "table" then
+            for _, child in ipairs(entry.subSettings) do
+                if child.type ~= "header" and db.profile[child.key] == nil then
+                    db.profile[child.key] = child.default
+                end
+            end
         end
     end
 end
@@ -635,6 +841,53 @@ local function registerEntry(self, entry)
 
     self._initializers[key] = init
     applySearchTags(init, entry, label)
+
+    -- Cluster E Decision 29 — render sub-settings nested under this parent.
+    -- Each child becomes its own panel row with `SetParentInitializer`
+    -- wiring so the child auto-locks when the parent value is falsy
+    -- (default predicate). Consumer can override with
+    -- `entry.subSettingsModifiable = function(get) -> bool` for multi-
+    -- condition locks (parent on AND sibling X in state Y).
+    if type(entry.subSettings) == "table" and init then
+        local parentInit = init
+        local parentSetting = setting
+        local customModifiable = entry.subSettingsModifiable
+        local getter = makeGetter(self)
+
+        -- Per-child closure capturing parent for SetParentInitializer.
+        -- `isModifiable` returns TRUE when child should be enabled; that's
+        -- the inverse of disabled. Default predicate: parent value is
+        -- truthy. Closure reads through getter so the latest value wins
+        -- on each Blizzard refresh.
+        local function defaultModifiable()
+            return not not getter(entry.key)
+        end
+        local modifiableFn
+        if type(customModifiable) == "function" then
+            modifiableFn = function() return not not customModifiable(getter) end
+        else
+            modifiableFn = defaultModifiable
+        end
+
+        for _, child in ipairs(entry.subSettings) do
+            -- registerEntry treats child as a top-level entry; the
+            -- SetParentInitializer wiring after-the-fact creates the
+            -- visual nesting and lock.
+            local ok, err = pcall(registerEntry, self, child)
+            if not ok then
+                local log = getLogger()
+                if log then
+                    log:Error("Failed to register subSettings child '%s': %s",
+                              child.key, tostring(err))
+                end
+            else
+                local childInit = self._initializers[child.key]
+                if childInit and type(childInit.SetParentInitializer) == "function" then
+                    pcall(childInit.SetParentInitializer, childInit, parentInit, modifiableFn)
+                end
+            end
+        end
+    end
 end
 
 
@@ -647,19 +900,40 @@ end
 -- SavedVariables load before consumer .lua files run, calling :New at file
 -- scope is safe IF the consumer's TOC declared the SavedVariables. Document;
 -- can't enforce.
-function Cairn_Settings:New(addonName, db, schema)
+function Cairn_Settings:New(addonName, db, schema, opts)
     if type(addonName) ~= "string" or addonName == "" then
         error("Cairn-Settings:New: addonName must be a non-empty string", 2)
     end
     if type(db) ~= "table" or type(db.profile) ~= "table" then
         error("Cairn-Settings:New: db must be a Cairn-DB instance with .profile (call after the DB exists)", 2)
     end
+    if opts ~= nil and type(opts) ~= "table" then
+        error("Cairn-Settings:New: opts must be a table or nil", 2)
+    end
+    -- Cluster E Decision 37 — layout dispatch. "vertical" (default) builds
+    -- a schema-driven panel; "canvas" hands the consumer a Blizzard-managed
+    -- frame they own entirely. Schema validation + default seeding +
+    -- Get/Set/OnChange still happen for canvas mode — the lib just doesn't
+    -- render widgets from the schema.
+    local layoutKind = opts and opts.layout or "vertical"
+    if layoutKind ~= "vertical" and layoutKind ~= "canvas" then
+        error("Cairn-Settings:New: opts.layout must be 'vertical' or 'canvas' (got "
+              .. tostring(layoutKind) .. ")", 2)
+    end
     validateSchema(schema)
     seedDefaults(db, schema)
 
+    -- Flat by-key map across top-level entries AND subSettings children
+    -- (Cluster E Decision 29). validateSchema already enforced key
+    -- uniqueness across both namespaces so collisions can't reach here.
     local byKey = {}
     for _, entry in ipairs(schema) do
         byKey[entry.key] = entry
+        if type(entry.subSettings) == "table" then
+            for _, child in ipairs(entry.subSettings) do
+                byKey[child.key] = child
+            end
+        end
     end
 
     local self = {
@@ -680,12 +954,18 @@ function Cairn_Settings:New(addonName, db, schema)
         _disableListeners = {},
     }
 
+    self._layoutKind = layoutKind
+
     Cairn_Settings.instances[self] = addonName
 
     -- Stub mode when Blizzard's Settings global isn't loaded. This is the
     -- Classic-flavor compatibility path — those clients pre-date the
     -- Dragonflight Settings API. Storage and subscribers still work.
-    if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnCategory) then
+    -- (Same path for both layout kinds — canvas/vertical only differ on
+    -- modern clients where the factories exist.)
+    if not (Settings
+            and Settings.RegisterVerticalLayoutCategory
+            and Settings.RegisterAddOnCategory) then
         local log = getLogger()
         if log then
             log:Warn("Blizzard Settings API not available; returning Get/Set-only stub for %s.", addonName)
@@ -694,26 +974,56 @@ function Cairn_Settings:New(addonName, db, schema)
         return self
     end
 
-    local category, layout = Settings.RegisterVerticalLayoutCategory(addonName)
+    -- Cluster E Decision 37 — canvas-vs-vertical category factory dispatch.
+    -- Canvas mode requires a consumer-supplied panel frame; if missing we
+    -- gracefully fall back to vertical and log a warning so consumers see
+    -- the misuse without the panel breaking entirely.
+    local category, layout
+    if layoutKind == "canvas" then
+        local frame = opts and opts.frame
+        if frame and Settings.RegisterCanvasLayoutCategory then
+            category = Settings.RegisterCanvasLayoutCategory(frame, addonName)
+            layout   = nil  -- canvas categories don't expose a layout helper
+        else
+            local log = getLogger()
+            if log then
+                log:Warn("layout='canvas' requested but opts.frame missing or RegisterCanvasLayoutCategory unavailable — falling back to vertical for %s.", addonName)
+            end
+            self._layoutKind = "vertical"
+            category, layout = Settings.RegisterVerticalLayoutCategory(addonName)
+        end
+    else
+        category, layout = Settings.RegisterVerticalLayoutCategory(addonName)
+    end
     self._category   = category
     self._layout     = layout
     self._categoryID = category and category:GetID() or nil
 
     setmetatable(self, proto)
 
-    for _, entry in ipairs(schema) do
-        local ok, err = pcall(registerEntry, self, entry)
-        if not ok then
-            local log = getLogger()
-            if log then
-                log:Error("Failed to register schema entry '%s': %s", entry.key, tostring(err))
-            else
-                geterrorhandler()(err)
+    -- Canvas-mode panels don't render from the schema — the consumer owns
+    -- the panel frame entirely. Storage / Get / Set / OnChange still work
+    -- (validation + defaults seeded above). Skip the per-entry render walk.
+    if self._layoutKind == "vertical" then
+        for _, entry in ipairs(schema) do
+            local ok, err = pcall(registerEntry, self, entry)
+            if not ok then
+                local log = getLogger()
+                if log then
+                    log:Error("Failed to register schema entry '%s': %s", entry.key, tostring(err))
+                else
+                    geterrorhandler()(err)
+                end
             end
         end
     end
 
     Settings.RegisterAddOnCategory(category)
+
+    -- Register in the lib-level dual-keyed registry so :OpenToCategory
+    -- can deep-link to this addon's panel via its addon name (and, in a
+    -- future expansion, subName). Cluster E Decision 38.
+    Cairn_Settings:_RegisterCategoryEntry(addonName, self)
 
     -- Seed initial disableif state so first-paint reflects the right
     -- disabled set. Wrapped via the normal refresh path (same code that
@@ -729,12 +1039,106 @@ function Cairn_Settings:New(addonName, db, schema)
 end
 
 
--- Convenience: `LibStub("Cairn-Settings-1.0")(name, db, schema)` works without
--- the explicit :New, matching the lib's v1 ergonomics. Doesn't change the
--- behavior — just the call-site shape preference.
-setmetatable(Cairn_Settings, { __call = function(self, name, db, schema)
-    return self:New(name, db, schema)
+-- Convenience: `LibStub("Cairn-Settings-1.0")(name, db, schema [, opts])`
+-- works without the explicit :New, matching the lib's v1 ergonomics.
+-- Doesn't change the behavior — just the call-site shape preference.
+-- MINOR 17: forwards optional `opts` arg (Decision 37 layout dispatch).
+setmetatable(Cairn_Settings, { __call = function(self, name, db, schema, opts)
+    return self:New(name, db, schema, opts)
 end })
+
+
+-- ---------------------------------------------------------------------------
+-- :RegisterControl (Cluster E Decision 34)
+-- ---------------------------------------------------------------------------
+-- Public extension point. Consumers register custom control kinds into
+-- Cairn_Settings.controlTypes from outside the lib without forking.
+-- After registration, schemas using `type = <name>` validate against the
+-- new entry's metadata. The corresponding registerEntry path stays
+-- consumer-supplied via the spec's `buildFunction` (rendering remains
+-- TODO — Cluster E Decision 27's full registry-driven dispatch isn't
+-- yet wired through registerEntry; the controlTypes table provides the
+-- VALIDATION half today, with build-function wiring deferred).
+function Cairn_Settings:RegisterControl(name, spec)
+    if type(name) ~= "string" or name == "" then
+        error("Cairn-Settings:RegisterControl: name must be a non-empty string", 2)
+    end
+    if spec ~= nil and type(spec) ~= "table" then
+        error("Cairn-Settings:RegisterControl: spec must be a table or nil", 2)
+    end
+    self.controlTypes[name] = spec or { storageOnly = false }
+    return self.controlTypes[name]
+end
+
+
+-- ---------------------------------------------------------------------------
+-- :ModifiedClickOptions (Cluster E Decision 33)
+-- ---------------------------------------------------------------------------
+-- Returns pre-built ALT/CTRL/SHIFT/NONE dropdown choices for the
+-- modifier-key configuration pattern. `mustChooseKey = true` excludes the
+-- NONE entry — for cases where SOME modifier is required (e.g. action-bar
+-- binding-edit dropdowns).
+--
+-- Output shape matches Cairn-Settings's `dropdown` widget choices: a
+-- `{value = label}` table the consumer drops into their schema.
+function Cairn_Settings:ModifiedClickOptions(mustChooseKey)
+    local choices = {
+        ALT   = "Alt",
+        CTRL  = "Ctrl",
+        SHIFT = "Shift",
+    }
+    if not mustChooseKey then choices.NONE = "None" end
+    return choices
+end
+
+
+-- ---------------------------------------------------------------------------
+-- Dual-keyed registry + :OpenToCategory (Cluster E Decision 38)
+-- ---------------------------------------------------------------------------
+-- Tracks registered Cairn-Settings instances keyed by their addon name
+-- (and optionally a subcategory path), enabling deep-link slash commands:
+--
+--   /myaddon         -> :OpenToCategory("MyAddon")
+--   /myaddon display -> :OpenToCategory("MyAddon", "Display")
+--
+-- The current `:New` path only registers under the addon name. Sub-
+-- category registration is reserved for a future expansion (a `:NewSub`
+-- method or a `subName` arg on `:New`); this Decision just nails down
+-- the registry shape so consumers can deep-link to the main category
+-- today and gain sub-category deep-linking transparently when it lands.
+
+Cairn_Settings.registeredCategories = Cairn_Settings.registeredCategories or {}
+
+
+-- Internal: called from :New (proto path) after Blizzard category
+-- registration so the dual-keyed registry contains everything :New built.
+function Cairn_Settings:_RegisterCategoryEntry(addonName, instance)
+    self.registeredCategories[addonName] = instance
+end
+
+
+-- :OpenToCategory(addonName [, subName]) -> bool
+--
+-- Returns true when a category was found + opened, false otherwise.
+-- subName joins with addonName via "." so subcategories registered as
+-- `MyAddon.Display` (future shape) resolve naturally.
+function Cairn_Settings:OpenToCategory(addonName, subName)
+    if type(addonName) ~= "string" or addonName == "" then
+        error("Cairn-Settings:OpenToCategory: addonName must be a non-empty string", 2)
+    end
+    local key = addonName
+    if type(subName) == "string" and subName ~= "" then
+        key = addonName .. "." .. subName
+    end
+    local instance = self.registeredCategories[key]
+    if not instance then return false end
+
+    if type(instance.Open) == "function" then
+        instance:Open()
+        return true
+    end
+    return false
+end
 
 
 return Cairn_Settings

@@ -29,6 +29,12 @@
 --   CT.timers       -- flat array of active After/Every/Debounce handles
 --   CT.byOwner      -- { [owner] = { handle, handle, ... } }
 --
+-- MINOR 15 additions (2026-05-12 walk; Decisions 5 + 6):
+--   CT:ContinueAfterCombat(fn)            -- fire now if out-of-combat, else
+--                                            queue + drain on PLAYER_REGEN_ENABLED
+--   CT:Start(slot, mode, period, fn)      -- unified push / ignore / duplicate /
+--                                            cooldown debounce/throttle helper
+--
 -- Public API (timer handle):
 --   handle:Cancel()
 --   handle:IsCancelled()                          -> boolean
@@ -59,7 +65,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Timer-1.0"
-local LIB_MINOR = 14
+local LIB_MINOR = 15
 
 local Cairn_Timer = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Timer then return end
@@ -376,6 +382,180 @@ function Cairn_Timer:Stopwatch()
         _laps        = {},
         _lapsOrdered = {},
     }, StopwatchMeta)
+end
+
+
+-- ---------------------------------------------------------------------------
+-- :ContinueAfterCombat (Cairn-Timer Decision 5, locked 2026-05-12)
+-- ---------------------------------------------------------------------------
+-- Universal "I need to do this but combat lockdown is preventing it"
+-- deferral. If `not InCombatLockdown()`, fire the handler synchronously.
+-- Otherwise append to a module-scope queue; on PLAYER_REGEN_ENABLED,
+-- drain the queue in order with each handler wrapped in pcall so a
+-- throwing handler routes to geterrorhandler and doesn't stop the drain.
+-- Queue wipes after the drain.
+--
+-- Surfaced by Cairn-Settings Decision 12 (consolidated EditModeExpanded's
+-- internal CombatManager). Concrete consumers: any Cairn-Settings
+-- combat-aware widget (secureFrameHideable per Cluster B Decision 10),
+-- Forge_AddonManager LoadAddon path, Vellum waypoint placement on
+-- secure frames.
+
+Cairn_Timer._combatQueue = Cairn_Timer._combatQueue or {}
+
+
+-- Lazy event-frame init. Sharing one frame across the lib means N
+-- consumers using :ContinueAfterCombat get ONE event listener, not N.
+local function ensureCombatListener()
+    if Cairn_Timer._combatFrame then return end
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    frame:SetScript("OnEvent", function()
+        local queue = Cairn_Timer._combatQueue
+        if not queue or #queue == 0 then return end
+        -- Snapshot then wipe BEFORE iterating so handlers that
+        -- re-call :ContinueAfterCombat (e.g. starting another combat-
+        -- gated chain) don't double-queue into the current drain.
+        local snapshot = {}
+        for i = 1, #queue do snapshot[i] = queue[i] end
+        Cairn_Timer._combatQueue = {}
+        for i = 1, #snapshot do
+            Pcall.Call("Cairn-Timer:ContinueAfterCombat handler", snapshot[i])
+        end
+    end)
+    Cairn_Timer._combatFrame = frame
+end
+
+
+function Cairn_Timer:ContinueAfterCombat(fn)
+    if type(fn) ~= "function" then
+        error("Cairn-Timer:ContinueAfterCombat: fn must be a function", 2)
+    end
+
+    local inCombat = (_G.InCombatLockdown and _G.InCombatLockdown()) or false
+    if not inCombat then
+        -- Out of combat: fire synchronously.
+        Pcall.Call("Cairn-Timer:ContinueAfterCombat handler", fn)
+        return
+    end
+
+    ensureCombatListener()
+    local queue = self._combatQueue
+    queue[#queue + 1] = fn
+end
+
+
+-- ---------------------------------------------------------------------------
+-- :Start (Cairn-Timer Decision 6, locked 2026-05-12)
+-- ---------------------------------------------------------------------------
+-- Unified API generalizing four canonical debounce/throttle patterns
+-- behind a single signature. `slot` is a string key for grouping calls
+-- (timers for the same slot interact per the mode semantics). Pattern
+-- reference: Gopher (Tammya-MoonGuard, 2018).
+--
+--   push      Trailing-edge debounce. Cancel + restart on every call;
+--             fires once after the LAST call settles for `period`. This
+--             is exactly the existing :Debounce semantic, so push mode
+--             delegates to it directly.
+--
+--   ignore    Leading-edge throttle. No-op if a timer for this slot is
+--             already running. The first call wins; rest get dropped
+--             until the timer fires.
+--
+--   duplicate Fire-and-forget. Always schedules a new timer with this
+--             period regardless of any existing slot state; the handles
+--             aren't tracked under the slot key (can't cancel).
+--
+--   cooldown  Leading-edge with trailing-merge. Fire immediately + merge
+--             subsequent calls during the cooldown window into a single
+--             trailing fire. After the cooldown elapses, the merged
+--             trailing fire (if any calls came in) fires.
+
+Cairn_Timer._slotState = Cairn_Timer._slotState or {}
+
+
+local function startPush(slot, period, fn)
+    -- Delegate to existing Debounce; key = slot.
+    return Cairn_Timer:Debounce(slot, period, fn)
+end
+
+
+local function startIgnore(slot, period, fn)
+    local state = Cairn_Timer._slotState[slot]
+    if state and state.running then return nil end
+    -- Mark running; after the timer fires, clear so the next call goes through.
+    state = state or {}
+    state.running = true
+    Cairn_Timer._slotState[slot] = state
+
+    return Cairn_Timer:After(period, function()
+        local s = Cairn_Timer._slotState[slot]
+        if s then s.running = false end
+        fn()
+    end)
+end
+
+
+local function startDuplicate(slot, period, fn)
+    -- Slot key intentionally ignored — just schedule a new fire-and-forget.
+    return Cairn_Timer:After(period, fn)
+end
+
+
+local function startCooldown(slot, period, fn)
+    local state = Cairn_Timer._slotState[slot]
+    if state and state.coolingDown then
+        -- Within cooldown window — mark pending trailing fire.
+        state.pendingTrailing = true
+        return nil
+    end
+
+    -- Not cooling down — fire immediately and start the cooldown window.
+    state = state or {}
+    state.coolingDown = true
+    state.pendingTrailing = false
+    state.fn = fn
+    Cairn_Timer._slotState[slot] = state
+
+    Pcall.Call("Cairn-Timer:Start[cooldown] immediate fire", fn)
+
+    return Cairn_Timer:After(period, function()
+        local s = Cairn_Timer._slotState[slot]
+        if not s then return end
+        local needsTrailing = s.pendingTrailing
+        s.coolingDown = false
+        s.pendingTrailing = false
+        if needsTrailing and s.fn then
+            Pcall.Call("Cairn-Timer:Start[cooldown] trailing fire", s.fn)
+        end
+    end)
+end
+
+
+local START_MODES = {
+    push      = startPush,
+    ignore    = startIgnore,
+    duplicate = startDuplicate,
+    cooldown  = startCooldown,
+}
+
+
+function Cairn_Timer:Start(slot, mode, period, fn)
+    if type(slot) ~= "string" or slot == "" then
+        error("Cairn-Timer:Start: slot must be a non-empty string", 2)
+    end
+    local dispatch = START_MODES[mode]
+    if not dispatch then
+        error("Cairn-Timer:Start: mode must be one of push / ignore / duplicate / cooldown (got "
+              .. tostring(mode) .. ")", 2)
+    end
+    if type(period) ~= "number" or period < 0 then
+        error("Cairn-Timer:Start: period must be a non-negative number", 2)
+    end
+    if type(fn) ~= "function" then
+        error("Cairn-Timer:Start: fn must be a function", 2)
+    end
+    return dispatch(slot, period, fn)
 end
 
 

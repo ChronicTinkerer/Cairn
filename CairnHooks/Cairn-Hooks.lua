@@ -34,6 +34,11 @@
 --   CH:UnhookOwner(owner)
 --   CH._registry   -- flat array of installed hooks (read-only for Forge_Registry)
 --
+-- HookOnce family (Cairn-Hooks Decision 5; MINOR 15):
+--   CH:HookOnce  (frame, script,     callback) -> handle  -- HookScript-style, fire-once
+--   CH:HookAlways(frame, script,     callback) -> handle  -- HookScript-style, multi-fire
+--   CH:HookFuncOnce(table, methodName, callback) -> handle -- hooksecurefunc-style, fire-once
+--
 -- Semantics:
 --   - Multiple hooks compose. Last-installed wraps outermost. Both Pre and
 --     Post on the same method? Both run. Pre/Post + Wrap? Wrap controls the
@@ -51,7 +56,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Hooks-1.0"
-local LIB_MINOR = 14
+local LIB_MINOR = 15
 
 local Cairn_Hooks = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Hooks then return end
@@ -282,6 +287,169 @@ function Cairn_Hooks:UnhookOwner(owner)
     for _, hook in ipairs(toRemove) do
         self:Unhook(hook)
     end
+end
+
+
+-- ---------------------------------------------------------------------------
+-- HookOnce family (Cairn-Hooks Decision 5 — locked 2026-05-12)
+-- ---------------------------------------------------------------------------
+-- Different conceptual model from Pre/Post/Wrap above. The HookOnce family
+-- exists to solve a specific recurring problem: multiple sub-modules in
+-- ONE addon all want to react to the same `frame:HookScript("OnShow", ...)`
+-- or `hooksecurefunc(table, "method", ...)`. Without this pattern, each
+-- :HookScript call stacks another real hook handler on the frame.
+--
+-- The HookOnce family installs ONE real hook on first use, then appends
+-- consumer callbacks to a per-(target, script) callback list. On fire, the
+-- entire callback list runs.
+--
+--   * `Once`   semantics: callback list is wiped after the first fire.
+--              True "fire once total across all subscribers" pattern.
+--   * `Always` semantics: callback list persists; multi-fire fan-out.
+--
+-- The pattern reference is EditModeExpanded's HookOnce.lua. The Cairn
+-- variant ships BOTH semantics because both are useful — the row text
+-- locked "ship all three" (HookOnce + HookFuncOnce + HookAlways) per the
+-- don't-defer-pattern-matching-features rule.
+--
+-- Note: there's no `HookFuncAlways` even though the symmetry suggests one.
+-- Use vanilla `hooksecurefunc(table, "method", fn)` for that case —
+-- hooksecurefunc inherently supports multiple handlers, so the
+-- single-real-hook-with-fan-out optimization HookFuncOnce provides isn't
+-- needed for the persistent variant.
+
+-- Per-(target, script) state. `target` (a Frame) is the table key. State:
+--   { callbacks = {fn1, fn2, ...}, mode = "once" or "always", installed = bool }
+Cairn_Hooks._hookOnceState = Cairn_Hooks._hookOnceState or setmetatable({}, { __mode = "k" })
+Cairn_Hooks._hookFuncOnceState = Cairn_Hooks._hookFuncOnceState or {}
+
+
+local function getHookOnceState(target, script)
+    local perTarget = Cairn_Hooks._hookOnceState[target]
+    if not perTarget then
+        perTarget = {}
+        Cairn_Hooks._hookOnceState[target] = perTarget
+    end
+    if not perTarget[script] then
+        perTarget[script] = { callbacks = {}, mode = "always", installed = false }
+    end
+    return perTarget[script]
+end
+
+
+-- :HookOnce(frame, script, callback) -> handle
+-- :HookAlways(frame, script, callback) -> handle
+--
+-- `frame` must be a Blizzard frame (anything with :HookScript). `script`
+-- is the Blizzard script name ("OnShow", "OnHide", "OnUpdate", etc.).
+-- `callback` is `function(self, ...)` — same signature `HookScript`
+-- callbacks receive.
+--
+-- Returns a handle for the canonical Cairn-Hooks unhook path (just the
+-- consumer's callback fn — passing it back to :UnhookHookOnce removes
+-- only THIS callback from the per-script list, not the underlying hook).
+local function installHookOnceImpl(target, script, callback, mode)
+    if type(target) ~= "table" or type(target.HookScript) ~= "function" then
+        error("Cairn-Hooks:" .. (mode == "once" and "HookOnce" or "HookAlways") ..
+              ": target must be a frame with :HookScript", 3)
+    end
+    if type(script) ~= "string" or script == "" then
+        error("Cairn-Hooks:" .. (mode == "once" and "HookOnce" or "HookAlways") ..
+              ": script must be a non-empty string", 3)
+    end
+    if type(callback) ~= "function" then
+        error("Cairn-Hooks:" .. (mode == "once" and "HookOnce" or "HookAlways") ..
+              ": callback must be a function", 3)
+    end
+
+    local state = getHookOnceState(target, script)
+    -- First call wins on mode. Subsequent calls don't downgrade Once → Always
+    -- or vice versa; consumer error if mismatched (rare in practice).
+    if not state.installed then
+        state.mode = mode
+
+        target:HookScript(script, function(self, ...)
+            local list = state.callbacks
+            if not list or #list == 0 then return end
+            -- Snapshot before iteration in case a callback mutates the list
+            -- (e.g. unhooks itself). For Once, wipe AFTER the snapshot fires.
+            local snapshot = {}
+            for i = 1, #list do snapshot[i] = list[i] end
+            if state.mode == "once" then
+                state.callbacks = {}
+            end
+            for i = 1, #snapshot do
+                safeCall("HookOnce callback (" .. script .. ")", snapshot[i], self, ...)
+            end
+        end)
+
+        state.installed = true
+    end
+
+    state.callbacks[#state.callbacks + 1] = callback
+    return { _kind = "hookonce", target = target, script = script, fn = callback }
+end
+
+
+function Cairn_Hooks:HookOnce(frame, script, callback)
+    return installHookOnceImpl(frame, script, callback, "once")
+end
+
+function Cairn_Hooks:HookAlways(frame, script, callback)
+    return installHookOnceImpl(frame, script, callback, "always")
+end
+
+
+-- :HookFuncOnce(table, methodName, callback) -> handle
+--
+-- Same fan-out pattern but for `hooksecurefunc(table, methodName, ...)`.
+-- Installs ONE real hooksecurefunc on first use; subsequent consumers
+-- just append. After the first fire, the callback list is wiped (true
+-- once-semantics). No Always variant — hooksecurefunc inherently
+-- supports multiple handlers, use it directly for persistent multi-fire.
+function Cairn_Hooks:HookFuncOnce(target, methodName, callback)
+    if type(target) ~= "table" then
+        error("Cairn-Hooks:HookFuncOnce: target must be a table", 2)
+    end
+    if type(methodName) ~= "string" or methodName == "" then
+        error("Cairn-Hooks:HookFuncOnce: methodName must be a non-empty string", 2)
+    end
+    if type(callback) ~= "function" then
+        error("Cairn-Hooks:HookFuncOnce: callback must be a function", 2)
+    end
+
+    -- State keyed by target+methodName (string composition) — `hooksecurefunc`
+    -- doesn't store anything on the target, so we maintain the per-call list
+    -- here. Weak references aren't used: hooksecurefunc itself doesn't allow
+    -- removal, so the state lives as long as the lib does.
+    local stateKey = target
+    local perTarget = Cairn_Hooks._hookFuncOnceState[stateKey]
+    if not perTarget then
+        perTarget = {}
+        Cairn_Hooks._hookFuncOnceState[stateKey] = perTarget
+    end
+    if not perTarget[methodName] then
+        perTarget[methodName] = { callbacks = {}, installed = false }
+    end
+    local state = perTarget[methodName]
+
+    if not state.installed then
+        hooksecurefunc(target, methodName, function(...)
+            local list = state.callbacks
+            if not list or #list == 0 then return end
+            local snapshot = {}
+            for i = 1, #list do snapshot[i] = list[i] end
+            state.callbacks = {}
+            for i = 1, #snapshot do
+                safeCall("HookFuncOnce callback (" .. methodName .. ")",
+                    snapshot[i], ...)
+            end
+        end)
+        state.installed = true
+    end
+
+    state.callbacks[#state.callbacks + 1] = callback
+    return { _kind = "hookfunconce", target = target, method = methodName, fn = callback }
 end
 
 

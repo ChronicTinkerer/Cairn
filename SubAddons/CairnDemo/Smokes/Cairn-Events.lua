@@ -178,4 +178,91 @@ _G.CairnDemo.Smokes["Cairn-Events"] = function(report)
            not pcall(function() CE:Fire("") end))
     report("Fire(nil) errors",
            not pcall(function() CE:Fire(nil) end))
+
+
+    -- =====================================================================
+    -- MINOR 15 additions: D4 :Once + D5 EventTrace + D8 ValidateEvent +
+    -- D9 :SubscribeUnit + D10 :IsUnitEvent
+    -- =====================================================================
+
+    report("CE:Once is a function",          type(CE.Once)          == "function")
+    report("CE:OnceMessage is a function",   type(CE.OnceMessage)   == "function")
+    report("CE:ValidateEvent is a function", type(CE.ValidateEvent) == "function")
+    report("CE:SubscribeUnit is a function", type(CE.SubscribeUnit) == "function")
+    report("CE:IsUnitEvent is a function",   type(CE.IsUnitEvent)   == "function")
+
+
+    -- D4 :Once fires exactly once then auto-unsubscribes
+    if type(CE.Once) == "function" then
+        local onceEvent = "CairnEvents_OnceTest_" .. tostring(time and time() or 0)
+        local onceFires = 0
+        CE:Once(onceEvent, function() onceFires = onceFires + 1 end)
+        CE:Fire(onceEvent)
+        CE:Fire(onceEvent)
+        CE:Fire(onceEvent)
+        report(":Once fires exactly once across multiple Fire calls",
+               onceFires == 1,
+               ("got " .. onceFires))
+
+        report(":Once with non-function errors",
+               not pcall(function() CE:Once("X", "notafunc") end))
+    end
+
+
+    -- D8 :ValidateEvent
+    if type(CE.ValidateEvent) == "function" then
+        report(":ValidateEvent('PLAYER_LOGIN') is true",
+               CE:ValidateEvent("PLAYER_LOGIN") == true)
+        local ok, errMsg = CE:ValidateEvent("DEFINITELY_NOT_A_REAL_EVENT_XYZ")
+        report(":ValidateEvent('bogus event') returns false",
+               ok == false)
+        report(":ValidateEvent('bogus') provides errMsg",
+               type(errMsg) == "string")
+        local ok2 = CE:ValidateEvent("")
+        report(":ValidateEvent('') returns false",
+               ok2 == false)
+    end
+
+
+    -- D10 :IsUnitEvent
+    if type(CE.IsUnitEvent) == "function" then
+        report(":IsUnitEvent('UNIT_HEALTH') is true",
+               CE:IsUnitEvent("UNIT_HEALTH") == true)
+        report(":IsUnitEvent('PLAYER_LOGIN') is false (not a UNIT event)",
+               CE:IsUnitEvent("PLAYER_LOGIN") == false)
+        report(":IsUnitEvent('') is false",
+               CE:IsUnitEvent("") == false)
+    end
+
+
+    -- D9 :SubscribeUnit — validates the unit token + sets up filtered handler
+    if type(CE.SubscribeUnit) == "function" then
+        report(":SubscribeUnit with valid unit + handler returns subscription",
+               type(CE:SubscribeUnit("UNIT_HEALTH", "player", function() end)) == "table")
+        report(":SubscribeUnit with bad unit errors",
+               not pcall(function() CE:SubscribeUnit("UNIT_HEALTH", "definitely_not_a_unit", function() end) end))
+        report(":SubscribeUnit with non-function errors",
+               not pcall(function() CE:SubscribeUnit("UNIT_HEALTH", "player", "notafunc") end))
+
+        local sub = CE:SubscribeUnit("UNIT_HEALTH", "target", function() end)
+        report(":SubscribeUnit sub carries .unit annotation",
+               sub.unit == "target")
+
+        -- Filtered dispatch: only fires for the matching unit
+        local targetFires, playerFires = 0, 0
+        local testEvent = "UNIT_TEST_EVENT_" .. tostring(time and time() or 0)
+        local subT = CE:SubscribeUnit(testEvent, "target", function() targetFires = targetFires + 1 end)
+        local subP = CE:SubscribeUnit(testEvent, "player", function() playerFires = playerFires + 1 end)
+        CE:Fire(testEvent, "target")
+        CE:Fire(testEvent, "player")
+        CE:Fire(testEvent, "focus")
+        report(":SubscribeUnit filters: target fires for target only",
+               targetFires == 1)
+        report(":SubscribeUnit filters: player fires for player only",
+               playerFires == 1)
+
+        -- Cleanup
+        CE:Unsubscribe(subT)
+        CE:Unsubscribe(subP)
+    end
 end

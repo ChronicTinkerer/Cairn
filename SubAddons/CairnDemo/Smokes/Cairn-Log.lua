@@ -23,9 +23,12 @@ _G.CairnDemo.Smokes["Cairn-Log"] = function(report)
     report("CL:SetCapacity exists",      type(CL.SetCapacity) == "function")
     report("CL.loggers is a table",      type(CL.loggers) == "table")
     report("CL.entries is a table",      type(CL.entries) == "table")
-    report("CL.LEVELS has DEBUG..ERROR ranks",
-           CL.LEVELS.DEBUG == 1 and CL.LEVELS.INFO == 2
-           and CL.LEVELS.WARN == 3 and CL.LEVELS.ERROR == 4)
+    -- MINOR 15 changed LEVELS to Python-style 6-level scheme with gaps.
+    -- DEBUG/INFO/WARN/ERROR now at 10/20/30/40; TRACE/FATAL added at 0/50.
+    -- WARN preserved as numeric alias for WARNING (both = 30).
+    report("CL.LEVELS has DEBUG..ERROR ranks (MINOR 15: 10..40)",
+           CL.LEVELS.DEBUG == 10 and CL.LEVELS.INFO == 20
+           and CL.LEVELS.WARN == 30 and CL.LEVELS.ERROR == 40)
 
 
     -- Snapshot shared buffer + capacity around the test.
@@ -200,6 +203,113 @@ _G.CairnDemo.Smokes["Cairn-Log"] = function(report)
            not pcall(function() CL:GetEntries(42) end))
 
 
+    -- =====================================================================
+    -- MINOR 15 additions — Decisions 1-3, 5, 7, 8, 9 from the 2026-05-12 walk
+    -- =====================================================================
+
+    -- D1: new 6-level scheme with gaps
+    report("LEVELS.TRACE = 0",      CL.LEVELS.TRACE == 0)
+    report("LEVELS.DEBUG = 10",     CL.LEVELS.DEBUG == 10)
+    report("LEVELS.INFO = 20",      CL.LEVELS.INFO == 20)
+    report("LEVELS.WARNING = 30",   CL.LEVELS.WARNING == 30)
+    report("LEVELS.WARN = 30 (alias)", CL.LEVELS.WARN == 30)
+    report("LEVELS.ERROR = 40",     CL.LEVELS.ERROR == 40)
+    report("LEVELS.FATAL = 50",     CL.LEVELS.FATAL == 50)
+
+    -- New methods land on loggers
+    local lvlLog = CL:New("ClusterA_LevelMethods_" .. tostring(time and time() or 0))
+    report("log:Trace exists",   type(lvlLog.Trace)   == "function")
+    report("log:Warning exists", type(lvlLog.Warning) == "function")
+    report("log:Fatal exists",   type(lvlLog.Fatal)   == "function")
+    report("log:ForceError exists", type(lvlLog.ForceError) == "function")
+    report("log:ForceFatal exists", type(lvlLog.ForceFatal) == "function")
+
+    -- D2: entry-shape aliases (t/s/m route to timestamp/level/message)
+    CL.entries = {}; CL._head = 1; CL._count = 0
+    lvlLog:Trace("first")
+    lvlLog:Fatal("second")
+    local recent = CL:GetEntries({ limit = 5 })
+    if recent[1] then
+        report("entry.t aliases timestamp",
+               recent[1].t == recent[1].timestamp)
+        report("entry.s aliases level",
+               recent[1].s == recent[1].level)
+        report("entry.m aliases message",
+               recent[1].m == recent[1].message)
+    end
+
+
+    -- D3: database backing via :SetDatabase
+    report("CL:SetDatabase is a function", type(CL.SetDatabase) == "function")
+    local fakeDB = {}
+    CL:SetDatabase(fakeDB)
+    CL.entries = {}; CL._head = 1; CL._count = 0
+    local dbLog = CL:New("ClusterA_DB_" .. tostring(time and time() or 0))
+    dbLog:Info("backed by db")
+    report("SetDatabase routes entries into the SV table",
+           #fakeDB == 1 and fakeDB[1].message == "backed by db")
+    CL:SetDatabase(nil)
+    report("SetDatabase(nil) disconnects (subsequent entries don't write)",
+           CL._database == nil)
+    dbLog:Info("not in db")
+    report("After disconnect, fakeDB unchanged",
+           #fakeDB == 1)
+
+
+    -- D5: ForceError / ForceFatal bypass echo gate
+    CL.entries = {}; CL._head = 1; CL._count = 0
+    CL._echoLevel = nil   -- no echo at all
+    local fLog = CL:New("ClusterA_Force_" .. tostring(time and time() or 0))
+    local ok1 = pcall(function() fLog:ForceError("force err") end)
+    local ok2 = pcall(function() fLog:ForceFatal("force fatal") end)
+    report("ForceError() runs without error", ok1)
+    report("ForceFatal() runs without error", ok2)
+    local entries = CL:GetEntries({ limit = 5 })
+    report("ForceError entry written to ring buffer",
+           #entries >= 1)
+
+
+    -- D7: performance mode nils method slots below threshold
+    report("CL:SetPerformanceMode is a function", type(CL.SetPerformanceMode) == "function")
+    CL:SetPerformanceMode("WARNING")
+    report("Performance mode hasTrace = false",   CL.hasTrace   == false)
+    report("Performance mode hasDebug = false",   CL.hasDebug   == false)
+    report("Performance mode hasInfo  = false",   CL.hasInfo    == false)
+    report("Performance mode hasWarning = true",  CL.hasWarning == true)
+    report("Performance mode hasError = true",    CL.hasError   == true)
+    report("Performance mode hasFatal = true",    CL.hasFatal   == true)
+    local pmLog = CL:New("ClusterA_PM_" .. tostring(time and time() or 0))
+    report("Performance mode nils log:Trace below threshold",
+           pmLog.Trace == nil)
+    report("Performance mode preserves log:Warning at threshold",
+           type(pmLog.Warning) == "function")
+
+    CL:SetPerformanceMode(nil)
+    report("Performance mode nil restores hasTrace",
+           CL.hasTrace == true)
+    local restoreLog = CL:New("ClusterA_PMRestore_" .. tostring(time and time() or 0))
+    report("Performance mode nil restores log:Trace",
+           type(restoreLog.Trace) == "function")
+
+    report("SetPerformanceMode('BogusLevel') errors",
+           not pcall(function() CL:SetPerformanceMode("BogusLevelXYZ") end))
+
+
+    -- D9: :Embed
+    report("CL:Embed is a function", type(CL.Embed) == "function")
+    local fakeAddon = {}
+    CL:Embed(fakeAddon, "ClusterA_Embed_" .. tostring(time and time() or 0))
+    report("Embed injects :Info onto target",  type(fakeAddon.Info)  == "function")
+    report("Embed injects :Debug onto target", type(fakeAddon.Debug) == "function")
+    report("Embed injects :Warn onto target",  type(fakeAddon.Warn)  == "function")
+    report("Embed injects :Error onto target", type(fakeAddon.Error) == "function")
+    report("Embed injects :Category onto target", type(fakeAddon.Category) == "function")
+    fakeAddon:Info("embed test message")
+    local lastEntries = CL:GetEntries({ limit = 1 })
+    report("Embed:Info call lands in ring buffer",
+           lastEntries[1] and lastEntries[1].message == "embed test message")
+
+
     -- Restore state
     CL.entries    = savedEntries
     CL._head      = savedHead
@@ -207,4 +317,6 @@ _G.CairnDemo.Smokes["Cairn-Log"] = function(report)
     CL._capacity  = savedCapacity
     CL._echoLevel = savedEcho
     CL.loggers    = savedLoggers
+    CL:SetPerformanceMode(nil)
+    CL:SetDatabase(nil)
 end

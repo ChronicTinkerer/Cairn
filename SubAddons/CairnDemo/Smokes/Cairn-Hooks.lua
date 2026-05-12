@@ -167,4 +167,95 @@ _G.CairnDemo.Smokes["Cairn-Hooks"] = function(report)
         if hookH.target == target then ours[#ours + 1] = hookH end
     end
     for _, hookH in ipairs(ours) do CH:Unhook(hookH) end
+
+
+    -- =====================================================================
+    -- HookOnce family (Cairn-Hooks Decision 5; MINOR 15)
+    -- =====================================================================
+
+    report("CH:HookOnce is a function",     type(CH.HookOnce)     == "function")
+    report("CH:HookAlways is a function",   type(CH.HookAlways)   == "function")
+    report("CH:HookFuncOnce is a function", type(CH.HookFuncOnce) == "function")
+
+
+    -- HookOnce: 3 subscribers attached. One real handler installed. After
+    -- the first fire all 3 callbacks run, then the list is wiped.
+    --
+    -- CreateFrame("Frame") returns an ALREADY-SHOWN frame by default, so
+    -- the first frame:Show() is a no-op and OnShow doesn't fire. Pre-Hide
+    -- to guarantee the Show triggers an actual OnShow.
+    if type(CH.HookOnce) == "function" then
+        local frame = CreateFrame("Frame")
+        frame:Hide()   -- start hidden so the next Show fires OnShow
+        local fires = { 0, 0, 0 }
+        CH:HookOnce(frame, "OnShow", function() fires[1] = fires[1] + 1 end)
+        CH:HookOnce(frame, "OnShow", function() fires[2] = fires[2] + 1 end)
+        CH:HookOnce(frame, "OnShow", function() fires[3] = fires[3] + 1 end)
+
+        -- Trigger OnShow by toggling visibility (Show fires OnShow).
+        frame:Show()
+
+        report("HookOnce: all 3 subscribers fired on first show",
+               fires[1] == 1 and fires[2] == 1 and fires[3] == 1,
+               ("got fires=(" .. fires[1] .. "," .. fires[2] .. "," .. fires[3] .. ")"))
+
+        -- Second show — list was wiped, none should fire again.
+        frame:Hide()
+        frame:Show()
+        report("HookOnce: subscribers do NOT re-fire on second show",
+               fires[1] == 1 and fires[2] == 1 and fires[3] == 1)
+
+        frame:Hide()
+    end
+
+
+    -- HookAlways: 2 subscribers attached. Both fire on each show, persisting.
+    -- Same pre-Hide guard as HookOnce above.
+    if type(CH.HookAlways) == "function" then
+        local frame = CreateFrame("Frame")
+        frame:Hide()
+        local fires = { 0, 0 }
+        CH:HookAlways(frame, "OnShow", function() fires[1] = fires[1] + 1 end)
+        CH:HookAlways(frame, "OnShow", function() fires[2] = fires[2] + 1 end)
+
+        frame:Show(); frame:Hide()
+        frame:Show(); frame:Hide()
+        frame:Show()
+
+        report("HookAlways: both subscribers fired 3 times (persistent)",
+               fires[1] == 3 and fires[2] == 3,
+               ("got fires=(" .. fires[1] .. "," .. fires[2] .. ")"))
+
+        frame:Hide()
+    end
+
+
+    -- HookFuncOnce: 2 subscribers on a fake table method. Both fire once.
+    if type(CH.HookFuncOnce) == "function" then
+        local stub = {}
+        function stub:Ping() end
+
+        local fires = { 0, 0 }
+        CH:HookFuncOnce(stub, "Ping", function() fires[1] = fires[1] + 1 end)
+        CH:HookFuncOnce(stub, "Ping", function() fires[2] = fires[2] + 1 end)
+
+        stub:Ping()
+        report("HookFuncOnce: both subscribers fired on first call",
+               fires[1] == 1 and fires[2] == 1)
+
+        stub:Ping()
+        report("HookFuncOnce: subscribers do NOT re-fire on second call",
+               fires[1] == 1 and fires[2] == 1)
+    end
+
+
+    -- Bad input
+    if type(CH.HookOnce) == "function" then
+        report("HookOnce on non-frame errors",
+               not pcall(function() CH:HookOnce(42, "OnShow", function() end) end))
+        report("HookOnce with empty script errors",
+               not pcall(function() CH:HookOnce(CreateFrame("Frame"), "", function() end) end))
+        report("HookOnce with non-function callback errors",
+               not pcall(function() CH:HookOnce(CreateFrame("Frame"), "OnShow", 42) end))
+    end
 end

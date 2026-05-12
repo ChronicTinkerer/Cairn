@@ -50,12 +50,12 @@
 --                                                          namespace table,
 --                                                          or nil); args
 --                                                          start at position 3.
---   Messages registry is SEPARATE from the unified handlers table (D2).
+--   Messages registry is SEPARATE from the unified handlers table.
 --   Bare names auto-prefix with the consumer's tocName when target is
---   given and resolves through Cairn-Addon's registry (D3).
+--   given and resolves through Cairn-Addon's registry.
 --
--- Deferred Cairn-Events decisions: D6 (loadstring forwarder closures —
--- pure perf optimization, not currently load-bearing) and D7 (per-embed
+-- Deferred for a future build: loadstring forwarder closures (pure perf
+-- optimization, not currently load-bearing) and the per-embed
 -- dispatcher — foundational architectural reshape; needs a focused
 -- session with in-game testing).
 --
@@ -228,7 +228,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- :Once + :OnceMessage — one-shot listeners (Cairn-Events Decision 4)
+-- :Once + :OnceMessage — one-shot listeners
 -- ---------------------------------------------------------------------------
 -- Wraps :Subscribe with a self-unsubscribing closure. Common pattern for
 -- "wait for this event once" — PLAYER_LOGIN for init, LOOT_OPENED for
@@ -257,7 +257,7 @@ Cairn_Events.OnceMessage = Cairn_Events.Once
 
 
 -- ---------------------------------------------------------------------------
--- EventTrace integration (Cairn-Events Decision 5)
+-- EventTrace integration
 -- ---------------------------------------------------------------------------
 -- When Blizzard's /eventtrace UI is open, log internal :Fire calls so
 -- custom addon signals show up alongside WoW events. Zero overhead when
@@ -313,7 +313,7 @@ end
 
 -- :SubscribeUnit(event, unit, handler [, owner]) -> subscription
 --
--- Cairn-Events Decision 9. Like :Subscribe but uses RegisterUnitEvent so
+-- Like :Subscribe but uses RegisterUnitEvent so
 -- the listener filters at the engine level for unit-specific events
 -- (UNIT_HEALTH, UNIT_POWER_FREQUENT, etc.). Validates the unit token via
 -- the validator frame using UNIT_HEALTH as a known-good event
@@ -379,7 +379,7 @@ end
 
 -- :IsUnitEvent(event) -> bool
 --
--- Cairn-Events Decision 10. Detection helper — returns true if `event`
+-- Detection helper — returns true if `event`
 -- accepts a unit filter (UNIT_*-family events), false otherwise. Uses
 -- the validator-frame pattern: pcall RegisterUnitEvent with "player";
 -- success means the event is unit-scoped.
@@ -403,7 +403,7 @@ end
 --
 --   1. A consumer message named after a real WoW event ("PLAYER_LOGIN")
 --      shouldn't accidentally route through engine dispatch.
---   2. The Decision 1 OnUsed/OnUnused lifecycle (already implemented via
+--   2. The OnUsed/OnUnused lifecycle (already implemented via
 --      first-sub-RegisterEvent / last-unsub-UnregisterEvent) must NOT
 --      fire RegisterEvent on a message name — Blizzard's API errors on
 --      unknown event names.
@@ -413,7 +413,7 @@ end
 -- new registry. The existing :Subscribe / :Unsubscribe / :Fire continue
 -- to use the unified `handlers` table for backward-compat.
 --
--- Decision 3 — Auto-namespace by Cairn-Addon tag. Bare message names
+-- Auto-namespace by Cairn-Addon tag. Bare message names
 -- (no `.` or `:`) auto-prefix with the consumer's tocName. Cross-addon
 -- subscribers reach foreign messages by passing the fully-qualified
 -- name. Pattern reference: WildAddon-1.1 (Jaliborc).
@@ -540,7 +540,7 @@ function Cairn_Events:SendMessage(messageName, target, ...)
     local argCount = n
     if n > 0 then args = { ... } end
 
-    -- EventTrace integration (Decision 5 parity for messages registry).
+    -- EventTrace integration (parity with :Fire for the messages registry).
     if _G.EventTrace
         and type(_G.EventTrace.LogCallbackRegistryEvent) == "function"
     then

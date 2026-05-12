@@ -36,7 +36,7 @@
 --   tooltip        string   optional, hover text on the rendered control
 --   onChange       function optional, called as fn(newValue, oldValue) after change
 --
--- Cluster A additions (locked 2026-05-12):
+-- Optional schema fields:
 --   disableif      function optional, fn(get) → bool. Re-evaluated after every
 --                           setValue. `get(siblingKey)` reads current sibling
 --                           values. Truthy return disables the widget visually
@@ -55,7 +55,7 @@
 --   descPhraseId   string   optional Cairn-Locale phrase ID. Same as above
 --                           for `tooltip`.
 --
--- Cluster E additions (locked 2026-05-12):
+-- More schema fields:
 --   subSettings    array    optional array of child schema entries that
 --                           visually nest below the parent and auto-lock
 --                           when the parent's value is falsy. Same flat
@@ -69,7 +69,7 @@
 --                           enable state. Returns true when children
 --                           should be enabled (modifiable).
 --
--- Cluster E storage backends (MINOR 18, Decision 31):
+-- Storage backends (MINOR 18):
 --   storage        string   optional, one of "addon" (default), "cvar",
 --                           "proxy". Controls where the value lives.
 --   cvar           string   required when storage = "cvar". The WoW CVar
@@ -88,7 +88,7 @@
 --                           skips schema-based rendering (consumer renders
 --                           into their own frame). Storage / Get / Set /
 --                           OnChange still flow through the schema either
---                           way. Decision 37.
+--                           way.
 --   opts.frame     Frame    required when opts.layout = "canvas". The
 --                           consumer-owned panel frame to register.
 --
@@ -128,11 +128,10 @@
 --   s:GetCategoryID()                             -- Blizzard category ID (or nil)
 --   s:GetWidgetsByType(kind)                      -- array of {entry, setting,
 --                                                    initializer} for entries
---                                                    matching kind. Cluster A
---                                                    Decision 4.
+--                                                    matching kind.
 --   s:OnDisableStateChanged(fn) -> unsub fn       -- subscribe to disableif
 --                                                    state transitions. Cluster
---                                                    A Decision 1 supporting
+--                                                    supporting
 --                                                    surface.
 --
 -- License: MIT. Author: ChronicTinkerer.
@@ -165,7 +164,7 @@ end
 
 
 -- Cairn-Locale is a SOFT dependency for the phrase-ID resolution path
--- (Cluster A Decision 3). When loaded, entry.namePhraseId / descPhraseId
+-- (phrase resolution). When loaded, entry.namePhraseId / descPhraseId
 -- resolve through it at panel-build time so locale-bank updates pick up
 -- on next panel-open without consumers rebuilding. When absent, the
 -- direct label/tooltip fields are used unchanged.
@@ -184,7 +183,7 @@ end
 --   * else fall back to `entry[fieldDirect]`.
 --   * else return nil (caller decides what to do with nil).
 --
--- Per Decision 3: phrase IDs win when both are present. Direct strings
+--phrase IDs win when both are present. Direct strings
 -- stay for English-only consumers and quick prototypes.
 --
 -- Note: `Cairn-Locale:GetPhrase` (NOT the instance-level `L:Get`) is the
@@ -205,7 +204,7 @@ local function resolvePhrase(entry, addonName, fieldDirect, fieldId)
 end
 
 
--- Control-type registry (Cluster E Decision 27 — locked 2026-05-12).
+-- Control-type registry.
 --
 -- Each entry is a metadata table describing what the schema accepts for
 -- that control kind. Lib-internal kinds use this to validate + dispatch
@@ -217,7 +216,7 @@ end
 --   skipDefault = bool      -- type doesn't require a `default` field
 --                              (e.g. `header` is purely decorative)
 --   requireArguments = {}   -- map of fieldName -> requirement.
---                              MINOR 17 (Decision 30): full declarative
+--                              MINOR 17: full declarative
 --                              shape validation. Each requirement is one
 --                              of:
 --                                * type string ("number"/"string"/"table"
@@ -249,7 +248,7 @@ Cairn_Settings.controlTypes = Cairn_Settings.controlTypes or {
     color    = { storageOnly = true  },
     keybind  = { storageOnly = true  },
 
-    -- MINOR 21 (D28) — compound controls. Three Blizzard-template-backed
+    -- MINOR 21 — compound controls. Three Blizzard-template-backed
     -- kinds: toggle + parameterized child in a single panel row. Each
     -- requires a `child` sub-entry (validated as a full nested schema
     -- entry of the appropriate type — slider / dropdown / button-action).
@@ -278,7 +277,7 @@ Cairn_Settings.controlTypes = Cairn_Settings.controlTypes or {
         },
     },
 
-    -- MINOR 21 (D32) — LibSharedMedia dropdown. Auto-populates choices
+    -- MINOR 21 — LibSharedMedia dropdown. Auto-populates choices
     -- from LSM via `mediaType` (font / statusbar / border / background /
     -- sound). Font-type instances render a live preview via a singleton
     -- frame attached on OnShow / detached on OnHide.
@@ -296,7 +295,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Storage backends (Cluster E Decision 31, MINOR 18)
+-- Storage backends (MINOR 18)
 -- ---------------------------------------------------------------------------
 -- Three backends control where a widget's value lives:
 --
@@ -310,7 +309,7 @@ end
 --
 -- The dispatcher functions below are the single read/write point used by
 -- :Get / :Set / the Blizzard RegisterProxySetting closures. Validation
--- on entry shape happens in validateSchema (Decision 31's required-fields
+-- on entry shape happens in validateSchema (required-fields
 -- enforcement: cvar entries need entry.cvar; proxy entries need both
 -- entry.getValue + entry.setValue).
 
@@ -365,7 +364,7 @@ local function writeEntry(self, entry, value)
 end
 
 
--- Cluster E Decision 30 — validate per-control-type requirements
+--validate per-control-type requirements
 -- declaratively. Walks the controlTypes[type].requireArguments map for
 -- the entry's type and reports the first failure via error(). Built-in
 -- types use this path uniformly with consumer-registered types.
@@ -454,7 +453,7 @@ local function validateSchema(schema)
                   "' requires a 'default' value", 3)
         end
 
-        -- Cluster E Decision 30 — declarative requireArguments validation.
+        --declarative requireArguments validation.
         -- Routes built-in and consumer-registered types through the same
         -- registry-driven path. The inline dropdown 'choices' check below
         -- is superseded by the registry entry for the `dropdown` type.
@@ -492,7 +491,7 @@ local function validateSchema(schema)
                   "' requires a string 'default' (e.g. \"CTRL-SHIFT-X\" or \"\")", 3)
         end
 
-        -- Cluster A additions (locked 2026-05-12). All optional; type-checked
+        -- Optional fields; type-checked
         -- here so a typo'd shape surfaces at :New() rather than at panel-build.
         if entry.disableif ~= nil and type(entry.disableif) ~= "function" then
             error("Cairn-Settings:New: entry '" .. entry.key ..
@@ -523,7 +522,7 @@ local function validateSchema(schema)
                   "' has non-string 'descPhraseId'", 3)
         end
 
-        -- Cluster E Decision 35 additions (locked 2026-05-12). Three
+        -- Runtime predicates. Three
         -- optional runtime predicates beyond disableif. Each accepts
         -- either a static bool/function depending on semantics:
         --
@@ -550,7 +549,7 @@ local function validateSchema(schema)
                   "' has invalid 'newFeature' (must be bool, function, or nil)", 3)
         end
 
-        -- Cluster E Decision 31 — storage backend validation. Default is
+        -- Storage backend validation. Default is
         -- "addon"; "cvar" requires entry.cvar; "proxy" requires both
         -- entry.getValue and entry.setValue. Bad storage values rejected
         -- at :New time so misconfiguration surfaces loudly.
@@ -577,7 +576,7 @@ local function validateSchema(schema)
             end
         end
 
-        -- Cluster E Decision 29 — sub-settings. Optional array of child
+        -- Sub-settings. Optional array of child
         -- schema entries that visually nest below the parent control and
         -- auto-lock when the parent value is falsy. The parent-lock
         -- predicate defaults to "parent value is truthy"; consumer can
@@ -636,10 +635,10 @@ end
 -- doesn't retroactively overwrite the user's saved value. Documented
 -- explicitly because consumers WILL hit this and be confused.
 --
--- MINOR 17 (Decision 29) — also walks `subSettings` arrays so child
+-- MINOR 17 — also walks `subSettings` arrays so child
 -- entries get their defaults seeded the same way. Same flat key namespace
 -- as top-level entries.
--- MINOR 18 (D31): only seed defaults for the "addon" storage backend.
+-- MINOR 18: only seed defaults for the "addon" storage backend.
 -- "cvar" entries get their defaults from WoW's CVar system; "proxy"
 -- entries are consumer-managed and aren't ours to seed.
 local function seedDefaults(db, schema)
@@ -684,7 +683,7 @@ end
 
 -- Build a `get(siblingKey)` closure for disableif callbacks. Same `self`
 -- captured; each call reads the current value via readEntry so the
--- right storage backend is consulted (Decision 31).
+-- right storage backend is consulted.
 local function makeGetter(self)
     return function(siblingKey)
         local entry = self._byKey[siblingKey]
@@ -694,7 +693,7 @@ local function makeGetter(self)
 end
 
 
--- Cluster A Decision 1 — refresh disableif state for every entry that
+-- Refresh disableif state for every entry that
 -- declared a disableif callback. Called after each setValue (so changes
 -- to one key can re-enable / re-disable any sibling). Pushes state into
 -- two places:
@@ -743,7 +742,7 @@ local function refreshDisableIf(self)
 end
 
 
--- MINOR 18 (D31): writes route through writeEntry which dispatches to
+-- MINOR 18: writes route through writeEntry which dispatches to
 -- the entry's storage backend. setValue still fires onChange + subscribers
 -- + refreshDisableIf so consumers can react regardless of backend.
 local function setValue(self, key, value)
@@ -768,7 +767,7 @@ local function setValue(self, key, value)
     end
     fireSubscribers(self, key, value, oldValue)
     -- After every write, re-evaluate disableif callbacks so siblings can
-    -- react to the change (Cluster A Decision 1). Cheap — typical N < 50.
+    -- react to the change. Cheap — typical N < 50.
     refreshDisableIf(self)
 end
 
@@ -792,7 +791,7 @@ function stubProto:Open()
     end
 end
 
--- MINOR 18 (D31): :Get routes through readEntry for storage backend
+-- MINOR 18: :Get routes through readEntry for storage backend
 -- dispatch. Unknown keys fall back to direct profile access for backward-
 -- compat with consumers using non-schema keys.
 function stubProto:Get(key)
@@ -853,7 +852,7 @@ stubProto.OpenStandalone = proto.OpenStandalone
 
 -- :GetWidgetsByType(kind) -> array
 --
--- Cluster A Decision 4. Returns an array of {entry, setting, initializer}
+-- Returns an array of {entry, setting, initializer}
 -- tables for every schema entry whose type matches `kind`. Use cases:
 --   * "reset all sliders to default" → walk, call :Set(entry.key, entry.default)
 --   * "disable all toggles on combat enter" → walk, flip _disableState
@@ -884,7 +883,7 @@ stubProto.GetWidgetsByType = getWidgetsByType
 
 -- :OnDisableStateChanged(fn) -> unsub
 --
--- Cluster A Decision 1 supporting surface. Subscribes a renderer (typically
+-- Subscribes a renderer (typically
 -- Cairn-SettingsPanel-2.0 once it implements disableif visual support) to
 -- per-widget disable-state changes. Callback shape: fn(key, isDisabled).
 -- Fired by refreshDisableIf whenever a tracked disableif transitions.
@@ -932,11 +931,11 @@ stubProto.OnChange = onChange
 -- mode is "consumer typo'd a dropdown choices value" rather than an
 -- across-the-board breakage.
 
--- Apply Cluster A enhancements (tags, post-create hooks) to a freshly-
--- created initializer. Decision 2 + Decision 36 — explicit `entry.tags`
+-- Apply search-tag enhancements to a freshly-
+-- created initializer. Explicit `entry.tags`
 -- contribute searchTags; if `entry.tags` is absent the label itself is
 -- auto-added so the search bar finds the widget by its visible name.
--- Decision 36's auto-add applies regardless of explicit tags (consumers
+-- Label auto-add applies regardless of explicit tags (consumers
 -- get both).
 local function applySearchTags(initializer, entry, displayLabel)
     if type(initializer) ~= "table" then return end
@@ -1010,7 +1009,7 @@ local function registerEntry(self, entry)
             or Settings.VarType.String
     end
 
-    -- MINOR 18 (D31): closures dispatch through readEntry/writeEntry so
+    -- MINOR 18: closures dispatch through readEntry/writeEntry so
     -- the registered Blizzard setting talks to whatever backend the entry
     -- is configured for.
     local setting = Settings.RegisterProxySetting(
@@ -1049,7 +1048,7 @@ local function registerEntry(self, entry)
     self._initializers[key] = init
     applySearchTags(init, entry, label)
 
-    -- Cluster E Decision 29 — render sub-settings nested under this parent.
+    -- Render sub-settings nested under this parent.
     -- Each child becomes its own panel row with `SetParentInitializer`
     -- wiring so the child auto-locks when the parent value is falsy
     -- (default predicate). Consumer can override with
@@ -1117,7 +1116,7 @@ function Cairn_Settings:New(addonName, db, schema, opts)
     if opts ~= nil and type(opts) ~= "table" then
         error("Cairn-Settings:New: opts must be a table or nil", 2)
     end
-    -- Cluster E Decision 37 — layout dispatch. "vertical" (default) builds
+    -- Layout dispatch."vertical" (default) builds
     -- a schema-driven panel; "canvas" hands the consumer a Blizzard-managed
     -- frame they own entirely. Schema validation + default seeding +
     -- Get/Set/OnChange still happen for canvas mode — the lib just doesn't
@@ -1131,7 +1130,7 @@ function Cairn_Settings:New(addonName, db, schema, opts)
     seedDefaults(db, schema)
 
     -- Flat by-key map across top-level entries AND subSettings children
-    -- (Cluster E Decision 29). validateSchema already enforced key
+    -- validateSchema already enforced key
     -- uniqueness across both namespaces so collisions can't reach here.
     local byKey = {}
     for _, entry in ipairs(schema) do
@@ -1150,8 +1149,7 @@ function Cairn_Settings:New(addonName, db, schema, opts)
         _byKey            = byKey,
         _subs             = {},
         -- Initializer / setting refs captured in registerEntry. Used by
-        -- :GetWidgetsByType (Cluster A Decision 4) and refreshDisableIf
-        -- (Cluster A Decision 1).
+        -- :GetWidgetsByType and refreshDisableIf.
         _initializers     = {},
         _settings         = {},
         -- disableif state map for renderers that handle visual disable
@@ -1181,7 +1179,7 @@ function Cairn_Settings:New(addonName, db, schema, opts)
         return self
     end
 
-    -- Cluster E Decision 37 — canvas-vs-vertical category factory dispatch.
+    -- Canvas-vs-vertical category factory dispatch.
     -- Canvas mode requires a consumer-supplied panel frame; if missing we
     -- gracefully fall back to vertical and log a warning so consumers see
     -- the misuse without the panel breaking entirely.
@@ -1229,7 +1227,7 @@ function Cairn_Settings:New(addonName, db, schema, opts)
 
     -- Register in the lib-level dual-keyed registry so :OpenToCategory
     -- can deep-link to this addon's panel via its addon name (and, in a
-    -- future expansion, subName). Cluster E Decision 38.
+    -- future expansion, subName).
     Cairn_Settings:_RegisterCategoryEntry(addonName, self)
 
     -- Seed initial disableif state so first-paint reflects the right
@@ -1249,21 +1247,21 @@ end
 -- Convenience: `LibStub("Cairn-Settings-1.0")(name, db, schema [, opts])`
 -- works without the explicit :New, matching the lib's v1 ergonomics.
 -- Doesn't change the behavior — just the call-site shape preference.
--- MINOR 17: forwards optional `opts` arg (Decision 37 layout dispatch).
+-- MINOR 17: forwards optional `opts` arg (layout dispatch).
 setmetatable(Cairn_Settings, { __call = function(self, name, db, schema, opts)
     return self:New(name, db, schema, opts)
 end })
 
 
 -- ---------------------------------------------------------------------------
--- :RegisterControl (Cluster E Decision 34)
+-- :RegisterControl
 -- ---------------------------------------------------------------------------
 -- Public extension point. Consumers register custom control kinds into
 -- Cairn_Settings.controlTypes from outside the lib without forking.
 -- After registration, schemas using `type = <name>` validate against the
 -- new entry's metadata. The corresponding registerEntry path stays
 -- consumer-supplied via the spec's `buildFunction` (rendering remains
--- TODO — Cluster E Decision 27's full registry-driven dispatch isn't
+-- TODO — full registry-driven dispatch isn't
 -- yet wired through registerEntry; the controlTypes table provides the
 -- VALIDATION half today, with build-function wiring deferred).
 function Cairn_Settings:RegisterControl(name, spec)
@@ -1279,7 +1277,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- :ModifiedClickOptions (Cluster E Decision 33)
+-- :ModifiedClickOptions
 -- ---------------------------------------------------------------------------
 -- Returns pre-built ALT/CTRL/SHIFT/NONE dropdown choices for the
 -- modifier-key configuration pattern. `mustChooseKey = true` excludes the
@@ -1300,7 +1298,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Dual-keyed registry + :OpenToCategory (Cluster E Decision 38)
+-- Dual-keyed registry + :OpenToCategory
 -- ---------------------------------------------------------------------------
 -- Tracks registered Cairn-Settings instances keyed by their addon name
 -- (and optionally a subcategory path), enabling deep-link slash commands:
@@ -1349,7 +1347,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Spec-aware profile API (Cluster D, MINOR 19 — Decisions 19-26)
+-- Spec-aware profile API (MINOR 19)
 -- ---------------------------------------------------------------------------
 -- LibDualSpec-style "auto-switch profiles on spec change" capability ported
 -- to Cairn-DB natively. Consumers call `Cairn.Settings:EnhanceDB(db)` once;
@@ -1547,19 +1545,19 @@ function Cairn_Settings:EnhanceDB(db, friendlyName)
     -- Idempotent install.
     if rawget(db, "_specProfileStore") then return db end
 
-    -- Private sub-store via Cairn-DB :RegisterNamespace (Decision 19).
+    -- Private sub-store via Cairn-DB :RegisterNamespace.
     -- The sub-DB has its own profile/global/etc.; we use its .global for
     -- the spec map (cross-character — bindings stick to the account).
     local sub = db:RegisterNamespace("Cairn-Settings-SpecProfile")
     rawset(db, "_specProfileStore", sub.global)
 
-    -- Mixin methods via rawset (Decision 20). No __index metatable
+    -- Mixin methods via rawset. No __index metatable
     -- override — direct method installation matches consumer mental model.
     for k, v in pairs(SpecAwareMethods) do
         rawset(db, k, v)
     end
 
-    -- Register in the weak-key map (Decision 21). GC'd consumer DBs
+    -- Register in the weak-key map. GC'd consumer DBs
     -- auto-vanish from the registry.
     self._specProfileRegistry[db] = friendlyName or rawget(db, "_name") or "<anonymous>"
 
@@ -1570,7 +1568,7 @@ function Cairn_Settings:EnhanceDB(db, friendlyName)
 end
 
 
--- Cairn.Settings:IterateDatabases() -> iterator (Decision 26)
+-- Cairn.Settings:IterateDatabases() -> iterator
 --
 -- Generic-for iterator yielding (db, friendlyName) pairs over the
 -- enhanced-DB weak registry. Used by Forge_AddonManager / `/cairn
@@ -1586,14 +1584,14 @@ function Cairn_Settings:IterateDatabases()
 end
 
 
--- Cairn.Settings:EnhanceOptions(options, db) (Decision 22)
+-- Cairn.Settings:EnhanceOptions(options, db)
 --
 -- Injects spec-profile UI into the consumer's options table via
 -- `options.plugins["Cairn-Settings-SpecProfile"]` — does NOT mutate
 -- `options.args`. Consumer's existing schema iteration stays clean;
 -- the plugin entry is removable by deleting the key.
 --
--- Strings are routed through Cairn-Locale (Decision 25) under the
+-- Strings are routed through Cairn-Locale under the
 -- "Cairn-Settings" app namespace when Cairn-Locale is loaded; English
 -- fallbacks ship inline so the feature works without locale wiring.
 function Cairn_Settings:EnhanceOptions(options, db)
@@ -1635,7 +1633,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Blizzard-frame override surface (Cluster F, MINOR 20 — Decisions 39-44)
+-- Blizzard-frame override surface (MINOR 20)
 -- ---------------------------------------------------------------------------
 -- Pattern reference: LibEditModeOverride (plusmouse; inspected 2026-05-11).
 -- Orthogonal to the EditMode-bridge half of Cairn-Settings (Clusters B+C):
@@ -1701,9 +1699,9 @@ end
 -- no taint triggered.
 --
 -- `opts.addonName` (string, optional) — used when auto-creating an
---   Overrides layout from a Preset (Decision 41). Defaults to "Cairn".
+--   Overrides layout from a Preset. Defaults to "Cairn".
 -- `opts.batchOnly` (bool, optional) — when true, queues the refresh for
---   :ApplyChanges (Decision 42 batching).
+--   :ApplyChanges (batching).
 --
 -- Returns true on success. Returns false silently when EditMode isn't
 -- available (Classic flavors) or the frame doesn't have a `system` field
@@ -1822,7 +1820,7 @@ end
 
 -- :ApplyChanges() — flush pending overrides. Throws on InCombatLockdown
 -- (EditModeManagerFrame manipulation is protected). Use :SaveOnly during
--- combat (Decision 43).
+-- combat.
 function Cairn_Settings:ApplyChanges()
     local state = self._overrideState
     state.inBatch = false
@@ -1867,7 +1865,7 @@ end
 
 
 -- Internal — install PLAYER_REGEN_ENABLED listener for auto-flush on
--- combat exit (D43). Lazy + lib-scope.
+-- combat exit. Lazy + lib-scope.
 function Cairn_Settings:_ensureCombatFlushListener()
     if self._combatFlushListenerInstalled then return end
     if type(_G.CreateFrame) ~= "function" then return end
@@ -1926,7 +1924,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- EditMode-bridge foundation (Cluster B+C, MINOR 22 — Decisions 6/8/11/17/18)
+-- EditMode-bridge foundation (MINOR 22)
 -- ---------------------------------------------------------------------------
 -- Pattern reference: EditModeExpanded-1.0 (Cybeloras; inspected 2026-05-11).
 -- This is the FIRST of three phased builds for the EditMode-bridge half.
@@ -2116,7 +2114,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Declarative :Add(frame, schema) — Cluster B+C build 44 (Decisions 13/14/16/10)
+-- Declarative :Add(frame, schema) — MINOR 23
 -- ---------------------------------------------------------------------------
 -- THE FOUNDATIONAL ARCHITECTURAL LOCK for the EditMode-bridge half.
 --
@@ -2247,7 +2245,7 @@ local function validateEditModeEntry(entry, frameLabel, index)
               tostring(frameLabel), entry.key), 4)
     end
 
-    -- Cluster A-style optional shape checks. Reuse same vocabulary as
+    -- Optional shape checks. Reuse same vocabulary as
     -- :New schema for consistency.
     if entry.disableif ~= nil and type(entry.disableif) ~= "function" then
         error(("Cairn-Settings:Add(%s) entry '%s' has non-function 'disableif'"):format(
@@ -2282,11 +2280,11 @@ local function validateEditModeSchema(schema, frameLabel)
 end
 
 
--- :Add(frame, schema, opts?) — Decision 13
+-- :Add(frame, schema, opts?)
 --
 -- Registers an addon-owned `frame` into Blizzard's EditMode with a
 -- declarative widget `schema`. Validates the schema, allocates a
--- custom system ID (D11), records the registration in `_frames`, and
+-- custom system ID, records the registration in `_frames`, and
 -- seeds the framesDB/framesDialogs entries (D8 metatables handle the
 -- auto-create).
 --
@@ -2340,7 +2338,7 @@ function Cairn_Settings:Add(frame, schema, opts)
 end
 
 
--- :AddSystemSettings(systemID, schema, subSystemID?) — Decision 16
+-- :AddSystemSettings(systemID, schema, subSystemID?)
 --
 -- Extend Blizzard's stock EditMode dialogs (action bars, raid frames,
 -- etc.) with consumer-defined widgets. Same descriptor shape as :Add
@@ -2396,7 +2394,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Runtime EditMode hooks (Cluster B+C build 45 — Decisions 5/9/15)
+-- Runtime EditMode hooks (MINOR 24)
 -- ---------------------------------------------------------------------------
 -- Third (final) phased build for the EditMode-bridge half. Wires the
 -- runtime EditMode integration so registered frames participate in

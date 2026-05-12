@@ -30,10 +30,10 @@
 --   CS.registry                     -- { [name] = root instance }
 --   CS:GetArgs(str, numargs)        -- parse N args + remaining tail;
 --                                      hyperlink / texture / quote-aware.
---                                      Decision 2 from the 2026-05-12 walk.
+--                                      MINOR 15.
 --   CS:RegisterChatCommand(target, cmd, fn, persist)  -- flat slash registration
 --                                                     -- with per-embed tracking.
---                                                     -- MINOR 17, Decision 1.
+--                                                     -- MINOR 17.
 --   CS:UnregisterChatCommand(target, cmd)
 --   CS:OnEmbedDisable(target)       -- auto-cleanup non-persist slashes
 --   CS:GetChatCommands(target)      -- list of {command, key, persist, fn}
@@ -170,7 +170,7 @@ function SlashMethods:GetSubs()
 end
 
 
--- :RegisterSubcommand(localeKey, handler, opts) — Decision 3, MINOR 16
+-- :RegisterSubcommand(localeKey, handler, opts) — MINOR 16
 --
 -- Registers a sub-command that matches BOTH the current-locale form AND
 -- the English fallback form via Cairn-Locale. Non-English-client users
@@ -326,7 +326,7 @@ local function dispatch(node, msg)
     if subName then
         -- Case-sensitive first (preserves existing :Sub semantics).
         local target = node._subs[subName]
-        -- MINOR 16 (D3): case-insensitive fallback for subs registered
+        -- MINOR 16: case-insensitive fallback for subs registered
         -- via :RegisterSubcommand. The user-typed token is lowercased
         -- and matched against `_subsLower`; locale strings keep their
         -- consumer-declared case.
@@ -418,7 +418,7 @@ end
 -- ---------------------------------------------------------------------------
 -- :GetArgs(str, numargs) — hyperlink / texture / quote-aware arg parser
 -- ---------------------------------------------------------------------------
--- Cairn-Slash Decision 2 (locked 2026-05-12).
+-- MINOR 15.
 --
 -- Splits `str` into `numargs` args plus a remaining tail. Handles three
 -- non-trivial cases that naive `strsplit(" ", ...)` corrupts:
@@ -539,7 +539,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- :RegisterChatCommand + per-embed registry (MINOR 17, Decision 1)
+-- :RegisterChatCommand + per-embed registry (MINOR 17)
 -- ---------------------------------------------------------------------------
 -- Parallel API to :Register/:Sub for FLAT slash registration. A consumer
 -- (or "embed" — typically a module within a larger addon) registers a

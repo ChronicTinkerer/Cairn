@@ -80,7 +80,7 @@
 --   CL:GetEnglishFallback(name, key)        -- reads ONLY from enUS bank
 --                                              regardless of current locale.
 --                                              Surfaced by Cairn-Slash
---                                              Decision 3.
+--                                              (used by Cairn-Slash).
 --
 -- MINOR 16 — `:NewLocale` write-proxy API (Cairn-Locale Decisions 1-5):
 --
@@ -97,7 +97,7 @@
 --       L["Hello"] = "Hallo"
 --   end
 --
---   -- Missing-key modes (Decision 3): pass as 4th arg on the default-
+--   -- Missing-key modes: pass as 4th arg on the default-
 --   -- locale call. Three modes: "warn" (default, prints once per key),
 --   -- "silent" (returns key, no print), "raw" (returns nil).
 --
@@ -153,7 +153,7 @@ function Cairn_Locale:GetLocale()
     -- Resolution order:
     --   1. SetOverride/SetActiveLocale value (dev tool, runtime swap)
     --   2. GAME_LOCALE global (translator-set in dev environment so live
-    --      re-renders work without changing the client install — Decision 5)
+    --      re-renders work without changing the client install)
     --   3. GetLocale() (the client's actual locale)
     --   4. "enUS" fallback (for test VMs without GetLocale())
     if self._override then return self._override end
@@ -165,7 +165,7 @@ end
 
 
 -- :SetActiveLocale(locale) — alias for :SetOverride, matching the
--- vocabulary in the Cairn-Locale Decision 4 walk. Both names map to the
+-- AceLocale-style vocabulary. Both names map to the
 -- same underlying mechanism + same `Cairn-Locale:Changed` event fire.
 -- The dual-naming is permanent — consumers familiar with AceLocale-style
 -- vocabulary find :SetActiveLocale and consumers reading older Cairn
@@ -286,7 +286,7 @@ end
 -- itself on miss (defensive against nil-propagation in consumer code),
 -- which is good for direct UI use but bad for callers who need to detect
 -- "is this translation actually present?" — e.g. Cairn-Settings's
--- `resolvePhrase` helper (Cluster A Decision 3) needs the miss-as-nil
+-- `resolvePhrase` helper needs the miss-as-nil
 -- shape so it can fall through to the direct `label` / `tooltip` field.
 --
 -- Resolution order: current locale → enUS → nil. Same fallback chain
@@ -310,13 +310,13 @@ end
 -- Cairn_Locale:GetEnglishFallback(name, key) -> string or nil
 --
 -- Reads ONLY from the addon's enUS bank, regardless of the current
--- effective locale. Surfaced by Cairn-Slash Decision 3 — sub-command
+-- effective locale. Used by Cairn-Slash for sub-command
 -- locale-fallback matching needs to compare a typed token against the
 -- ENGLISH form of a registered sub-command, even when the user's client
 -- is German / French / etc. Returns nil on miss so the slash router can
 -- decide what to do.
 --
--- Caveat documented in Cairn-Locale Decision 6: addons whose default
+-- Caveat: addons whose default
 -- locale isn't enUS won't have an English bank populated; this returns
 -- nil and Cairn-Slash falls through to current-locale-only matching.
 function Cairn_Locale:GetEnglishFallback(name, key)
@@ -357,13 +357,13 @@ end
 --       L["Goodbye"] = "Auf Wiedersehen"
 --   end
 --
--- ## Decision 2 — Default-locale first-definition-wins
+-- ## Default-locale first-definition-wins
 -- The default-locale proxy refuses to overwrite an existing key (no-ops
 -- silently). Locale files load in any order without later-loading files
 -- trampling earlier definitions. Non-default-locale proxies overwrite as
 -- normal — translators legitimately need to fix typos.
 --
--- ## Decision 3 — Three missing-key modes (last-call wins)
+-- ## Three missing-key modes (last-call wins)
 --   "warn"   (default) — missing key returns the key string + prints a
 --                        one-time warning per key. Helps translators spot
 --                        gaps. The "seen warnings" set is per-app +
@@ -373,7 +373,7 @@ end
 --   "raw"              — missing key returns nil. Consumer handles
 --                        fallback themselves.
 --
--- ## Decision 4 — nil-return for non-current non-default locales
+-- ## nil-return for non-current non-default locales
 -- Production: `:NewLocale("X", "frFR")` returns nil when the client locale
 -- isn't frFR AND frFR isn't the default. Consumer's `if not L then return
 -- end` bails the rest of the locale file. Skips 200+ entries of memory
@@ -381,7 +381,7 @@ end
 --
 -- Dev Mode bypass: set `Cairn.Locale.devMode = true` BEFORE any locale
 -- file loads. All `:NewLocale` calls return a proxy regardless of current.
--- Banks populate. Translators using Decision 5's `GAME_LOCALE` override
+-- Banks populate. Translators using the `GAME_LOCALE` override
 -- get live re-renders.
 --
 -- Default-locale path: always returns the proxy regardless of current. The
@@ -391,7 +391,7 @@ end
 -- Lib-level (not per-instance) so re-loads via /reload reset the cache.
 Cairn_Locale._missingKeyWarnings = Cairn_Locale._missingKeyWarnings or {}
 
--- Public flag for the Decision 4 bypass. Default false; set true BEFORE
+-- Public flag for the dev-mode bypass. Default false; set true BEFORE
 -- locale file load to force all `:NewLocale` calls to return proxies.
 Cairn_Locale.devMode = Cairn_Locale.devMode or false
 
@@ -426,7 +426,7 @@ end
 -- :NewLocale(app, locale, isDefault, mode) -> write-proxy or nil
 --
 -- Returns nil when the locale isn't relevant to this client (production
--- gate per Decision 4). Returns a write-proxy otherwise. The proxy writes
+-- gate). Returns a write-proxy otherwise. The proxy writes
 -- through to the same instance the existing `:New(name)` returns, so the
 -- two surfaces interop transparently.
 function Cairn_Locale:NewLocale(app, locale, isDefault, mode)
@@ -443,7 +443,7 @@ function Cairn_Locale:NewLocale(app, locale, isDefault, mode)
         error("Cairn-Locale:NewLocale: mode must be 'warn', 'silent', 'raw', or nil", 2)
     end
 
-    -- Decision 4 production gate: return nil for non-current non-default
+    -- Production gate: return nil for non-current non-default
     -- locales unless devMode is active.
     local current = self:GetLocale()
     local shouldPopulate = self.devMode or isDefault or (locale == current)
@@ -470,7 +470,7 @@ function Cairn_Locale:NewLocale(app, locale, isDefault, mode)
     end
 
     -- Build the write-proxy. The metatable differs for default vs non-
-    -- default locales (Decision 2 first-definition-wins on default only).
+    -- default locales (first-definition-wins on default only).
     local proxyMeta
     if isDefault then
         proxyMeta = {

@@ -93,7 +93,7 @@ Cairn_Timer.timers     = Cairn_Timer.timers     or {}
 Cairn_Timer.byOwner    = Cairn_Timer.byOwner    or {}
 Cairn_Timer._debounces = Cairn_Timer._debounces or {}  -- {[key] = handle}
 
--- MINOR 16 — Decision 7: caller-id attribution. Toggle `Cairn.Timer.debugMode
+-- MINOR 16 — caller-id attribution. Toggle `Cairn.Timer.debugMode
 -- = true` at runtime to enable per-`from`-tag counting; production default
 -- is off so the counter logic short-circuits to a single nil-check per
 -- fire. Counts persist across `:Cancel` and `:CancelOwner` (the counter
@@ -265,7 +265,7 @@ end
 -- reference to call self:Cancel() — that pattern was rejected explicitly
 -- in the design review (memory: cairn_simplicity_applies_to_consumer.md).
 --
--- MINOR 16 — Decision 2: fps-drift compensation. Each tick records the
+-- MINOR 16 — fps-drift compensation. Each tick records the
 -- expected-end time; the next tick's delay subtracts how late we are
 -- (capped at zero for "immediate next tick" semantics on extreme drift).
 -- Without compensation, a "tick every 5s" timer accumulates seconds of
@@ -340,7 +340,7 @@ end
 -- Internal: validation
 -- ---------------------------------------------------------------------------
 
--- MINOR 16: opts.obj (Decision 1) + opts.from (Decision 7) added.
+-- MINOR 16: opts.obj + opts.from added.
 -- Returns (owner, count, obj, from). Validation rules same as before
 -- plus shape checks on the new fields.
 local function validateOpts(opts, methodLabel, allowCount)
@@ -388,14 +388,14 @@ local function newHandle(delay, fn, opts, repeating, methodLabel, debounceKey, a
         delay        = delay,
         fn           = fn,
         owner        = owner,
-        obj          = obj,           -- Decision 1: receiver for string-fn dispatch
-        from         = from,          -- Decision 7: caller-id (counted when debugMode)
+        obj          = obj,           -- receiver for string-fn dispatch
+        from         = from,          -- caller-id (counted when debugMode)
         repeating    = repeating,
         count        = count,
         fired        = 0,
         cancelled    = false,
         debounceKey  = debounceKey,   -- nil for After/Every; set for Debounce
-        args         = args,          -- Decision 4: nil if no args supplied
+        args         = args,          -- nil if no args supplied
         argsCount    = argsCount or 0,
     }, HandleMeta)
 
@@ -409,7 +409,7 @@ end
 -- Public API: timing primitives
 -- ---------------------------------------------------------------------------
 
--- MINOR 16 (Decision 4): variadic args after opts. Naive `{...}` would
+-- MINOR 16: variadic args after opts. Naive `{...}` would
 -- truncate at the first nil; argsCount preserves nil holes for accurate
 -- callback dispatch. The (delay, fn, opts) 3-arg form remains unchanged
 -- for existing consumers — variadic args are forwarded only when supplied.
@@ -530,7 +530,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- :ContinueAfterCombat (Cairn-Timer Decision 5, locked 2026-05-12)
+-- :ContinueAfterCombat
 -- ---------------------------------------------------------------------------
 -- Universal "I need to do this but combat lockdown is preventing it"
 -- deferral. If `not InCombatLockdown()`, fire the handler synchronously.
@@ -539,9 +539,9 @@ end
 -- throwing handler routes to geterrorhandler and doesn't stop the drain.
 -- Queue wipes after the drain.
 --
--- Surfaced by Cairn-Settings Decision 12 (consolidated EditModeExpanded's
+-- Used by Cairn-Settings (consolidated EditModeExpanded's
 -- internal CombatManager). Concrete consumers: any Cairn-Settings
--- combat-aware widget (secureFrameHideable per Cluster B Decision 10),
+-- combat-aware widget (the secureFrameHideable kind),
 -- Forge_AddonManager LoadAddon path, Vellum waypoint placement on
 -- secure frames.
 
@@ -590,7 +590,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- :Start (Cairn-Timer Decision 6, locked 2026-05-12)
+-- :Start
 -- ---------------------------------------------------------------------------
 -- Unified API generalizing four canonical debounce/throttle patterns
 -- behind a single signature. `slot` is a string key for grouping calls
@@ -704,7 +704,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- :GetCountAfter (Cairn-Timer Decision 7, locked 2026-05-12)
+-- :GetCountAfter
 -- ---------------------------------------------------------------------------
 -- Returns the per-`from`-tag counter map populated when `Cairn.Timer.debugMode`
 -- is set. Each entry counts how many fires came from a given `from` tag

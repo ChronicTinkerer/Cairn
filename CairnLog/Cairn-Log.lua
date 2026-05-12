@@ -25,7 +25,7 @@
 --
 -- Entry shape (read-only convention; do not mutate):
 --   { timestamp, source, category, level, message }
---   Aliases via metatable __index (Cairn-Log Decision 2; MINOR 15):
+--   Aliases via metatable __index (MINOR 15):
 --     entry.t == entry.timestamp
 --     entry.s == entry.level
 --     entry.m == entry.message
@@ -57,7 +57,7 @@
 -- Public API (lib):
 --   CL:New(name [, db])     -> root logger    -- idempotent on `name`. Optional
 --                                                `db` bootstraps lib-level
---                                                persistence (Decision 3).
+--                                                persistence.
 --   CL:Get(name)                              -- registry lookup
 --   CL.loggers                                -- { [name] = root logger }
 --   CL.entries                                -- the ring buffer (read-only)
@@ -65,13 +65,13 @@
 --   CL:Clear()
 --   CL:SetChatEchoLevel(level_or_nil)
 --   CL:SetCapacity(n)
---   CL:SetDatabase(svTable_or_nil)            -- Decision 3: opt-in persistence
---   CL:SetPerformanceMode(threshold_or_nil)   -- Decision 7: nils method slots
---   CL:Embed(target, name) -> target          -- Decision 9: mixin
+--   CL:SetDatabase(svTable_or_nil)            -- opt-in persistence
+--   CL:SetPerformanceMode(threshold_or_nil)   -- nils method slots
+--   CL:Embed(target, name) -> target          -- mixin
 --   CL.LEVELS                                 -- {TRACE=0, DEBUG=10, INFO=20,
 --                                                WARNING=30, WARN=30, ERROR=40,
 --                                                FATAL=50}
---   CL.hasTrace / hasDebug / hasInfo /        -- Decision 8: gate flags
+--   CL.hasTrace / hasDebug / hasInfo /        -- gate flags
 --   hasWarning / hasError / hasFatal            (reflect current SetPerformanceMode
 --                                                state)
 --
@@ -83,8 +83,8 @@
 --   log:Warn   (fmt, ...)                     -- alias for :Warning
 --   log:Error  (fmt, ...)
 --   log:Fatal  (fmt, ...)
---   log:ForceError(fmt, ...)                  -- Decision 5: bypass echo gate
---   log:ForceFatal(fmt, ...)                  -- Decision 5: bypass echo gate
+--   log:ForceError(fmt, ...)                  -- bypass echo gate
+--   log:ForceFatal(fmt, ...)                  -- bypass echo gate
 --   log:Log(level, fmt, ...)                  -- custom level string
 --   log:Category(name) -> sub-logger          -- shares source, fixed category
 --
@@ -105,7 +105,7 @@ Cairn_Log._head       = Cairn_Log._head       or 1
 Cairn_Log._count      = Cairn_Log._count      or 0
 Cairn_Log._echoLevel  = Cairn_Log._echoLevel  -- nil unless SetChatEchoLevel'd
 
--- Severity scheme (Cairn-Log Decision 1; locked 2026-05-12). Python-style
+-- Severity scheme. Python-style
 -- numeric values with gaps so consumers can register custom intermediate
 -- levels (VERBOSE=5, NOTICE=25, etc.) without renumbering the standard
 -- set. `WARN` is preserved as a numeric ALIAS for `WARNING` for
@@ -143,7 +143,7 @@ local function rankOf(level)
 end
 
 
--- Compact-aliases metatable (Cairn-Log Decision 2). Each entry's full
+-- Compact-aliases metatable. Each entry's full
 -- shape stays `{timestamp, source, category, level, message}` for
 -- Forge_Logs and existing consumers. Cluster-A renderers expecting the
 -- walked `{t, s, m}` short-field shape read via __index aliases —
@@ -166,7 +166,7 @@ local ENTRY_META = {
 -- Chat echo is inline rather than queued because the threshold check is
 -- cheap and queueing would just delay visibility.
 --
--- `force` (Cairn-Log Decision 5) — when true, the entry bypasses the chat-
+-- `force` — when true, the entry bypasses the chat-
 -- echo threshold check and ALWAYS prints. Used by :ForceError / :ForceFatal
 -- to guarantee critical failures reach the user even when the logger is
 -- configured for quiet operation.
@@ -190,7 +190,7 @@ local function pushEntry(source, category, level, message, force)
         Cairn_Log._count = Cairn_Log._count + 1
     end
 
-    -- Database backing (Cairn-Log Decision 3). When :SetDatabase has been
+    -- Database backing. When :SetDatabase has been
     -- called or a per-logger db was passed via :New, entries also write
     -- to the consumer-supplied SV table. Bounded by the same ring capacity
     -- as the in-memory buffer to prevent unbounded SV growth.
@@ -255,7 +255,7 @@ function LoggerMethods:Warn   (fmt, ...) logAt(self, "WARN",    false, fmt, ...)
 function LoggerMethods:Error  (fmt, ...) logAt(self, "ERROR",   false, fmt, ...) end
 function LoggerMethods:Fatal  (fmt, ...) logAt(self, "FATAL",   false, fmt, ...) end
 
--- Force-print variants (Cairn-Log Decision 5). Bypass the chat-echo
+-- Force-print variants. Bypass the chat-echo
 -- threshold so critical failures reach the user even when the logger is
 -- configured silent. Entry still lands in the ring buffer same as normal.
 -- Use for failures the user MUST see (data corruption, irrecoverable
@@ -345,7 +345,7 @@ refreshPerformanceMode()
 
 -- :SetPerformanceMode(threshold) — nil method slots below threshold.
 --
--- Per Decision 7. Consumers gate hot calls via:
+-- Consumers gate hot calls via:
 --   if Cairn.Log.hasDebug then myLog:Debug(expensive_format(...)) end
 -- Skipping the expensive argument construction entirely when DEBUG is
 -- disabled. Threshold is a level NAME (string) like "INFO" or "WARNING";
@@ -367,7 +367,7 @@ function Cairn_Log:SetPerformanceMode(threshold)
 end
 
 
--- :SetDatabase(svTable) — opt-in persistence (Cairn-Log Decision 3).
+-- :SetDatabase(svTable) — opt-in persistence.
 --
 -- When set, every entry that goes through pushEntry also lands in
 -- `svTable` (which the consumer typically connects to a SavedVariables
@@ -396,7 +396,7 @@ end
 -- to grab the same logger; each file's :New() returns the same instance
 -- without coordination.
 --
--- Optional `db` arg (Cairn-Log Decision 3): when supplied AND no lib-
+-- Optional `db` arg: when supplied AND no lib-
 -- level database is currently set, calling :New(name, db) bootstraps
 -- the lib-level database from this consumer's table. First-caller wins;
 -- subsequent :New calls passing a db are ignored at the lib-level (the
@@ -525,7 +525,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- :Embed(target, name) — mixin (Cairn-Log Decision 9, locked 2026-05-12)
+-- :Embed(target, name) — mixin
 -- ---------------------------------------------------------------------------
 -- Injects logger methods (`:Info`, `:Debug`, `:Warn`, `:Error`, `:Category`)
 -- directly onto `target` so consumers get short call sites:

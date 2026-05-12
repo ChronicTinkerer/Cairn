@@ -20,22 +20,22 @@
 --   local db = Cairn_DB:New(savedVarName, defaults)   -- create instance
 --   db.global         -- shared across every character (existing)
 --   db.profile        -- per-profile (defaults to profile "Default")
---   db.char           -- per-character ("<name> - <realm>")        (D1, MINOR 15)
---   db.realm          -- per-realm                                  (D1, MINOR 15)
---   db.class          -- per-class                                  (D1, MINOR 15)
---   db.race           -- per-race                                   (D1, MINOR 15)
---   db.faction        -- per-faction (Alliance / Horde)             (D1, MINOR 15)
---   db.factionrealm   -- per-faction per-realm                      (D1, MINOR 15)
+--   db.char           -- per-character ("<name> - <realm>")        (MINOR 15)
+--   db.realm          -- per-realm                                  (MINOR 15)
+--   db.class          -- per-class                                  (MINOR 15)
+--   db.race           -- per-race                                   (MINOR 15)
+--   db.faction        -- per-faction (Alliance / Horde)             (MINOR 15)
+--   db.factionrealm   -- per-faction per-realm                      (MINOR 15)
 --   db:SetProfile(name)  -- switch profile (creates if missing, applies defaults)
 --   db:GetProfile()      -- returns current profile name
---   db:RegisterMigration(version, fn)  -- D4, MINOR 15
---   db:RegisterNamespace(MAJOR)        -- D8, MINOR 15
---   db:_RemoveDefaults()               -- D3, MINOR 16 (auto on PLAYER_LOGOUT)
+--   db:RegisterMigration(version, fn)  -- MINOR 15
+--   db:RegisterNamespace(MAJOR)        -- MINOR 15
+--   db:_RemoveDefaults()               -- MINOR 16 (auto on PLAYER_LOGOUT)
 --   Cairn_DB:Get(name)   -- returns the registered instance, or nil
 --   Cairn_DB.instances   -- { [savedVarName] = db, ... } (for Forge_Registry)
---   Cairn_DB.MIGRATION_DEFER -- sentinel for deferred migrations (D9, MINOR 15)
+--   Cairn_DB.MIGRATION_DEFER -- sentinel for deferred migrations (MINOR 15)
 --
--- removeDefaults on PLAYER_LOGOUT (D3, MINOR 16):
+-- removeDefaults on PLAYER_LOGOUT (MINOR 16):
 --   At PLAYER_LOGOUT Cairn-DB walks every registered instance and strips
 --   keys whose values match the consumer's defaults. SV file shrinks; on
 --   next load the stripped keys re-fill from defaults transparently.
@@ -45,7 +45,7 @@
 --   (`["*"]` / `["**"]`) participate in the walk — entries that match
 --   the wildcard sub-default are stripped too.
 --
--- Wildcard defaults (D2, MINOR 15):
+-- Wildcard defaults (MINOR 15):
 --   defaults.profile = {
 --       characters = {
 --           ["*"] = { level = 1, xp = 0 },         -- direct children only
@@ -55,7 +55,7 @@
 --       },
 --   }
 --
--- Migration framework (D4 + D9, MINOR 15):
+-- Migration framework (MINOR 15):
 --   db:RegisterMigration(2, function(db)
 --       db.profile.foo = db.profile.bar  -- shape change
 --       db.profile.bar = nil
@@ -75,7 +75,7 @@
 --   for PLAYER_LOGIN re-run. A second defer on the PLAYER_LOGIN retry
 --   errors loudly via geterrorhandler.
 --
--- Lib-owned namespaces (D8, MINOR 15):
+-- Lib-owned namespaces (MINOR 15):
 --   local mappingStore = db:RegisterNamespace("Cairn-Settings-SpecProfile")
 --   mappingStore.profile.specMap = { ... }   -- sibling sub-store, won't collide
 --
@@ -87,7 +87,7 @@
 --     data are preserved; only missing keys are filled from defaults.
 --   - Defaults are NOT retro-applied if the consumer changes the defaults
 --     table between sessions — that's an intentional limitation. Use the
---     :RegisterMigration framework (D4) if you need shape changes between
+--     :RegisterMigration framework if you need shape changes between
 --     versions.
 --   - Unknown keys in `defaults` raise an error. Catches typos loud rather
 --     than silently dropping data.
@@ -112,14 +112,14 @@ local Table_ = CU.Table  -- aliased to avoid shadowing Lua's table
 -- table on upgrade; `or {}` only initializes once).
 Cairn_DB.instances = Cairn_DB.instances or {}
 
--- Deferred-migration queue (Decision 9). { {db = ..., version = ..., fn = ...}, ... }
+-- Deferred-migration queue. { {db = ..., version = ..., fn = ...}, ... }
 -- Drained on first PLAYER_LOGIN. Lib-scope, drained once per session.
 Cairn_DB._deferredMigrations = Cairn_DB._deferredMigrations or {}
 
 
 local DEFAULT_PROFILE = "Default"
 
--- MIGRATION_DEFER sentinel (Cairn-DB Decision 9). Migrations return this
+-- MIGRATION_DEFER sentinel. Migrations return this
 -- value to signal "I can't run yet — needs spec / class / level / etc.
 -- state not available at lib-load." The lib queues the migration; on
 -- first PLAYER_LOGIN, drains the queue and re-runs each. A second
@@ -127,7 +127,7 @@ local DEFAULT_PROFILE = "Default"
 Cairn_DB.MIGRATION_DEFER = Cairn_DB.MIGRATION_DEFER or {}
 
 
--- 8 standard partition buckets (Decision 1). Order matters for the typo-
+-- 8 standard partition buckets. Order matters for the typo-
 -- detection sweep in :New; both the public bucket names AND the lib-
 -- internal `__namespaces` slot live alongside `internalVersion` and
 -- `currentProfile`. Consumers wanting to add custom buckets do it via
@@ -172,7 +172,7 @@ local IDENTITY = resolveIdentity()
 
 
 -- ---------------------------------------------------------------------------
--- Wildcard-aware default merge (Decision 2)
+-- Wildcard-aware default merge
 -- ---------------------------------------------------------------------------
 -- Non-destructive merge of `defaults` into `target` with two special keys:
 --   ["*"]  applies the value's sub-table as the default for every
@@ -320,14 +320,14 @@ function Cairn_DB:New(name, defaults)
     local sv = _G[name]
 
     -- Top-level shape: shared buckets at well-known keys, profiles keyed
-    -- under `profiles`, namespaces (D8) keyed under `__namespaces`,
-    -- migration version under `internalVersion` (D4).
+    -- under `profiles`, namespaces keyed under `__namespaces`,
+    -- migration version under `internalVersion`.
     sv.global         = sv.global         or {}
     sv.profiles       = sv.profiles       or {}
     sv.currentProfile = sv.currentProfile or DEFAULT_PROFILE
     sv.profiles[sv.currentProfile] = sv.profiles[sv.currentProfile] or {}
 
-    -- 8-bucket partition keys (Decision 1). Each per-X bucket is keyed
+    -- 8-bucket partition keys. Each per-X bucket is keyed
     -- by the player's current identity. New character / realm / class /
     -- etc. transparently get fresh sub-tables on first access.
     sv.char         = sv.char         or {}
@@ -491,11 +491,11 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Namespace API (Decision 8)
+-- Namespace API
 -- ---------------------------------------------------------------------------
 -- :RegisterNamespace(MAJOR) returns a sub-DB backed by sv.__namespaces[MAJOR].
 -- Sub-DB has its own independent buckets (profile / global / etc.) per the
--- Decision 1 partition model. Multiple namespaces per parent DB allowed.
+-- 8-bucket partition model. Multiple namespaces per parent DB allowed.
 -- Sub-DBs share the parent's migration framework (auto-walk on creation)
 -- and identity tables but are otherwise isolated.
 
@@ -559,11 +559,11 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- removeDefaults on PLAYER_LOGOUT (Decision 3, MINOR 16)
+-- removeDefaults on PLAYER_LOGOUT (MINOR 16)
 -- ---------------------------------------------------------------------------
 -- Walk the SV data recursively at PLAYER_LOGOUT and strip per-key values
 -- that match the consumer's defaults. SV file shrinks; next load re-fills
--- the stripped keys via Decision 2's wildcard metatable + the normal
+-- the stripped keys via the wildcard metatable + the normal
 -- mergeDefaults pass in :New.
 --
 -- Blocker semantic: a table-typed default does NOT recurse into the

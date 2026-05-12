@@ -27,6 +27,7 @@ That's the one-sentence test for every design decision in Cairn. The principle a
 | `Cairn-Callback` | CallbackHandler-1.0 compatibility shim | `Cairn-Callback-1.0` |
 | `Cairn-Util` | Small utilities organized into sub-namespaces (Pcall / Table / String / Path / Numbers / Queue / ObjectPool / Bitfield / Array / Frame / Texture / Hash) plus top-level `Memoize`. Single-file lib; vendored `AF_MD5.lua` separate for license attribution. | `Cairn-Util-1.0` |
 | `Cairn-Media` | Two-mode asset registry (private + public via LSM) + icon glyphs | `Cairn-Media-1.0` |
+| `Cairn-Flow` | Control-flow primitives — Sequencer / Decision tree / FSM / Behavior tree, four sub-namespaces under one MAJOR | `Cairn-Flow-1.0` |
 | `Cairn-Gui-2.0` | Widget framework — Container / Button / Label / Window / Checkbox / ScrollFrame / EditBox / Slider / Dropdown / TabGroup, plus Secure variants | `Cairn-Gui-2.0` |
 
 ## Quick start

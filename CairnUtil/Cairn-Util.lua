@@ -352,7 +352,7 @@ end
 -- is responsible. Passing a 6-char hex without alpha gets full-opacity by
 -- WoW's color-parser default but renders one shade darker than expected.
 --
--- Decision 4 from the Cairn-Media walk (locked 2026-05-12): color-prefix
+-- Color-prefix
 -- utilities live in Cairn-Util's String sub-namespace because the operation
 -- is purely string-mangling and doesn't depend on Cairn-Media's color
 -- registry. Consumers using a single raw hex don't have to pull in the
@@ -668,7 +668,7 @@ end
 -- ============================================================================
 -- SafeMixin
 -- ============================================================================
--- Non-overwriting `Mixin` + taint blocklist. Per Cairn-Settings Decision 7.
+-- Non-overwriting `Mixin` + taint blocklist. Used by Cairn-Settings.
 --
 -- Blizzard's stock `Mixin(target, ...)` overwrites existing keys, which
 -- silently replaces consumer-defined methods when a Blizzard mixin happens

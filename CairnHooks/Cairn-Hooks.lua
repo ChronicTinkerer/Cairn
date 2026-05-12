@@ -34,7 +34,7 @@
 --   CH:UnhookOwner(owner)
 --   CH._registry   -- flat array of installed hooks (read-only for Forge_Registry)
 --
--- HookOnce family (Cairn-Hooks Decision 5; MINOR 15):
+-- HookOnce family (MINOR 15):
 --   CH:HookOnce  (frame, script,     callback) -> handle  -- HookScript-style, fire-once
 --   CH:HookAlways(frame, script,     callback) -> handle  -- HookScript-style, multi-fire
 --   CH:HookFuncOnce(table, methodName, callback) -> handle -- hooksecurefunc-style, fire-once
@@ -45,7 +45,7 @@
 --   CH:RawHook     (target, methodName, fn [, owner]) -> handle  -- replacement, no auto-chain
 --   CH:FailsafeHook(target, methodName, fn [, owner]) -> handle  -- xpcall'd; original always fires
 --   CH:UnhookAll   (owner)                                       -- batch soft-unhook
---   CH.actives     -- { [uid] = bool }; dispatch gates on this (D4)
+--   CH.actives     -- { [uid] = bool }; dispatch gates on this
 --
 -- Semantics:
 --   - Multiple hooks compose. Last-installed wraps outermost. Both Pre and
@@ -299,7 +299,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- HookOnce family (Cairn-Hooks Decision 5 — locked 2026-05-12)
+-- HookOnce family
 -- ---------------------------------------------------------------------------
 -- Different conceptual model from Pre/Post/Wrap above. The HookOnce family
 -- exists to solve a specific recurring problem: multiple sub-modules in
@@ -470,22 +470,22 @@ end
 -- pattern. Both APIs coexist; consumers pick the one that matches their
 -- model.
 --
---   * :Hook         (D1) — non-secure replacement-style with auto-chain.
+--   * :Hook         — non-secure replacement-style with auto-chain.
 --                          Errors if `target.methodName` is secure.
---   * :SecureHook   (D1) — hooksecurefunc-style. Side-handler runs AFTER
+--   * :SecureHook   — hooksecurefunc-style. Side-handler runs AFTER
 --                          the original; original's return value is what
 --                          the caller sees. Required for secure functions
 --                          to avoid taint.
---   * :RawHook      (D2) — replacement WITHOUT auto-chain. Consumer's fn
+--   * :RawHook      — replacement WITHOUT auto-chain. Consumer's fn
 --                          fully replaces the original; caller must invoke
 --                          the original manually if desired (passed as
 --                          first arg, AceHook-style: fn(orig, ...)).
---   * :FailsafeHook (D3) — replacement with xpcall'd handler + original
+--   * :FailsafeHook — replacement with xpcall'd handler + original
 --                          ALWAYS fires regardless of handler outcome.
 --                          For secure-context hooks where chain-break
 --                          corrupts game state.
 --
--- D4 actives[uid]: every hook installed via this family gets a uid. The
+-- actives[uid] soft-unhook: every hook installed via this family gets a uid. The
 -- real hook installation stays in place (especially relevant for
 -- :SecureHook which uses hooksecurefunc and cannot be physically removed);
 -- dispatch gates on `Cairn_Hooks.actives[uid]`. `:Unhook(handle)` from
@@ -740,7 +740,7 @@ function Cairn_Hooks:Unhook(handle)
 end
 
 
--- :UnhookAll(owner) — D4 batch soft-unhook. Walks every uid associated
+-- :UnhookAll(owner) — batch soft-unhook. Walks every uid associated
 -- with owner via the _byOwner reverse map, clears the actives flag for
 -- each, and physically removes Hook/RawHook/FailsafeHook handles (the
 -- existing UnhookOwner path already handles those — call it last).

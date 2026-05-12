@@ -216,7 +216,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Metadata extraction (Decision 4)
+-- Metadata extraction
 -- ---------------------------------------------------------------------------
 
 -- C_AddOns.GetAddOnMetadata landed on Retail; bare-global still exists on
@@ -251,7 +251,7 @@ local function readTocList(tocName, field)
 end
 
 
--- Build the 12-field Metadata table (Decision 4). Eager-populated so the
+-- Build the 12-field Metadata table. Eager-populated so the
 -- table is self-describing for diagnostic dumps. Cost is 12 string fields
 -- per registered addon — irrelevant in practice.
 --
@@ -307,7 +307,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Auto-wiring flags (Decision 13)
+-- Auto-wiring flags
 -- ---------------------------------------------------------------------------
 
 -- Map of `opts` flag -> companion-lib spec. Each spec has:
@@ -318,7 +318,7 @@ end
 --      `:Embed` instead of stashing a reference).
 --
 -- Cairn-Settings is intentionally excluded — `Addon.Settings` is reserved
--- for the Metadata return value (Decision 4) to avoid the name collision.
+-- for the Metadata return value to avoid the name collision.
 --
 -- Gui is the odd one out among lookups: it uses the `-2.0` MAJOR family
 -- and isn't resolved through the `_G.Cairn` namespace (Core.lua hardcodes
@@ -332,7 +332,7 @@ local AUTO_WIRE_FLAGS = {
     Locale = { lookup = function() return LibStub("Cairn-Locale-1.0",  true) end },
     DB     = { lookup = function() return LibStub("Cairn-DB-1.0",      true) end },
     Media  = { lookup = function() return LibStub("Cairn-Media-1.0",   true) end },
-    -- Cairn-Log (Cairn-Log Decision 9 dep): injects log methods directly
+    -- Cairn-Log: injects log methods directly
     -- onto the addon namespace via `:Embed` rather than stashing a lib
     -- reference. Consumer gets `addon:Info(...)` style call sites instead
     -- of `addon.Log:Info(...)`.
@@ -373,7 +373,7 @@ end
 -- Cairn.Register orchestrator (Decisions 3, 6, 7, 8, 9, 13)
 -- ---------------------------------------------------------------------------
 
--- Auto-generated default Cairn-Settings schema (Decision 9). Minimal panel:
+-- Auto-generated default Cairn-Settings schema. Minimal panel:
 -- a version header + a "hide minimap button" toggle when opts.minimap is
 -- truthy. Consumers who want more pass `opts.options` with their own schema.
 local function buildDefaultSchema(metadata, opts)
@@ -400,16 +400,16 @@ end
 -- Cairn.Register(tocName, Addon, opts) -> Metadata
 --
 -- Headline consumer-facing API. One call chains four phases:
---   1. Metadata extraction (Decision 4)
---   2. Cairn-Addon lifecycle instance creation (idempotent, Decision 7)
---   3. Cairn-DB + Cairn-Settings panel registration (Decision 9, gated)
---   4. Companion-lib auto-wiring (Decision 13)
+--   1. Metadata extraction
+--   2. Cairn-Addon lifecycle instance creation (idempotent)
+--   3. Cairn-DB + Cairn-Settings panel registration (gated)
+--   4. Companion-lib auto-wiring
 --
 -- Idempotent on tocName: re-registration during dev reloads or chained
 -- registration paths returns the existing rich entry rather than throwing.
 --
 -- The `_internal` opt is reserved for Cairn's own self-registration
--- (Decision 6). It skips phases 3 and 4 so the bootstrap entry doesn't
+-- on self-load. It skips phases 3 and 4 so the bootstrap entry doesn't
 -- pull in Cairn-DB / Cairn-Settings before they've finished loading.
 -- Third-party callers should not pass it.
 local function registerAddon(tocName, addon, opts)
@@ -456,7 +456,7 @@ local function registerAddon(tocName, addon, opts)
             entry.db = DB:New(metadata.AddonDBName, dbDefaults)
 
             -- Schema: consumer override wins, else the auto-generated
-            -- minimal panel from Decision 9.
+            -- minimal default panel.
             local schema = opts.options or buildDefaultSchema(metadata, opts)
             entry.settings = CS:New(metadata.AddonName, entry.db, schema)
         end
@@ -554,7 +554,7 @@ function _G.Cairn.NewLibrary(name, version, opts)
         return newSubmoduleMethod(self, subName, subVersion, parent)
     end
 
-    -- Decision 11: opt-in CurrentLibrary tracking. Default true because the
+    -- Opt-in CurrentLibrary tracking. Default true because the
     -- common case is a multi-file lib where the next file wants to mount
     -- submodules; explicit `SetCurrent = false` exits the path for libs
     -- that share their MAJOR across non-Cairn-flavored consumers.
@@ -564,7 +564,7 @@ function _G.Cairn.NewLibrary(name, version, opts)
         _G.Cairn.CurrentLibrary = lib
     end
 
-    -- Decision 10's MountAs opt for cases where the namespace resolver
+    -- The `MountAs` opt for cases where the namespace resolver
     -- can't reach the lib (non-`Cairn-X-1.0` MAJOR).
     if type(opts.MountAs) == "string" and opts.MountAs ~= "" then
         rawset(_G.Cairn, opts.MountAs, lib)
@@ -632,7 +632,7 @@ end)
 
 
 -- ---------------------------------------------------------------------------
--- Self-registration (Decision 6)
+-- Self-registration
 -- ---------------------------------------------------------------------------
 -- Cairn appears in its own `Cairn.GetRegistry()` output alongside its
 -- consumers. Diagnostic-only — no Cairn-DB instance, no Cairn-Settings

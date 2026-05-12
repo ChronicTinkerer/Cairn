@@ -352,11 +352,11 @@ end
 -- Color palettes + value-to-color (Decisions 1-3, 5 from the 2026-05-12 walk)
 -- ---------------------------------------------------------------------------
 -- Cairn-Media's color helpers are a separate concern from the media-asset
--- registry above. Decision 4 (Colorize / ColorizeRGB string helpers) was
+-- registry above. The Colorize / ColorizeRGB string helpers were
 -- scoped to Cairn-Util.String per the walk; only the palette-style helpers
 -- live here.
 
--- Expansion color palette (Decision 1). NOT in WoW globals. Centralized
+-- Expansion color palette. NOT in WoW globals. Centralized
 -- here so Vellum zone displays, LibCodex catalog renderers, Forge_Addon-
 -- Manager "loaded from" columns, etc. all reference the same canonical
 -- hex. Recent expansions (TWW, Midnight) added with community-canonical
@@ -391,7 +391,7 @@ function Cairn_Media:GetExpansionColor(name)
 end
 
 
--- :GetQualityColor(name) -> hex string or nil (Decision 2)
+-- :GetQualityColor(name) -> hex string or nil
 --
 -- Thin name-based wrapper around WoW's `ITEM_QUALITY_COLORS` globals.
 -- Maps standard quality names ("Poor", "Common", "Uncommon", "Rare",
@@ -429,7 +429,7 @@ function Cairn_Media:GetQualityColor(name)
 end
 
 
--- :GetFactionColor(name) -> hex string or nil (Decision 3)
+-- :GetFactionColor(name) -> hex string or nil
 --
 -- Same shape as GetQualityColor but for Alliance / Horde factions. WoW
 -- exposes `FACTION_BAR_COLORS[i]` with `.r/.g/.b` floats — we read those
@@ -465,7 +465,7 @@ function Cairn_Media:GetFactionColor(name)
 end
 
 
--- :GetThresholdColor(value, ...) -> (r, g, b) (Decision 5)
+-- :GetThresholdColor(value, ...) -> (r, g, b)
 -- :GetThresholdColorHex(value, ...) -> "FFAARRGGBB" or nil
 --
 -- Multi-stop value-to-color interpolator on a green-yellow-red gradient.

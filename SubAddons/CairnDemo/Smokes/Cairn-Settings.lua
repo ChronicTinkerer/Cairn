@@ -512,34 +512,34 @@ _G.CairnDemo.Smokes["Cairn-Settings"] = function(report)
                 default = false },
           } },
     })
-    report("schema with subSettings accepted (D29)", type(sS) == "table")
-    report("parent default seeded (D29)", dbS.profile.parentToggle == true)
-    report("subSettings child default seeded (D29)", dbS.profile.childA == 0.5)
-    report("subSettings second child seeded (D29)", dbS.profile.childB == false)
+    report("schema with subSettings accepted", type(sS) == "table")
+    report("parent default seeded", dbS.profile.parentToggle == true)
+    report("subSettings child default seeded", dbS.profile.childA == 0.5)
+    report("subSettings second child seeded", dbS.profile.childB == false)
     -- byKey flattening: children accessible via :Get
-    report("subSettings child reachable via :Get (D29)",
+    report("subSettings child reachable via :Get",
            sS:Get("childA") == 0.5)
     sS:Set("childA", 0.7)
-    report("subSettings child round-trip via :Set (D29)",
+    report("subSettings child round-trip via :Set",
            sS:Get("childA") == 0.7)
     -- subSettings rejection paths
-    report("subSettings non-array rejected (D29)",
+    report("subSettings non-array rejected",
            not pcall(function() CS:New("D29Bad1_" .. stamp, dbS, {
                { key = "p", type = "toggle", label = "P", default = true,
                  subSettings = "notatable" },
            }) end))
-    report("subSettings child missing key rejected (D29)",
+    report("subSettings child missing key rejected",
            not pcall(function() CS:New("D29Bad2_" .. stamp, dbS, {
                { key = "p2", type = "toggle", label = "P", default = true,
                  subSettings = { { type = "toggle", label = "X", default = true } } },
            }) end))
-    report("subSettings child duplicate key rejected (D29)",
+    report("subSettings child duplicate key rejected",
            not pcall(function() CS:New("D29Bad3_" .. stamp, dbS, {
                { key = "dupkey", type = "toggle", label = "P", default = true,
                  subSettings = { { key = "dupkey", type = "toggle",
                                    label = "C", default = false } } },
            }) end))
-    report("subSettingsModifiable non-function rejected (D29)",
+    report("subSettingsModifiable non-function rejected",
            not pcall(function() CS:New("D29Bad4_" .. stamp, dbS, {
                { key = "p3", type = "toggle", label = "P", default = true,
                  subSettingsModifiable = "notafn",

@@ -278,6 +278,124 @@ _G.CairnDemo.Smokes["Cairn-DB"] = function(report)
            not pcall(function() dbNS:RegisterNamespace("") end))
 
 
+    -- =====================================================================
+    -- MINOR 16 — D3 removeDefaults on PLAYER_LOGOUT
+    -- =====================================================================
+
+    report("CD._removeDefaultsWalk is a function",
+           type(CD._removeDefaultsWalk) == "function")
+    report("CD._RunRemoveDefaults is a function",
+           type(CD._RunRemoveDefaults) == "function")
+
+    -- Scenario 1: scalar key matching default → stripped
+    local svR1 = "CairnDBSmoke_RemDef1_" .. tostring(time and time() or 0)
+    _G[svR1] = nil; CD.instances[svR1] = nil
+    local dbR1 = CD:New(svR1, { profile = { scale = 1.0, color = "blue" } })
+    -- Both keys match defaults at this point
+    dbR1:_RemoveDefaults()
+    report("D3 scalar matching default is stripped",
+           rawget(dbR1.profile, "scale") == nil)
+    report("D3 second scalar matching default is stripped",
+           rawget(dbR1.profile, "color") == nil)
+    -- After strip, reads return nil since defaults metatable is wildcard-only
+    -- (no metatable __index for non-wildcard defaults). So consumer would
+    -- need to re-merge on next load. The seed in :New does that via
+    -- wildcardMerge, so test by directly poking the values back to non-
+    -- default and re-running.
+    rawset(dbR1.profile, "scale", 1.5)  -- non-default value
+    rawset(dbR1.profile, "color", "red")
+    dbR1:_RemoveDefaults()
+    report("D3 scalar NOT matching default is kept",
+           rawget(dbR1.profile, "scale") == 1.5)
+    report("D3 second scalar NOT matching default is kept",
+           rawget(dbR1.profile, "color") == "red")
+
+
+    -- Scenario 2: table default + non-table user value (blocker rule)
+    local svR2 = "CairnDBSmoke_RemDef2_" .. tostring(time and time() or 0)
+    _G[svR2] = nil; CD.instances[svR2] = nil
+    local dbR2 = CD:New(svR2, { profile = { meta = { wrap = "table" } } })
+    -- Force a non-table user value where the default is a table
+    rawset(dbR2.profile, "meta", 5)  -- scalar where default is table
+    dbR2:_RemoveDefaults()
+    report("D3 blocker: table-default + scalar-user value is preserved",
+           rawget(dbR2.profile, "meta") == 5)
+
+
+    -- Scenario 3: nested table — partial match strips matching keys,
+    --             non-matching keys preserved
+    local svR3 = "CairnDBSmoke_RemDef3_" .. tostring(time and time() or 0)
+    _G[svR3] = nil; CD.instances[svR3] = nil
+    local dbR3 = CD:New(svR3, { profile = {
+        ui = { scale = 1.0, alpha = 1.0, position = "top" } } })
+    -- ui.scale matches default, ui.alpha is user-mutated, ui.position
+    -- doesn't exist anymore
+    rawset(dbR3.profile.ui, "alpha", 0.5)  -- non-default
+    rawset(dbR3.profile.ui, "position", nil)
+    dbR3:_RemoveDefaults()
+    report("D3 nested: matching scalar stripped",
+           rawget(dbR3.profile.ui, "scale") == nil)
+    report("D3 nested: non-matching scalar kept",
+           rawget(dbR3.profile.ui, "alpha") == 0.5)
+
+
+    -- Scenario 4: profiles walk — every profile gets stripped against
+    --             defaults.profile, not just current
+    local svR4 = "CairnDBSmoke_RemDef4_" .. tostring(time and time() or 0)
+    _G[svR4] = nil; CD.instances[svR4] = nil
+    local dbR4 = CD:New(svR4, { profile = { value = 42 } })
+    dbR4:SetProfile("Alt")
+    rawset(dbR4.profile, "value", 42)  -- matches default in Alt profile too
+    dbR4:SetProfile("Default")
+    rawset(dbR4.profile, "value", 42)  -- matches default in Default
+    dbR4:_RemoveDefaults()
+    -- Both profiles should have `value` stripped
+    local sv = rawget(dbR4, "_sv")
+    report("D3 walks all profiles: Default profile stripped",
+           rawget(sv.profiles.Default, "value") == nil)
+    report("D3 walks all profiles: Alt profile stripped",
+           rawget(sv.profiles.Alt, "value") == nil)
+
+
+    -- Scenario 5: per-identity bucket (char) is walked
+    local svR5 = "CairnDBSmoke_RemDef5_" .. tostring(time and time() or 0)
+    _G[svR5] = nil; CD.instances[svR5] = nil
+    local dbR5 = CD:New(svR5, { char = { hello = "world" } })
+    rawset(dbR5.char, "hello", "world")  -- matches default
+    rawset(dbR5.char, "extra", "value")  -- not in defaults; left alone
+    dbR5:_RemoveDefaults()
+    report("D3 per-identity char bucket: matching scalar stripped",
+           rawget(dbR5.char, "hello") == nil)
+    report("D3 per-identity char bucket: non-default key untouched",
+           rawget(dbR5.char, "extra") == "value")
+
+
+    -- Scenario 6: wildcard defaults — * sub-default
+    local svR6 = "CairnDBSmoke_RemDef6_" .. tostring(time and time() or 0)
+    _G[svR6] = nil; CD.instances[svR6] = nil
+    local dbR6 = CD:New(svR6, { profile = {
+        characters = { ["*"] = { level = 1, xp = 0 } } } })
+    -- Materialize two entries via wildcard reads
+    local _ = dbR6.profile.characters["Hero1"].level  -- matches default
+    rawset(dbR6.profile.characters.Hero1, "xp", 0)    -- matches default
+    rawset(dbR6.profile.characters, "Hero2", { level = 10, xp = 0 })  -- partial mismatch
+    dbR6:_RemoveDefaults()
+    -- Hero1 had both fields at default → entirely stripped
+    report("D3 wildcard *: fully-default entry stripped",
+           rawget(dbR6.profile.characters, "Hero1") == nil)
+    -- Hero2 had level != default; level kept, xp (matching) stripped
+    local h2 = rawget(dbR6.profile.characters, "Hero2")
+    report("D3 wildcard *: partial-default entry retains diverged key",
+           type(h2) == "table" and rawget(h2, "level") == 10)
+    report("D3 wildcard *: partial-default entry strips matching key",
+           type(h2) == "table" and rawget(h2, "xp") == nil)
+
+
+    -- Scenario 7: PLAYER_LOGOUT listener install gated by defaults presence
+    report("D3 logout listener install flag is bool",
+           type(CD._removeDefaultsListenerInstalled) == "boolean")
+
+
     -- Cleanup
     CD.instances[svName] = nil
     _G[svName] = nil
@@ -287,4 +405,10 @@ _G.CairnDemo.Smokes["Cairn-DB"] = function(report)
     CD.instances[svM]  = nil; _G[svM]  = nil
     CD.instances[svD]  = nil; _G[svD]  = nil
     CD.instances[svNS] = nil; _G[svNS] = nil
+    CD.instances[svR1] = nil; _G[svR1] = nil
+    CD.instances[svR2] = nil; _G[svR2] = nil
+    CD.instances[svR3] = nil; _G[svR3] = nil
+    CD.instances[svR4] = nil; _G[svR4] = nil
+    CD.instances[svR5] = nil; _G[svR5] = nil
+    CD.instances[svR6] = nil; _G[svR6] = nil
 end

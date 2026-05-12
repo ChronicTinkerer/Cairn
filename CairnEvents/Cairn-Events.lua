@@ -34,11 +34,30 @@
 --
 -- MINOR 15 additions (Decisions 4, 5, 8, 9, 10):
 --   CE:Once(event, handler [, owner])       -- one-shot listener
---   CE:OnceMessage(event, handler [, owner]) -- alias for :Once (forward-compat)
+--   CE:OnceMessage(event, handler [, owner]) -- one-shot on messages registry (MINOR 16)
 --   CE:ValidateEvent(eventName) -> bool, errMsg  -- pre-flight event name check
 --   CE:SubscribeUnit(event, unit, handler [, owner]) -> sub  -- unit-filtered
 --   CE:IsUnitEvent(event) -> bool            -- detect UNIT_* event family
 --   :Fire now logs to Blizzard's /eventtrace when open (zero-overhead off)
+--
+-- MINOR 16 additions (Decisions 2 + 3):
+--   CE:SubscribeMessage(name, fn, target?, owner?)       -- in-process IPC
+--   CE:UnsubscribeMessage(sub)
+--   CE:SendMessage(name, target, ...)                    -- fire a message
+--                                                          target ALWAYS at
+--                                                          position 2 (string
+--                                                          tocName, addon
+--                                                          namespace table,
+--                                                          or nil); args
+--                                                          start at position 3.
+--   Messages registry is SEPARATE from the unified handlers table (D2).
+--   Bare names auto-prefix with the consumer's tocName when target is
+--   given and resolves through Cairn-Addon's registry (D3).
+--
+-- Deferred Cairn-Events decisions: D6 (loadstring forwarder closures —
+-- pure perf optimization, not currently load-bearing) and D7 (per-embed
+-- dispatcher — foundational architectural reshape; needs a focused
+-- session with in-game testing).
 --
 -- Handler signature:
 --   function handler(...)   -- receives event args, NOT the event name
@@ -65,7 +84,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Events-1.0"
-local LIB_MINOR = 15
+local LIB_MINOR = 16
 
 local Cairn_Events = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Events then return end
@@ -372,6 +391,218 @@ function Cairn_Events:IsUnitEvent(event)
         return true
     end
     return false
+end
+
+
+-- ---------------------------------------------------------------------------
+-- Messages registry (Cairn-Events Decisions 2 + 3 — locked 2026-05-12)
+-- ---------------------------------------------------------------------------
+-- Parallel dispatch surface alongside the unified `handlers` table above.
+-- Distinct registries solve three concrete problems with the unified-
+-- namespace shape:
+--
+--   1. A consumer message named after a real WoW event ("PLAYER_LOGIN")
+--      shouldn't accidentally route through engine dispatch.
+--   2. The Decision 1 OnUsed/OnUnused lifecycle (already implemented via
+--      first-sub-RegisterEvent / last-unsub-UnregisterEvent) must NOT
+--      fire RegisterEvent on a message name — Blizzard's API errors on
+--      unknown event names.
+--   3. Performance attribution distinguishes engine fires from addon IPC.
+--
+-- :SubscribeMessage / :UnsubscribeMessage / :SendMessage operate on this
+-- new registry. The existing :Subscribe / :Unsubscribe / :Fire continue
+-- to use the unified `handlers` table for backward-compat.
+--
+-- Decision 3 — Auto-namespace by Cairn-Addon tag. Bare message names
+-- (no `.` or `:`) auto-prefix with the consumer's tocName. Cross-addon
+-- subscribers reach foreign messages by passing the fully-qualified
+-- name. Pattern reference: WildAddon-1.1 (Jaliborc).
+--
+-- The consumer's tocName is resolved via the optional `target` arg on
+-- :SubscribeMessage / :SendMessage:
+--
+--   * If target is set AND Cairn.GetRegistry()[target.tocName] exists,
+--     use that for the auto-prefix.
+--   * If target is set AND target itself is the Cairn-Addon Metadata
+--     table (has AddonName field), use AddonName.
+--   * If target is a string that matches a Cairn.GetRegistry() entry,
+--     use it directly.
+--   * Otherwise no auto-prefix (the name stays bare). Cross-addon and
+--     library-internal use cases stay clean without forcing a target.
+
+Cairn_Events._messages = Cairn_Events._messages or {}
+
+
+-- Resolve a tocName for auto-namespace. Returns the tocName string or
+-- nil if no resolution succeeds. `target` may be:
+--   * nil          — no resolution attempted; returns nil
+--   * a string     — used directly as tocName if it exists in registry
+--   * an addon ns  — read `target.tocName` / `target.AddonName` (the
+--                    fields Cairn.Register stashes)
+--   * Metadata     — same: AddonName field
+local function resolveTocName(target)
+    if target == nil then return nil end
+    if type(target) == "string" then return target end
+    if type(target) ~= "table" then return nil end
+    -- Cairn-Addon Metadata table or addon namespace
+    local name = rawget(target, "tocName")
+              or rawget(target, "AddonName")
+              or rawget(target, "_addonName")
+              or rawget(target, "_tocName")
+    if type(name) == "string" and name ~= "" then return name end
+    return nil
+end
+
+
+-- Auto-prefix bare message names with the consumer's tocName. Names
+-- containing `.` or `:` are considered already-namespaced and pass
+-- through unchanged.
+local function autoNamespace(messageName, target)
+    if type(messageName) ~= "string" or messageName == "" then return messageName end
+    if messageName:find("[%.%:]") then return messageName end
+    local tocName = resolveTocName(target)
+    if tocName then return tocName .. "." .. messageName end
+    return messageName
+end
+
+
+-- :SubscribeMessage(messageName, handler [, target [, owner]]) -> sub
+--
+-- Registers a handler for an in-process message. `target` optionally
+-- identifies the consumer for auto-namespace + introspection (typically
+-- the addon's namespace table). `owner` is the standard
+-- :UnsubscribeOwner / batch-cleanup token.
+function Cairn_Events:SubscribeMessage(messageName, handler, target, owner)
+    if type(messageName) ~= "string" or messageName == "" then
+        error("Cairn-Events:SubscribeMessage: messageName must be a non-empty string", 2)
+    end
+    if type(handler) ~= "function" then
+        error("Cairn-Events:SubscribeMessage: handler must be a function", 2)
+    end
+
+    local resolved = autoNamespace(messageName, target)
+    local subs = self._messages[resolved]
+    if not subs then
+        subs = {}
+        self._messages[resolved] = subs
+    end
+
+    local sub = {
+        message    = resolved,
+        rawMessage = messageName,
+        handler    = handler,
+        owner      = owner,
+        target     = target,
+        _isMessage = true,
+    }
+    subs[#subs + 1] = sub
+    return sub
+end
+
+
+-- :UnsubscribeMessage(sub) — remove one message subscription
+function Cairn_Events:UnsubscribeMessage(sub)
+    if type(sub) ~= "table" or not sub._isMessage then
+        error("Cairn-Events:UnsubscribeMessage: must pass a subscription returned by :SubscribeMessage", 2)
+    end
+    local subs = self._messages[sub.message]
+    if not subs then return end
+    for i = #subs, 1, -1 do
+        if subs[i] == sub then table.remove(subs, i) end
+    end
+    if #subs == 0 then
+        self._messages[sub.message] = nil
+    end
+end
+
+
+-- :SendMessage(messageName, target, ...) — fire a message
+--
+-- Auto-prefixes bare names symmetrically with :SubscribeMessage. `target`
+-- is always at position 2 (string tocName, addon-namespace table, or nil).
+-- Args start at position 3. To send a message without namespacing, pass
+-- nil as the target:
+--
+--   CE:SendMessage("MyEvent", nil, "arg1", "arg2")        -- bare
+--   CE:SendMessage("MyEvent", self, "arg1", "arg2")       -- table target
+--   CE:SendMessage("MyEvent", "MyAddon", "arg1", "arg2")  -- string target
+--
+-- EventTrace integration follows the same pattern as :Fire — pcall'd
+-- LogCallbackRegistryEvent under the "Cairn" registry tag.
+function Cairn_Events:SendMessage(messageName, target, ...)
+    if type(messageName) ~= "string" or messageName == "" then
+        error("Cairn-Events:SendMessage: messageName must be a non-empty string", 2)
+    end
+
+    local resolved = autoNamespace(messageName, target)
+    local n = select("#", ...)
+    local args
+    local argCount = n
+    if n > 0 then args = { ... } end
+
+    -- EventTrace integration (Decision 5 parity for messages registry).
+    if _G.EventTrace
+        and type(_G.EventTrace.LogCallbackRegistryEvent) == "function"
+    then
+        if args then
+            pcall(_G.EventTrace.LogCallbackRegistryEvent, _G.EventTrace, "Cairn",
+                  resolved, unpack(args, 1, argCount))
+        else
+            pcall(_G.EventTrace.LogCallbackRegistryEvent, _G.EventTrace, "Cairn", resolved)
+        end
+    end
+
+    local subs = self._messages[resolved]
+    if not subs or #subs == 0 then return end
+
+    local snapshot = Table_.Snapshot(subs)
+    local context = ("Cairn-Events: message handler for %s"):format(resolved)
+    for i = 1, #snapshot do
+        local sub = snapshot[i]
+        if args then
+            Pcall.Call(context, sub.handler, unpack(args, 1, argCount))
+        else
+            Pcall.Call(context, sub.handler)
+        end
+    end
+end
+
+
+-- Extend :UnsubscribeOwner to walk the messages registry too. Original
+-- behavior on the unified `handlers` table preserved; messages added.
+local _originalUnsubscribeOwner = Cairn_Events.UnsubscribeOwner
+function Cairn_Events:UnsubscribeOwner(owner)
+    _originalUnsubscribeOwner(self, owner)
+
+    for message, subs in pairs(self._messages) do
+        for i = #subs, 1, -1 do
+            if subs[i].owner == owner then
+                table.remove(subs, i)
+            end
+        end
+        if #subs == 0 then
+            self._messages[message] = nil
+        end
+    end
+end
+
+
+-- :Once / :OnceMessage update — the existing implementation routes both
+-- through :Subscribe (single unified handlers table). MINOR 16: rewire
+-- :OnceMessage to actually use the messages registry while keeping
+-- :Once on the unified events table. Both return a sub handle compatible
+-- with their respective :Unsubscribe / :UnsubscribeMessage paths.
+function Cairn_Events:OnceMessage(messageName, handler, target, owner)
+    if type(handler) ~= "function" then
+        error("Cairn-Events:OnceMessage: handler must be a function", 2)
+    end
+    local sub
+    sub = self:SubscribeMessage(messageName, function(...)
+        if sub then self:UnsubscribeMessage(sub) end
+        Pcall.Call(("Cairn-Events:OnceMessage handler for %s"):format(messageName),
+                   handler, ...)
+    end, target, owner)
+    return sub
 end
 
 

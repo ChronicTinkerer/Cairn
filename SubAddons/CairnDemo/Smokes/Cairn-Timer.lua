@@ -241,4 +241,98 @@ _G.CairnDemo.Smokes["Cairn-Timer"] = function(report)
         report("Start with non-function fn errors",
                not pcall(function() CT:Start("x", "push", 0.5, 42) end))
     end
+
+
+    -- =====================================================================
+    -- MINOR 16 — D1 string-method + D4 argsCount + D7 caller-id + counter
+    -- =====================================================================
+    -- (D2 fps-drift compensation isn't time-deterministic in synchronous
+    -- smoke tests; it's verified by inspection rather than by assertions.
+    -- The relevant code path is exercised by every :Every test above.)
+
+    -- D1: fn as string method name, opts.obj as receiver
+    local recv = {}
+    function recv:Ping(payload) self.last = payload end
+    local h_str = CT:After(0, "Ping", { obj = recv }, "pong")
+    report("After: fn-as-string with opts.obj is accepted",
+           type(h_str) == "table")
+    -- Force the schedule to fire by waiting for next-frame equivalent.
+    -- Since smoke is synchronous, we can't await C_Timer; instead verify
+    -- the handle was constructed correctly.
+    report("After: fn-as-string handle stores method name + obj",
+           h_str.fn == "Ping" and h_str.obj == recv)
+    report("After: fn-as-string handle captures argsCount",
+           h_str.argsCount == 1)
+    h_str:Cancel()
+
+    -- D1 input validation: string fn requires opts.obj
+    report("After: string fn without opts.obj rejected",
+           not pcall(function()
+               CT:After(0.1, "DoesntExist", nil)
+           end))
+
+    -- D1 input validation: bad obj method surfaces at fire time via
+    -- geterrorhandler; here we just verify the handle-construction phase
+    -- allows it (validation is at dispatch time).
+    local h_badmethod = CT:After(0, "NonexistentMethod", { obj = {} })
+    report("After: string fn with valid opts.obj constructs even if method missing",
+           type(h_badmethod) == "table")
+    h_badmethod:Cancel()
+
+
+    -- D4: argsCount preserves nil holes
+    local h_args = CT:After(0, function() end, nil, "a", nil, "c")
+    report("After: variadic args captured with argsCount = 3",
+           h_args.argsCount == 3)
+    report("After: args[1] preserved",
+           h_args.args[1] == "a")
+    report("After: args[2] is nil (the hole)",
+           h_args.args[2] == nil)
+    report("After: args[3] preserved",
+           h_args.args[3] == "c")
+    h_args:Cancel()
+
+    -- D4: no variadic args means argsCount = 0
+    local h_noargs = CT:After(0, function() end)
+    report("After: no variadic args yields argsCount = 0",
+           h_noargs.argsCount == 0)
+    report("After: no variadic args means args is nil",
+           h_noargs.args == nil)
+    h_noargs:Cancel()
+
+
+    -- D7: opts.from + debugMode + GetCountAfter
+    report("CT.debugMode flag exists and defaults false",
+           CT.debugMode == false)
+    report("CT:GetCountAfter is a function",
+           type(CT.GetCountAfter) == "function")
+    report("CT:ResetCountAfter is a function",
+           type(CT.ResetCountAfter) == "function")
+    report("Initial GetCountAfter returns empty table",
+           next(CT:GetCountAfter()) == nil)
+
+    -- With debugMode off, fires don't bump the counter (smoke test fakes
+    -- the fire path by setting up a 0-delay timer and immediately
+    -- checking; since C_Timer is async we just verify state shape).
+    local h_from1 = CT:After(0, function() end, { from = "smoke_tag_1" })
+    report("After: opts.from captured on handle",
+           h_from1.from == "smoke_tag_1")
+    h_from1:Cancel()
+
+    -- Toggle debugMode on, then off, to verify the flag flips cleanly
+    CT.debugMode = true
+    CT._fromCounts["preExisting"] = 5
+    local snapshot = CT:GetCountAfter()
+    report("GetCountAfter returns a copy (not the live table)",
+           snapshot.preExisting == 5 and snapshot ~= CT._fromCounts)
+    CT:ResetCountAfter()
+    report("ResetCountAfter wipes the counter",
+           next(CT:GetCountAfter()) == nil)
+    CT.debugMode = false
+
+    -- D7 input validation: opts.from must be a string
+    report("opts.from non-string rejected",
+           not pcall(function()
+               CT:After(0.1, function() end, { from = 42 })
+           end))
 end

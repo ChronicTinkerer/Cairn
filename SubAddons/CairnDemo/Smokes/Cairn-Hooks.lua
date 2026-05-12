@@ -258,4 +258,139 @@ _G.CairnDemo.Smokes["Cairn-Hooks"] = function(report)
         report("HookOnce with non-function callback errors",
                not pcall(function() CH:HookOnce(CreateFrame("Frame"), "OnShow", 42) end))
     end
+
+
+    -- =====================================================================
+    -- MINOR 16 — D1+D2+D3+D4: AceHook-style API
+    -- =====================================================================
+
+    report("CH:Hook is a function",          type(CH.Hook) == "function")
+    report("CH:SecureHook is a function",    type(CH.SecureHook) == "function")
+    report("CH:RawHook is a function",       type(CH.RawHook) == "function")
+    report("CH:FailsafeHook is a function",  type(CH.FailsafeHook) == "function")
+    report("CH:UnhookAll is a function",     type(CH.UnhookAll) == "function")
+    report("CH.actives is a table",          type(CH.actives) == "table")
+
+    -- D1: :Hook installs a Pre-style wrapper + auto-chain
+    local hookTarget = { Greet = function(self, name) self.last = "Hello " .. name end }
+    local hookFired = false
+    local h_hook = CH:Hook(hookTarget, "Greet", function(self, name)
+        hookFired = true
+    end, "hookOwner_1")
+    hookTarget:Greet("World")
+    report("Hook: handler fired",          hookFired == true)
+    report("Hook: original ran (auto-chain)", hookTarget.last == "Hello World")
+    report("Hook handle has _aceHookUid",  type(h_hook._aceHookUid) == "number")
+    report("Hook handle has _aceHookKind", h_hook._aceHookKind == "Hook")
+    report("CH.actives[uid] is true",      CH.actives[h_hook._aceHookUid] == true)
+
+    -- :Unhook soft-unhook + physical removal for Hook handle
+    CH:Unhook(h_hook)
+    report("Unhook flips actives[uid] to false",
+           CH.actives[h_hook._aceHookUid] == false)
+    -- After unhook, the handler should no-op; the original still runs
+    hookFired = false
+    hookTarget.last = nil
+    hookTarget:Greet("After")
+    report("Unhook: handler no-ops",       hookFired == false)
+    report("Unhook: original still runs after hook torn down",
+           hookTarget.last == "Hello After")
+
+
+    -- D2: :RawHook does NOT auto-chain
+    local rawTarget = { Save = function(self, data) self.saved = data end }
+    local rawCalled = false
+    local h_raw = CH:RawHook(rawTarget, "Save", function(orig, self, data)
+        rawCalled = true
+        -- intentionally NOT calling orig — RawHook is replacement
+    end, "rawOwner")
+    rawTarget:Save("data1")
+    report("RawHook: handler fired",       rawCalled == true)
+    report("RawHook: original DID NOT run (no auto-chain)",
+           rawTarget.saved == nil)
+    report("RawHook handle kind tagged",   h_raw._aceHookKind == "RawHook")
+    CH:Unhook(h_raw)
+
+
+    -- D3: :FailsafeHook — original ALWAYS fires even if handler throws
+    local fsTarget = { Tick = function(self) self.ticks = (self.ticks or 0) + 1 end }
+    local fsHandlerFired = false
+    local h_fs = CH:FailsafeHook(fsTarget, "Tick", function(self)
+        fsHandlerFired = true
+        error("intentional smoke-test throw — should be caught by xpcall")
+    end, "fsOwner")
+
+    -- Temporarily swallow errors so the handler's intentional throw
+    -- doesn't pollute the smoke output. Save the real geterrorhandler
+    -- (the function itself, not its return value) and restore after.
+    local prevGetHandler = _G.geterrorhandler
+    _G.geterrorhandler = function() return function(e) end end
+    fsTarget:Tick()
+    _G.geterrorhandler = prevGetHandler
+
+    report("FailsafeHook: handler fired",  fsHandlerFired == true)
+    report("FailsafeHook: original ran even though handler threw",
+           fsTarget.ticks == 1)
+    CH:Unhook(h_fs)
+
+
+    -- D1: :Hook on a secure function should error
+    -- Synthesize a fake secure global via a stub issecurevariable
+    local origIsSecure = _G.issecurevariable
+    _G.issecurevariable = function(t, k) return k == "FakeSecureMethod" end
+    local secStubTarget = { FakeSecureMethod = function() end }
+    report("Hook on secure method errors with hint",
+           not pcall(function()
+               CH:Hook(secStubTarget, "FakeSecureMethod", function() end)
+           end))
+    _G.issecurevariable = origIsSecure
+
+
+    -- D1: :SecureHook installs via hooksecurefunc; handle is soft-unhook only
+    local secTarget = { Action = function() end }
+    local secCalls = 0
+    local h_sec = CH:SecureHook(secTarget, "Action", function() secCalls = secCalls + 1 end,
+                                "secOwner")
+    secTarget:Action()
+    report("SecureHook: handler fired after original (1 call)",
+           secCalls == 1)
+    secTarget:Action()
+    report("SecureHook: handler fires on subsequent calls (2)",
+           secCalls == 2)
+    CH:Unhook(h_sec)
+    secTarget:Action()
+    report("SecureHook: actives flag stops dispatch after Unhook",
+           secCalls == 2)
+    report("SecureHook handle has _aceHookKind = 'SecureHook'",
+           h_sec._aceHookKind == "SecureHook")
+
+
+    -- D4: :UnhookAll batch by owner
+    local target1 = { Method1 = function() end }
+    local target2 = { Method2 = function() end }
+    local target3 = { Method3 = function() end }
+    local h1 = CH:Hook(target1,  "Method1", function() end, "batchOwner")
+    local h2 = CH:RawHook(target2, "Method2", function(orig) orig() end, "batchOwner")
+    local h3 = CH:Hook(target3,  "Method3", function() end, "otherOwner")
+    CH:UnhookAll("batchOwner")
+    report("UnhookAll: batchOwner's h1 actives flag cleared",
+           CH.actives[h1._aceHookUid] == false)
+    report("UnhookAll: batchOwner's h2 actives flag cleared",
+           CH.actives[h2._aceHookUid] == false)
+    report("UnhookAll: otherOwner's h3 actives flag untouched",
+           CH.actives[h3._aceHookUid] == true)
+    CH:Unhook(h3)
+
+
+    -- Input validation for the new methods
+    report("Hook(nil, ...) errors",
+           not pcall(function() CH:Hook(nil, "x", function() end) end))
+    report("Hook(t, '', fn) errors",
+           not pcall(function() CH:Hook({x = function() end}, "", function() end) end))
+    report("Hook(t, 'x', 'notafn') errors",
+           not pcall(function() CH:Hook({x = function() end}, "x", "notafn") end))
+    report("SecureHook on non-function method errors",
+           not pcall(function() CH:SecureHook({}, "nosuch", function() end) end))
+    report("UnhookAll(nil) errors",
+           not pcall(function() CH:UnhookAll(nil) end))
 end

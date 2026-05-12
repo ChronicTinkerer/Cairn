@@ -21,9 +21,9 @@
 --                                                  -- tagged with MyAddon
 --
 -- Public API (lib):
---   CT:After    (delay, fn [, opts])  -> handle    -- opts: owner
---   CT:Every    (delay, fn [, opts])  -> handle    -- opts: owner, count
---   CT:Debounce (key, delay, fn [, opts]) -> handle -- opts: owner
+--   CT:After    (delay, fn [, opts [, ...]]) -> handle  -- opts: owner, obj, from
+--   CT:Every    (delay, fn [, opts [, ...]]) -> handle  -- opts: owner, count, obj, from
+--   CT:Debounce (key, delay, fn [, opts [, ...]]) -> handle -- opts: owner, obj, from
 --   CT:Stopwatch()                    -> stopwatch
 --   CT:CancelOwner(owner)
 --   CT.timers       -- flat array of active After/Every/Debounce handles
@@ -34,6 +34,21 @@
 --                                            queue + drain on PLAYER_REGEN_ENABLED
 --   CT:Start(slot, mode, period, fn)      -- unified push / ignore / duplicate /
 --                                            cooldown debounce/throttle helper
+--
+-- MINOR 16 additions (Decisions 1, 2, 4, 7):
+--   * `fn` may be a string method name OR function reference. String form
+--     dispatches as `opts.obj[fn](opts.obj, args...)`; opts.obj is required.
+--     Saves closure allocation on hot paths + honors late-binding.
+--   * Variadic args after opts: forwarded to the callback with nil holes
+--     preserved via `argsCount = select("#", ...)`. `CT:After(d, fn, opts,
+--     "a", nil, "c")` delivers three args including the middle nil.
+--   * fps-drift compensation on :Every — the next tick's delay subtracts
+--     how late the previous tick fired so average frequency stays accurate
+--     across long sessions even when individual ticks overshoot.
+--   * `opts.from` caller-id tag + `Cairn.Timer.debugMode` flag + new
+--     :GetCountAfter / :ResetCountAfter accessors for attribution
+--     profiling. Counter logic short-circuits when debugMode is false
+--     (production default).
 --
 -- Public API (timer handle):
 --   handle:Cancel()
@@ -65,7 +80,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Timer-1.0"
-local LIB_MINOR = 15
+local LIB_MINOR = 16
 
 local Cairn_Timer = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Timer then return end
@@ -77,6 +92,15 @@ local Pcall, Table_ = CU.Pcall, CU.Table  -- aliased to avoid shadowing Lua's ta
 Cairn_Timer.timers     = Cairn_Timer.timers     or {}
 Cairn_Timer.byOwner    = Cairn_Timer.byOwner    or {}
 Cairn_Timer._debounces = Cairn_Timer._debounces or {}  -- {[key] = handle}
+
+-- MINOR 16 — Decision 7: caller-id attribution. Toggle `Cairn.Timer.debugMode
+-- = true` at runtime to enable per-`from`-tag counting; production default
+-- is off so the counter logic short-circuits to a single nil-check per
+-- fire. Counts persist across `:Cancel` and `:CancelOwner` (the counter
+-- tracks "how many fires came from each tag" over the session, not
+-- "currently active timers").
+Cairn_Timer.debugMode    = Cairn_Timer.debugMode    or false
+Cairn_Timer._fromCounts  = Cairn_Timer._fromCounts  or {}
 
 
 -- ---------------------------------------------------------------------------
@@ -162,8 +186,55 @@ local HandleMeta = { __index = HandleMethods }
 -- Thin wrapper over Cairn-Util.Pcall.Call. The fixed context string keeps
 -- the byte-for-byte error text consumers see ("Cairn-Timer: callback threw:
 -- ...") identical to the pre-refactor form.
+--
+-- MINOR 16 — Decisions 1 + 4 + 7:
+--   * `handle.fn` accepts a string method name OR a function reference.
+--     String form dispatches as `obj[name](obj, args...)` where `obj`
+--     is `handle.obj` (set via opts.obj or opts.target). Saves closure
+--     allocation on hot paths AND honors late-binding (method body can
+--     be swapped between scheduling and firing).
+--   * `handle.args` + `handle.argsCount` preserve nil holes via
+--     `unpack(args, 1, argsCount)`. Positional locals for the most
+--     common arg-counts up to 7 (legacy "hot-path arg forwarding")
+--     could land later; for now the table+argsCount path is correct
+--     for every case.
+--   * `handle.from` caller-id is counted (when debugMode is set) by
+--     the caller of safeCall, NOT here, so the counting is exactly
+--     once-per-fire regardless of repeating semantics.
 local function safeCall(handle)
-    Pcall.Call("Cairn-Timer: callback", handle.fn)
+    local fn   = handle.fn
+    local obj  = handle.obj
+    local args = handle.args
+    local n    = handle.argsCount or 0
+
+    if type(fn) == "string" then
+        -- String method dispatch: obj[fn](obj, ...).
+        if obj == nil then
+            -- Mis-wiring; surface loudly so consumers see it.
+            geterrorhandler()(
+                ("Cairn-Timer: fn '%s' is a string method name but handle.obj is nil "
+                 .. "(pass opts.obj when fn is a string)"):format(tostring(fn)))
+            return
+        end
+        local method = obj[fn]
+        if type(method) ~= "function" then
+            geterrorhandler()(
+                ("Cairn-Timer: obj['%s'] is not a function (got %s)")
+                :format(tostring(fn), type(method)))
+            return
+        end
+        if n > 0 then
+            Pcall.Call("Cairn-Timer: callback", method, obj, unpack(args, 1, n))
+        else
+            Pcall.Call("Cairn-Timer: callback", method, obj)
+        end
+    else
+        if n > 0 then
+            Pcall.Call("Cairn-Timer: callback", fn, unpack(args, 1, n))
+        else
+            Pcall.Call("Cairn-Timer: callback", fn)
+        end
+    end
 end
 
 
@@ -193,8 +264,25 @@ end
 -- payoff. Without it the consumer would need a closure-captured forward
 -- reference to call self:Cancel() — that pattern was rejected explicitly
 -- in the design review (memory: cairn_simplicity_applies_to_consumer.md).
+--
+-- MINOR 16 — Decision 2: fps-drift compensation. Each tick records the
+-- expected-end time; the next tick's delay subtracts how late we are
+-- (capped at zero for "immediate next tick" semantics on extreme drift).
+-- Without compensation, a "tick every 5s" timer accumulates seconds of
+-- lag across long sessions because individual ticks routinely overshoot
+-- by tens-to-hundreds of milliseconds.
 local function fireRepeating(handle)
     if handle.cancelled then return end
+
+    -- Capture wall-clock NOW for drift math AFTER firing.
+    local nowBefore = GetTime and GetTime() or 0
+
+    if handle.from and Cairn_Timer.debugMode then
+        -- D7: bump caller-id counter exactly once per fire.
+        local map = Cairn_Timer._fromCounts
+        map[handle.from] = (map[handle.from] or 0) + 1
+    end
+
     safeCall(handle)
     handle.fired = (handle.fired or 0) + 1
 
@@ -207,16 +295,41 @@ local function fireRepeating(handle)
     end
 
     if not handle.cancelled then
+        -- Drift compensation: shorten the next delay by however late
+        -- this tick fired vs. the expected schedule. Capped at zero
+        -- so we never request a negative delay (C_Timer.After would
+        -- treat that as "immediate" but consistent zero is clearer).
+        if handle._expectedFireAt and GetTime then
+            local now  = GetTime()
+            local late = now - handle._expectedFireAt
+            local next_ = handle.delay - late
+            if next_ < 0 then next_ = 0 end
+            handle._nextDelay = next_
+            handle._expectedFireAt = now + next_
+        end
         scheduleTick(handle)
     end
 end
 
 
 scheduleTick = function(handle)
-    C_Timer.After(handle.delay, function()
+    -- D2 fps-drift: prefer the compensated _nextDelay if present
+    -- (set by fireRepeating). On first schedule, seed _expectedFireAt
+    -- from the base delay so future drift math has a baseline.
+    local delay = handle._nextDelay or handle.delay
+    handle._nextDelay = nil  -- one-shot use
+    if handle._expectedFireAt == nil and GetTime then
+        handle._expectedFireAt = GetTime() + delay
+    end
+    C_Timer.After(delay, function()
         if handle.repeating then
             fireRepeating(handle)
         else
+            -- One-shot path: count for D7 here too.
+            if handle.from and Cairn_Timer.debugMode then
+                local map = Cairn_Timer._fromCounts
+                map[handle.from] = (map[handle.from] or 0) + 1
+            end
             fireOnce(handle)
         end
     end)
@@ -227,8 +340,11 @@ end
 -- Internal: validation
 -- ---------------------------------------------------------------------------
 
+-- MINOR 16: opts.obj (Decision 1) + opts.from (Decision 7) added.
+-- Returns (owner, count, obj, from). Validation rules same as before
+-- plus shape checks on the new fields.
 local function validateOpts(opts, methodLabel, allowCount)
-    if opts == nil then return nil, nil end
+    if opts == nil then return nil, nil, nil, nil end
     if type(opts) ~= "table" then
         error(("Cairn-Timer:%s: opts must be a table or nil"):format(methodLabel), 3)
     end
@@ -240,29 +356,47 @@ local function validateOpts(opts, methodLabel, allowCount)
             error(("Cairn-Timer:%s: opts.count must be a positive integer"):format(methodLabel), 3)
         end
     end
-    return opts.owner, opts.count
+    if opts.from ~= nil and type(opts.from) ~= "string" then
+        error(("Cairn-Timer:%s: opts.from must be a string or nil"):format(methodLabel), 3)
+    end
+    -- opts.obj has no type constraint — typically a table, but the
+    -- caller's mental model is "the receiver"; we just pass it through.
+    return opts.owner, opts.count, opts.obj, opts.from
 end
 
 
-local function newHandle(delay, fn, opts, repeating, methodLabel, debounceKey)
+-- MINOR 16 (Decisions 1 + 4): fn accepts string method name OR function;
+-- variadic args after opts are captured with argsCount so nil holes are
+-- preserved on dispatch.
+local function newHandle(delay, fn, opts, repeating, methodLabel, debounceKey, args, argsCount)
     if type(delay) ~= "number" or delay < 0 then
         error(("Cairn-Timer:%s: delay must be a non-negative number"):format(methodLabel), 3)
     end
-    if type(fn) ~= "function" then
-        error(("Cairn-Timer:%s: fn must be a function"):format(methodLabel), 3)
+    if type(fn) ~= "function" and type(fn) ~= "string" then
+        error(("Cairn-Timer:%s: fn must be a function or method-name string"):format(methodLabel), 3)
     end
 
-    local owner, count = validateOpts(opts, methodLabel, repeating)
+    local owner, count, obj, from = validateOpts(opts, methodLabel, repeating)
+
+    -- Cross-check: string method needs a receiver to dispatch on.
+    if type(fn) == "string" and obj == nil then
+        error(("Cairn-Timer:%s: fn is a string method name '%s' but opts.obj is nil"):format(
+              methodLabel, fn), 3)
+    end
 
     local handle = setmetatable({
         delay        = delay,
         fn           = fn,
         owner        = owner,
+        obj          = obj,           -- Decision 1: receiver for string-fn dispatch
+        from         = from,          -- Decision 7: caller-id (counted when debugMode)
         repeating    = repeating,
         count        = count,
         fired        = 0,
         cancelled    = false,
         debounceKey  = debounceKey,   -- nil for After/Every; set for Debounce
+        args         = args,          -- Decision 4: nil if no args supplied
+        argsCount    = argsCount or 0,
     }, HandleMeta)
 
     track(handle)
@@ -275,13 +409,21 @@ end
 -- Public API: timing primitives
 -- ---------------------------------------------------------------------------
 
-function Cairn_Timer:After(delay, fn, opts)
-    return newHandle(delay, fn, opts, false, "After", nil)
+-- MINOR 16 (Decision 4): variadic args after opts. Naive `{...}` would
+-- truncate at the first nil; argsCount preserves nil holes for accurate
+-- callback dispatch. The (delay, fn, opts) 3-arg form remains unchanged
+-- for existing consumers — variadic args are forwarded only when supplied.
+function Cairn_Timer:After(delay, fn, opts, ...)
+    local n = select("#", ...)
+    local args = n > 0 and { ... } or nil
+    return newHandle(delay, fn, opts, false, "After", nil, args, n)
 end
 
 
-function Cairn_Timer:Every(delay, fn, opts)
-    return newHandle(delay, fn, opts, true, "Every", nil)
+function Cairn_Timer:Every(delay, fn, opts, ...)
+    local n = select("#", ...)
+    local args = n > 0 and { ... } or nil
+    return newHandle(delay, fn, opts, true, "Every", nil, args, n)
 end
 
 
@@ -293,7 +435,7 @@ end
 -- Choose stable keys per logical "thing to debounce" (e.g.
 -- "MyAddon:RefreshBars"). Using consumer-supplied keys instead of
 -- generated tokens keeps the API one-arg simple at the call site.
-function Cairn_Timer:Debounce(key, delay, fn, opts)
+function Cairn_Timer:Debounce(key, delay, fn, opts, ...)
     if type(key) ~= "string" or key == "" then
         error("Cairn-Timer:Debounce: key must be a non-empty string", 2)
     end
@@ -301,7 +443,9 @@ function Cairn_Timer:Debounce(key, delay, fn, opts)
     if existing and not existing.cancelled then
         existing:Cancel()
     end
-    local handle = newHandle(delay, fn, opts, false, "Debounce", key)
+    local n = select("#", ...)
+    local args = n > 0 and { ... } or nil
+    local handle = newHandle(delay, fn, opts, false, "Debounce", key, args, n)
     self._debounces[key] = handle
     return handle
 end
@@ -556,6 +700,32 @@ function Cairn_Timer:Start(slot, mode, period, fn)
         error("Cairn-Timer:Start: fn must be a function", 2)
     end
     return dispatch(slot, period, fn)
+end
+
+
+-- ---------------------------------------------------------------------------
+-- :GetCountAfter (Cairn-Timer Decision 7, locked 2026-05-12)
+-- ---------------------------------------------------------------------------
+-- Returns the per-`from`-tag counter map populated when `Cairn.Timer.debugMode`
+-- is set. Each entry counts how many fires came from a given `from` tag
+-- across the session. Empty table when debugMode was never enabled, or
+-- when no `from`-tagged timers have fired since enabling.
+--
+-- The "After" in the name is a nod to the most common scheduling method;
+-- the counter tracks fires from `:After`, `:Every`, and `:Debounce`.
+--
+-- :ResetCountAfter() wipes the counter (use between profiling runs to
+-- isolate measurement windows).
+function Cairn_Timer:GetCountAfter()
+    -- Return a copy so consumers can't accidentally mutate our counter.
+    local copy = {}
+    for k, v in pairs(self._fromCounts) do copy[k] = v end
+    return copy
+end
+
+
+function Cairn_Timer:ResetCountAfter()
+    self._fromCounts = {}
 end
 
 

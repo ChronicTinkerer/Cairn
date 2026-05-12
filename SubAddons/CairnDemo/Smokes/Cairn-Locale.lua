@@ -196,8 +196,160 @@ _G.CairnDemo.Smokes["Cairn-Locale"] = function(report)
     end
 
 
-    -- Cleanup
+    -- =====================================================================
+    -- MINOR 16 — :NewLocale write-proxy API + GAME_LOCALE + SetActiveLocale
+    -- (Decisions 1, 2, 3, 4, 5)
+    -- =====================================================================
+
+    -- D5 — GAME_LOCALE override takes precedence over GetLocale()
     CL:SetOverride(nil)
+    local prevGameLocale = _G.GAME_LOCALE
+    _G.GAME_LOCALE = "frFR"
+    report("GAME_LOCALE override propagates through GetLocale (D5)",
+           CL:GetLocale() == "frFR")
+    _G.GAME_LOCALE = prevGameLocale  -- restore real env
+
+
+    -- :SetActiveLocale alias for :SetOverride
+    report("CL:SetActiveLocale is a function",
+           type(CL.SetActiveLocale) == "function")
+    if type(CL.SetActiveLocale) == "function" then
+        CL:SetActiveLocale("deDE")
+        report("SetActiveLocale routes through SetOverride",
+               CL:GetLocale() == "deDE")
+        CL:SetActiveLocale(nil)
+    end
+
+
+    -- D1 — :NewLocale returns a write-proxy with auto-key-as-value
+    report("CL:NewLocale is a function",
+           type(CL.NewLocale) == "function")
+
+    -- Force devMode + reset for these tests so behavior is deterministic
+    local NAML = "CairnLocaleSmoke_NewLocale_" .. stamp
+    CL.registry[NAML] = nil
+    local prevDev = CL.devMode
+    CL.devMode = true
+
+    -- Default-locale path: auto-key-as-value
+    local Len = CL:NewLocale(NAML, "enUS", true, "silent")
+    report("NewLocale(default) returns a proxy",
+           type(Len) == "table")
+    if Len then
+        Len["Hello"]   = true
+        Len["Goodbye"] = true
+        Len["Custom"]  = "Custom-but-string"
+        local inst = CL.registry[NAML]
+        report("auto-key-as-value: L['Hello'] = true → bucket['Hello'] = 'Hello' (D1)",
+               inst._locales.enUS.Hello == "Hello")
+        report("auto-key-as-value: L['Goodbye'] = true → bucket['Goodbye'] = 'Goodbye' (D1)",
+               inst._locales.enUS.Goodbye == "Goodbye")
+        report("explicit string still works on default proxy (D1)",
+               inst._locales.enUS.Custom == "Custom-but-string")
+
+        -- D2 — first-definition-wins on default
+        Len["Hello"] = "Different"
+        report("default-proxy: subsequent write to existing key is no-op (D2)",
+               inst._locales.enUS.Hello == "Hello")
+        Len["Hello"] = nil  -- nil-write allowed (deletes)
+        report("default-proxy: explicit nil clears key (D2 carve-out)",
+               inst._locales.enUS.Hello == nil)
+
+        -- Bad-value rejection on default
+        report("default-proxy rejects non-string non-true non-nil value (D1)",
+               not pcall(function() Len["NumKey"] = 42 end))
+    end
+
+    -- Non-default-locale path: explicit values only
+    local Lde = CL:NewLocale(NAML, "deDE", false)
+    report("NewLocale(non-default) returns a proxy in devMode (D4 bypass)",
+           type(Lde) == "table")
+    if Lde then
+        Lde["Goodbye"] = "Auf Wiedersehen"
+        local inst = CL.registry[NAML]
+        report("non-default proxy writes explicit string (D1)",
+               inst._locales.deDE.Goodbye == "Auf Wiedersehen")
+
+        -- D1 — non-default rejects `true` shorthand (would silently turn key
+        -- into key value in the wrong language)
+        report("non-default proxy rejects true value (D1)",
+               not pcall(function() Lde["Key"] = true end))
+        report("non-default proxy rejects number value (D1)",
+               not pcall(function() Lde["Key"] = 99 end))
+    end
+
+
+    -- D4 — nil-return for non-current non-default locales when devMode OFF
+    CL.devMode = false
+    local NAML2 = "CairnLocaleSmoke_NewLocale2_" .. stamp
+    CL.registry[NAML2] = nil
+
+    -- Default locale always returns a proxy regardless of current
+    local Lalways = CL:NewLocale(NAML2, "enUS", true)
+    report("NewLocale(default) always returns proxy outside devMode (D4)",
+           type(Lalways) == "table")
+
+    -- Current client locale returns a proxy
+    local currentLoc = CL:GetLocale()
+    local Lcurr = CL:NewLocale(NAML2, currentLoc, false)
+    report("NewLocale(current locale) returns proxy outside devMode (D4)",
+           type(Lcurr) == "table")
+
+    -- A locale guaranteed to NOT match: produce a string highly unlikely
+    -- to equal currentLoc. We pick "zzZZ" as a sentinel non-locale.
+    local Lnone = CL:NewLocale(NAML2, "zzZZ", false)
+    report("NewLocale(non-current non-default) returns nil outside devMode (D4)",
+           Lnone == nil)
+
+
+    -- D3 — Missing-key modes ("warn"/"silent"/"raw")
+    local NAML3 = "CairnLocaleSmoke_NewLocale3_" .. stamp
+    CL.registry[NAML3] = nil
+    CL.devMode = true
+
+    local Lraw = CL:NewLocale(NAML3, "enUS", true, "raw")
+    if Lraw then
+        Lraw["Known"] = true
+        local inst = CL.registry[NAML3]
+        CL:SetOverride("enUS")
+        report("raw mode returns nil on missing key (D3)",
+               inst:Get("MissingKey") == nil)
+        report("raw mode returns the value when present (D3)",
+               inst:Get("Known") == "Known")
+        CL:SetOverride(nil)
+    end
+
+    local NAML4 = "CairnLocaleSmoke_NewLocale4_" .. stamp
+    CL.registry[NAML4] = nil
+    local Lsil = CL:NewLocale(NAML4, "enUS", true, "silent")
+    if Lsil then
+        Lsil["Known"] = true
+        local inst = CL.registry[NAML4]
+        CL:SetOverride("enUS")
+        report("silent mode returns the key on miss, no warn (D3)",
+               inst:Get("MissingKey2") == "MissingKey2")
+        CL:SetOverride(nil)
+    end
+
+
+    -- :NewLocale input validation
+    report("NewLocale('', 'enUS') errors",
+           not pcall(function() CL:NewLocale("", "enUS") end))
+    report("NewLocale('x', '') errors",
+           not pcall(function() CL:NewLocale("x", "") end))
+    report("NewLocale('x', 'enUS', 'notabool') errors",
+           not pcall(function() CL:NewLocale("x", "enUS", "notabool") end))
+    report("NewLocale('x', 'enUS', true, 'bogusmode') errors",
+           not pcall(function() CL:NewLocale("x", "enUS", true, "bogusmode") end))
+
+
+    -- Cleanup
+    CL.devMode = prevDev
+    CL:SetOverride(nil)
+    CL.registry[NAML]  = nil
+    CL.registry[NAML2] = nil
+    CL.registry[NAML3] = nil
+    CL.registry[NAML4] = nil
     CL.registry[NAME]  = nil
     CL.registry[NAME2] = nil
 end

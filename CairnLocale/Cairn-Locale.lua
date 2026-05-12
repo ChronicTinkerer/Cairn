@@ -54,14 +54,26 @@
 -- Public API:
 --   local CL = LibStub("Cairn-Locale-1.0")
 --   CL:New(name)         -> instance       -- idempotent on `name`
+--   CL:NewLocale(app, locale, isDefault, mode) -- AceLocale-style write-
+--                                              proxy entry point. Returns
+--                                              nil for non-current non-
+--                                              default locales unless
+--                                              Cairn.Locale.devMode = true.
+--                                              See MINOR 16 section below.
 --   CL:Get(name)                            -- registry lookup
 --   CL.registry                             -- { [name] = instance }
+--   CL.devMode                              -- set true BEFORE locale files
+--                                              load to force :NewLocale to
+--                                              return a proxy for every
+--                                              locale (translator support).
 --   CL:GetLocale()                          -- effective locale (override
---                                              if set, else GetLocale())
+--                                              if set, else GAME_LOCALE,
+--                                              else GetLocale())
 --   CL:SetOverride(locale_or_nil)           -- dev tool; affects ALL
 --                                              instances at lookup time
 --                                              and fires Cairn-Locale:Changed
 --                                              when effective changes
+--   CL:SetActiveLocale(locale_or_nil)       -- alias for :SetOverride
 --   CL:GetPhrase(name, key)                 -- lib-level lookup; returns nil
 --                                              on total miss (vs instance
 --                                              :Get which returns the key)
@@ -69,6 +81,25 @@
 --                                              regardless of current locale.
 --                                              Surfaced by Cairn-Slash
 --                                              Decision 3.
+--
+-- MINOR 16 — `:NewLocale` write-proxy API (Cairn-Locale Decisions 1-5):
+--
+--   -- enUS.lua  (default locale, auto-key-as-value)
+--   local L = LibStub("Cairn-Locale-1.0"):NewLocale("MyAddon", "enUS", true)
+--   if L then
+--       L["Hello"]   = true   -- becomes "Hello" via the proxy
+--       L["Goodbye"] = true   -- becomes "Goodbye"
+--   end
+--
+--   -- deDE.lua  (translation, explicit values)
+--   local L = LibStub("Cairn-Locale-1.0"):NewLocale("MyAddon", "deDE")
+--   if L then
+--       L["Hello"] = "Hallo"
+--   end
+--
+--   -- Missing-key modes (Decision 3): pass as 4th arg on the default-
+--   -- locale call. Three modes: "warn" (default, prints once per key),
+--   -- "silent" (returns key, no print), "raw" (returns nil).
 --
 -- Instance API:
 --   L:Set(locale, strings)                  -- merge strings into locale
@@ -78,7 +109,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Locale-1.0"
-local LIB_MINOR = 15
+local LIB_MINOR = 16
 
 local Cairn_Locale = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Locale then return end
@@ -119,8 +150,28 @@ function Cairn_Locale:SetOverride(locale)
 end
 
 function Cairn_Locale:GetLocale()
+    -- Resolution order:
+    --   1. SetOverride/SetActiveLocale value (dev tool, runtime swap)
+    --   2. GAME_LOCALE global (translator-set in dev environment so live
+    --      re-renders work without changing the client install — Decision 5)
+    --   3. GetLocale() (the client's actual locale)
+    --   4. "enUS" fallback (for test VMs without GetLocale())
     if self._override then return self._override end
+    if type(GAME_LOCALE) == "string" and GAME_LOCALE ~= "" then
+        return GAME_LOCALE
+    end
     return (GetLocale and GetLocale()) or "enUS"
+end
+
+
+-- :SetActiveLocale(locale) — alias for :SetOverride, matching the
+-- vocabulary in the Cairn-Locale Decision 4 walk. Both names map to the
+-- same underlying mechanism + same `Cairn-Locale:Changed` event fire.
+-- The dual-naming is permanent — consumers familiar with AceLocale-style
+-- vocabulary find :SetActiveLocale and consumers reading older Cairn
+-- code find :SetOverride. No behavioral difference.
+function Cairn_Locale:SetActiveLocale(locale)
+    return self:SetOverride(locale)
 end
 
 
@@ -275,6 +326,244 @@ function Cairn_Locale:GetEnglishFallback(name, key)
     local enUS = inst._locales["enUS"]
     if not enUS then return nil end
     return enUS[key]
+end
+
+
+-- ---------------------------------------------------------------------------
+-- :NewLocale write-proxy API (MINOR 16, Decisions 1-4)
+-- ---------------------------------------------------------------------------
+--
+-- AceLocale-style sister API that returns a WRITE-PROXY into a locale's
+-- bucket. The proxy's `__newindex` accepts the auto-key-as-value shorthand
+-- (`L["Hello"] = true` rewrites to `L["Hello"] = "Hello"`) for default-
+-- locale files, cutting source-locale-file LOC roughly in half.
+--
+-- Coexists with the existing `:New(name)` + `L:Set(locale, strings)` shape.
+-- Both surfaces share the same underlying instance via the lib's registry
+-- — a consumer that does `:New("MyAddon"):Set(...)` AND a translator who
+-- does `:NewLocale("MyAddon", "deDE")` cooperate on one instance.
+--
+-- Consumer pattern (default locale):
+--   local L = LibStub("Cairn-Locale-1.0"):NewLocale("MyAddon", "enUS", true)
+--   if L then
+--       L["Hello"]   = true      -- becomes "Hello"
+--       L["Goodbye"] = true      -- becomes "Goodbye"
+--   end
+--
+-- Consumer pattern (translation):
+--   local L = LibStub("Cairn-Locale-1.0"):NewLocale("MyAddon", "deDE")
+--   if L then
+--       L["Hello"]   = "Hallo"
+--       L["Goodbye"] = "Auf Wiedersehen"
+--   end
+--
+-- ## Decision 2 — Default-locale first-definition-wins
+-- The default-locale proxy refuses to overwrite an existing key (no-ops
+-- silently). Locale files load in any order without later-loading files
+-- trampling earlier definitions. Non-default-locale proxies overwrite as
+-- normal — translators legitimately need to fix typos.
+--
+-- ## Decision 3 — Three missing-key modes (last-call wins)
+--   "warn"   (default) — missing key returns the key string + prints a
+--                        one-time warning per key. Helps translators spot
+--                        gaps. The "seen warnings" set is per-app +
+--                        instance-wide.
+--   "silent"           — missing key returns the key string, no warning.
+--                        Production-quiet.
+--   "raw"              — missing key returns nil. Consumer handles
+--                        fallback themselves.
+--
+-- ## Decision 4 — nil-return for non-current non-default locales
+-- Production: `:NewLocale("X", "frFR")` returns nil when the client locale
+-- isn't frFR AND frFR isn't the default. Consumer's `if not L then return
+-- end` bails the rest of the locale file. Skips 200+ entries of memory
+-- bloat per non-current locale per addon.
+--
+-- Dev Mode bypass: set `Cairn.Locale.devMode = true` BEFORE any locale
+-- file loads. All `:NewLocale` calls return a proxy regardless of current.
+-- Banks populate. Translators using Decision 5's `GAME_LOCALE` override
+-- get live re-renders.
+--
+-- Default-locale path: always returns the proxy regardless of current. The
+-- default IS canonical and needed for the `:GetEnglishFallback` path.
+
+-- Tracks per-app missing-key warnings so each key warns once per session.
+-- Lib-level (not per-instance) so re-loads via /reload reset the cache.
+Cairn_Locale._missingKeyWarnings = Cairn_Locale._missingKeyWarnings or {}
+
+-- Public flag for the Decision 4 bypass. Default false; set true BEFORE
+-- locale file load to force all `:NewLocale` calls to return proxies.
+Cairn_Locale.devMode = Cairn_Locale.devMode or false
+
+
+-- Internal: warn-mode missing-key handler. Caches per (app, key) so each
+-- key fires at most one chat print per session.
+local function warnMissingKey(appName, key)
+    local cache = Cairn_Locale._missingKeyWarnings
+    local bucket = cache[appName]
+    if not bucket then
+        bucket = {}
+        cache[appName] = bucket
+    end
+    if bucket[key] then return end
+    bucket[key] = true
+    -- Use the Cairn-Log soft-dep if available; fall back to print so
+    -- warnings always reach the translator's chat window.
+    local Log = LibStub and LibStub("Cairn-Log-1.0", true)
+    -- Existence-check must use `.` (Log.Get); calling uses `:` (Log:Get(...)).
+    -- The colon operator requires immediate function arguments and isn't
+    -- valid in a boolean-chain existence test.
+    local logger = Log and type(Log.Get) == "function" and Log:Get("Cairn.Locale")
+    if logger and logger.Warn then
+        logger:Warn("[%s] missing localization for key '%s'", appName, tostring(key))
+    elseif print then
+        print(("|cFFFFAA00[Cairn.Locale]|r [%s] missing key '%s'"):format(
+              tostring(appName), tostring(key)))
+    end
+end
+
+
+-- :NewLocale(app, locale, isDefault, mode) -> write-proxy or nil
+--
+-- Returns nil when the locale isn't relevant to this client (production
+-- gate per Decision 4). Returns a write-proxy otherwise. The proxy writes
+-- through to the same instance the existing `:New(name)` returns, so the
+-- two surfaces interop transparently.
+function Cairn_Locale:NewLocale(app, locale, isDefault, mode)
+    if type(app) ~= "string" or app == "" then
+        error("Cairn-Locale:NewLocale: app must be a non-empty string", 2)
+    end
+    if type(locale) ~= "string" or locale == "" then
+        error("Cairn-Locale:NewLocale: locale must be a non-empty string", 2)
+    end
+    if isDefault ~= nil and type(isDefault) ~= "boolean" then
+        error("Cairn-Locale:NewLocale: isDefault must be a boolean or nil", 2)
+    end
+    if mode ~= nil and mode ~= "warn" and mode ~= "silent" and mode ~= "raw" then
+        error("Cairn-Locale:NewLocale: mode must be 'warn', 'silent', 'raw', or nil", 2)
+    end
+
+    -- Decision 4 production gate: return nil for non-current non-default
+    -- locales unless devMode is active.
+    local current = self:GetLocale()
+    local shouldPopulate = self.devMode or isDefault or (locale == current)
+    if not shouldPopulate then return nil end
+
+    -- Ensure the backing instance exists (idempotent on app name) and
+    -- pre-allocate the bucket so writes don't pay the lazy-create cost
+    -- on every key.
+    local inst = self.registry[app] or self:New(app)
+    local bucket = inst._locales[locale]
+    if not bucket then
+        bucket = {}
+        inst._locales[locale] = bucket
+    end
+
+    -- Stash mode on the instance so reads through L:Get respect it.
+    -- Last-call wins — typically the default-locale file is the only one
+    -- that supplies a mode, but if two callers conflict the last write
+    -- wins to keep behavior deterministic + traceable.
+    if mode ~= nil then
+        inst._missingKeyMode = mode
+    elseif inst._missingKeyMode == nil then
+        inst._missingKeyMode = "warn"
+    end
+
+    -- Build the write-proxy. The metatable differs for default vs non-
+    -- default locales (Decision 2 first-definition-wins on default only).
+    local proxyMeta
+    if isDefault then
+        proxyMeta = {
+            __newindex = function(_, key, value)
+                -- Explicit nil writes ALWAYS clear (D2 carve-out for typo
+                -- correction). The first-definition-wins rule applies to
+                -- non-nil writes only.
+                if value == nil then
+                    bucket[key] = nil
+                    return
+                end
+                if bucket[key] ~= nil then return end  -- first-def wins
+                if value == true then
+                    bucket[key] = key  -- auto-key-as-value shorthand
+                elseif type(value) == "string" then
+                    bucket[key] = value
+                else
+                    error("Cairn-Locale: default-locale value must be a string, true, or nil (key='"
+                          .. tostring(key) .. "', got " .. type(value) .. ")", 2)
+                end
+            end,
+            __index = function(_, key) return bucket[key] end,
+        }
+        -- Mark this app's default locale so missing-key warns are tied to
+        -- a known default. Used by the read-side via inst._defaultLocale.
+        inst._defaultLocale = locale
+    else
+        proxyMeta = {
+            __newindex = function(_, key, value)
+                if value == nil then
+                    bucket[key] = nil
+                elseif type(value) == "string" then
+                    bucket[key] = value
+                elseif value == true then
+                    -- Translation files writing `L["foo"] = true` is a
+                    -- mistake (would mean "use the key string as the
+                    -- French translation"); loudly reject.
+                    error("Cairn-Locale: non-default-locale value cannot be true (key='"
+                          .. tostring(key) .. "')", 2)
+                else
+                    error("Cairn-Locale: non-default-locale value must be a string or nil (key='"
+                          .. tostring(key) .. "', got " .. type(value) .. ")", 2)
+                end
+            end,
+            __index = function(_, key) return bucket[key] end,
+        }
+    end
+
+    return setmetatable({}, proxyMeta)
+end
+
+
+-- Re-wire LocaleMethods:Get to honor the per-instance missing-key mode.
+-- Backward-compat: instances created via the legacy `:New(name)` path
+-- never set `_missingKeyMode`, so they fall through to the existing
+-- "return the key" behavior (acting as `silent` mode without the chat
+-- print — keeps existing consumers' behavior identical).
+do
+    local rawGetMethod = LocaleMethods.Get
+    LocaleMethods.Get = function(self, key)
+        if type(key) ~= "string" then return tostring(key) end
+
+        local current = Cairn_Locale:GetLocale()
+        local bucket  = self._locales[current]
+        if bucket and bucket[key] ~= nil then
+            return bucket[key]
+        end
+
+        local enUS = self._locales["enUS"]
+        if enUS and enUS[key] ~= nil then
+            return enUS[key]
+        end
+
+        -- Missing-key path. Mode-driven behavior:
+        --   raw    -> nil
+        --   silent -> key
+        --   warn   -> key + one-time chat warning
+        --   nil    -> key (legacy / silent-equivalent without warn)
+        --
+        -- IMPORTANT: use rawget for _missingKeyMode + _name lookup. The
+        -- instance metatable's __index routes missing-field reads back
+        -- through LocaleMethods.Get; without rawget, instances created
+        -- via the legacy `:New(name)` path (which never set
+        -- _missingKeyMode) infinite-recurse here.
+        local mode = rawget(self, "_missingKeyMode")
+        if mode == "raw" then
+            return nil
+        end
+        if mode == "warn" then
+            warnMissingKey(rawget(self, "_name"), key)
+        end
+        return key
+    end
 end
 
 

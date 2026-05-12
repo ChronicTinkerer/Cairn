@@ -30,9 +30,20 @@
 --   db:GetProfile()      -- returns current profile name
 --   db:RegisterMigration(version, fn)  -- D4, MINOR 15
 --   db:RegisterNamespace(MAJOR)        -- D8, MINOR 15
+--   db:_RemoveDefaults()               -- D3, MINOR 16 (auto on PLAYER_LOGOUT)
 --   Cairn_DB:Get(name)   -- returns the registered instance, or nil
 --   Cairn_DB.instances   -- { [savedVarName] = db, ... } (for Forge_Registry)
 --   Cairn_DB.MIGRATION_DEFER -- sentinel for deferred migrations (D9, MINOR 15)
+--
+-- removeDefaults on PLAYER_LOGOUT (D3, MINOR 16):
+--   At PLAYER_LOGOUT Cairn-DB walks every registered instance and strips
+--   keys whose values match the consumer's defaults. SV file shrinks; on
+--   next load the stripped keys re-fill from defaults transparently.
+--   Blocker rule: a table-typed default does NOT recurse into a user's
+--   value when the user's value isn't a table (avoids corrupting
+--   structural data when the user typed a scalar). Wildcard defaults
+--   (`["*"]` / `["**"]`) participate in the walk — entries that match
+--   the wildcard sub-default are stripped too.
 --
 -- Wildcard defaults (D2, MINOR 15):
 --   defaults.profile = {
@@ -88,7 +99,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-DB-1.0"
-local LIB_MINOR = 15
+local LIB_MINOR = 16
 
 local Cairn_DB = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_DB then return end
@@ -364,6 +375,14 @@ function Cairn_DB:New(name, defaults)
     }, DBMeta)
 
     self.instances[name] = db
+
+    -- D3 — register PLAYER_LOGOUT listener for removeDefaults (lazy: only
+    -- when at least one DB carries defaults; pure-storage consumers pay
+    -- zero cost).
+    if defaults then
+        Cairn_DB._ensureLogoutListener()
+    end
+
     return db
 end
 
@@ -537,6 +556,192 @@ end
 function Cairn_DB:Get(name)
     return self.instances[name]
 end
+
+
+-- ---------------------------------------------------------------------------
+-- removeDefaults on PLAYER_LOGOUT (Decision 3, MINOR 16)
+-- ---------------------------------------------------------------------------
+-- Walk the SV data recursively at PLAYER_LOGOUT and strip per-key values
+-- that match the consumer's defaults. SV file shrinks; next load re-fills
+-- the stripped keys via Decision 2's wildcard metatable + the normal
+-- mergeDefaults pass in :New.
+--
+-- Blocker semantic: a table-typed default does NOT recurse into the
+-- user's value when the user's value is a non-table type. Prevents the
+-- "user typed a scalar where the default is a table" foot-gun (e.g.
+-- user's `count = 5` won't be stripped because the default is `count =
+-- { wrap = "table" }`).
+--
+-- Wildcard support: walks user keys not covered by explicit defaults,
+-- compares against the `["*"]` sub-default (one-level) or `["**"]`
+-- (recursive). Same blocker rule applies. Lib-internal keys (those
+-- starting with `_`) are skipped — they never came from the consumer's
+-- defaults and aren't ours to strip.
+--
+-- Auto-fire on PLAYER_LOGOUT: lazy listener installed by :New whenever an
+-- instance with non-nil defaults is created. One frame, lib-scope, drains
+-- once per session.
+
+-- Public-ish hooks for testing. Override in unit tests if you need to
+-- intercept the walk without spinning up a real frame.
+Cairn_DB._removeDefaultsListenerInstalled = Cairn_DB._removeDefaultsListenerInstalled or false
+
+
+-- Recursive walk: strip every key in `target` whose value matches the
+-- corresponding key in `defaults`. Returns nothing; mutates `target`.
+local function removeDefaultsWalk(target, defaults)
+    if type(target) ~= "table" or type(defaults) ~= "table" then return end
+
+    -- Pass 1: explicit (non-wildcard) defaults.
+    for k, dv in pairs(defaults) do
+        if k ~= "*" and k ~= "**" then
+            local tv = rawget(target, k)
+            if tv ~= nil then
+                if type(dv) == "table" then
+                    -- Blocker rule: table default + non-table user value =
+                    -- don't touch.
+                    if type(tv) == "table" then
+                        removeDefaultsWalk(tv, dv)
+                        if next(tv) == nil then
+                            rawset(target, k, nil)
+                        end
+                    end
+                else
+                    -- Scalar default: strip if value matches.
+                    if tv == dv then
+                        rawset(target, k, nil)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Pass 2: wildcard defaults. Walk user keys NOT covered by an explicit
+    -- default and compare against `["*"]` (one-level) or `["**"]`
+    -- (recursive). `**` continues recursing with itself at every depth so
+    -- a wildcard default applied at depth N also applies at depth N+1.
+    local star       = defaults["*"]
+    local doubleStar = defaults["**"]
+    if star ~= nil or doubleStar ~= nil then
+        -- Iterate a snapshot of keys because we'll mutate `target`.
+        local keys = {}
+        for k in pairs(target) do
+            if type(k) ~= "string" or k:sub(1, 1) ~= "_" then
+                if defaults[k] == nil then keys[#keys + 1] = k end
+            end
+        end
+        for _, k in ipairs(keys) do
+            local tv = rawget(target, k)
+            local effective = star
+            -- `**` applies even without `*` — wildcard fall-through.
+            if effective == nil then effective = doubleStar end
+            if type(tv) == "table" and type(effective) == "table" then
+                removeDefaultsWalk(tv, effective)
+                if doubleStar ~= nil then
+                    -- For ** we ALSO recurse with the wildcard at the next
+                    -- depth via a synthetic single-wildcard child.
+                    removeDefaultsWalk(tv, { ["**"] = doubleStar })
+                end
+                if next(tv) == nil then
+                    rawset(target, k, nil)
+                end
+            elseif type(effective) ~= "table" then
+                -- Scalar wildcard default: strip if user value matches.
+                if tv == effective then rawset(target, k, nil) end
+            end
+            -- (table default + non-table user value: blocker rule; no-op.)
+        end
+    end
+end
+
+
+-- Per-instance entry point. Walks each bucket against the corresponding
+-- defaults sub-table, then every profile in sv.profiles against
+-- defaults.profile (defaults are merged into every touched profile by
+-- :SetProfile, so removeDefaults must strip across all of them).
+function DBMethods:_RemoveDefaults()
+    local defaults = rawget(self, "_defaults")
+    if type(defaults) ~= "table" then return end
+    local sv = rawget(self, "_sv")
+    if type(sv) ~= "table" then return end
+
+    if defaults.global and type(sv.global) == "table" then
+        removeDefaultsWalk(sv.global, defaults.global)
+    end
+    if defaults.profile and type(sv.profiles) == "table" then
+        for _, profileTbl in pairs(sv.profiles) do
+            if type(profileTbl) == "table" then
+                removeDefaultsWalk(profileTbl, defaults.profile)
+            end
+        end
+    end
+    -- Per-identity buckets only walk the CURRENT identity sub-table — the
+    -- defaults were only merged for that identity at :New, so other
+    -- identities' subkeys aren't ours to strip.
+    if defaults.char and type(sv.char) == "table"
+       and type(sv.char[IDENTITY.char]) == "table"
+    then
+        removeDefaultsWalk(sv.char[IDENTITY.char], defaults.char)
+    end
+    if defaults.realm and type(sv.realm) == "table"
+       and type(sv.realm[IDENTITY.realm]) == "table"
+    then
+        removeDefaultsWalk(sv.realm[IDENTITY.realm], defaults.realm)
+    end
+    if defaults.class and type(sv.class) == "table"
+       and type(sv.class[IDENTITY.class]) == "table"
+    then
+        removeDefaultsWalk(sv.class[IDENTITY.class], defaults.class)
+    end
+    if defaults.race and type(sv.race) == "table"
+       and type(sv.race[IDENTITY.race]) == "table"
+    then
+        removeDefaultsWalk(sv.race[IDENTITY.race], defaults.race)
+    end
+    if defaults.faction and type(sv.faction) == "table"
+       and type(sv.faction[IDENTITY.faction]) == "table"
+    then
+        removeDefaultsWalk(sv.faction[IDENTITY.faction], defaults.faction)
+    end
+    if defaults.factionrealm and type(sv.factionrealm) == "table"
+       and type(sv.factionrealm[IDENTITY.factionrealm]) == "table"
+    then
+        removeDefaultsWalk(sv.factionrealm[IDENTITY.factionrealm],
+                           defaults.factionrealm)
+    end
+end
+
+
+-- Lib-scope walk: iterate every registered DB on PLAYER_LOGOUT and call
+-- :_RemoveDefaults on it. pcall'd per-instance so one bad strip doesn't
+-- abort the rest of the session-end work.
+function Cairn_DB._RunRemoveDefaults()
+    for _, db in pairs(Cairn_DB.instances) do
+        local ok, err = pcall(db._RemoveDefaults, db)
+        if not ok then geterrorhandler()(err) end
+    end
+end
+
+
+-- Lazy PLAYER_LOGOUT listener. One frame, lib-scope. Only installed when
+-- at least one consumer has a defaults table — addons that don't use
+-- defaults pay zero cost.
+function Cairn_DB._ensureLogoutListener()
+    if Cairn_DB._removeDefaultsListenerInstalled then return end
+    Cairn_DB._removeDefaultsListenerInstalled = true
+    if type(CreateFrame) ~= "function" then return end  -- non-WoW env
+
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("PLAYER_LOGOUT")
+    frame:SetScript("OnEvent", function()
+        Cairn_DB._RunRemoveDefaults()
+    end)
+    Cairn_DB._logoutFrame = frame
+end
+
+
+-- Expose `_RemoveDefaults` and the walk for testing / introspection.
+Cairn_DB._removeDefaultsWalk = removeDefaultsWalk
 
 
 return Cairn_DB

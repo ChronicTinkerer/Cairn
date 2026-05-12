@@ -265,4 +265,120 @@ _G.CairnDemo.Smokes["Cairn-Events"] = function(report)
         CE:Unsubscribe(subT)
         CE:Unsubscribe(subP)
     end
+
+
+    -- =====================================================================
+    -- MINOR 16 — D2 messages registry + D3 auto-namespace
+    -- =====================================================================
+
+    local stamp = tostring(time and time() or 0)
+
+    report("CE:SubscribeMessage is a function",
+           type(CE.SubscribeMessage) == "function")
+    report("CE:UnsubscribeMessage is a function",
+           type(CE.UnsubscribeMessage) == "function")
+    report("CE:SendMessage is a function",
+           type(CE.SendMessage) == "function")
+    report("CE._messages is a table",
+           type(CE._messages) == "table")
+
+    -- Basic round-trip on the messages registry (no target — bare names stay bare)
+    -- MINOR 16 SendMessage signature: (name, target, ...) — pass nil target
+    -- to fire without namespacing.
+    local msgFired = nil
+    local subMsg = CE:SubscribeMessage("MyCustomMessage_" .. stamp, function(...)
+        msgFired = { ... }
+    end)
+    CE:SendMessage("MyCustomMessage_" .. stamp, nil, "a", "b")
+    report("SubscribeMessage handler fires on SendMessage",
+           type(msgFired) == "table")
+    report("SendMessage forwards args (arg1)",
+           msgFired and msgFired[1] == "a")
+    report("SendMessage forwards args (arg2)",
+           msgFired and msgFired[2] == "b")
+    CE:UnsubscribeMessage(subMsg)
+
+    -- After UnsubscribeMessage, fires don't reach
+    msgFired = nil
+    CE:SendMessage("MyCustomMessage_" .. stamp, nil, "z")
+    report("UnsubscribeMessage stops further fires",
+           msgFired == nil)
+
+    -- D3 auto-namespace: target with tocName causes bare names to prefix
+    local addonNs = { tocName = "FakeAddon_" .. stamp }
+    local nsFired = nil
+    local subNs = CE:SubscribeMessage("Refresh", function(payload)
+        nsFired = payload
+    end, addonNs)
+    -- The internal key is now "FakeAddon_<stamp>.Refresh"
+    report("Subscribe auto-prefixes bare name with target.tocName",
+           subNs.message == "FakeAddon_" .. stamp .. ".Refresh")
+    report("rawMessage preserves the consumer-typed string",
+           subNs.rawMessage == "Refresh")
+    -- SendMessage with the same target hits the prefixed name
+    CE:SendMessage("Refresh", addonNs, "data1")
+    report("SendMessage with target hits the auto-prefixed entry",
+           nsFired == "data1")
+    -- SendMessage with bare name + nil target does NOT hit the prefixed entry
+    nsFired = nil
+    CE:SendMessage("Refresh", nil, "data2")
+    report("SendMessage without target doesn't hit auto-prefixed entry",
+           nsFired == nil)
+    -- Cross-addon: explicit fully-qualified name reaches the prefixed entry
+    CE:SendMessage("FakeAddon_" .. stamp .. ".Refresh", nil, "data3")
+    report("SendMessage with fully-qualified name reaches auto-prefixed sub",
+           nsFired == "data3")
+    CE:UnsubscribeMessage(subNs)
+
+    -- Names containing `.` or `:` are considered already-namespaced and pass through
+    local subQ = CE:SubscribeMessage("Already.Qualified.Name_" .. stamp, function() end,
+                                     { tocName = "WouldNotPrefix" })
+    report("Already-namespaced name (with '.') NOT re-prefixed",
+           subQ.message == "Already.Qualified.Name_" .. stamp)
+    CE:UnsubscribeMessage(subQ)
+
+    -- Target as string (also a valid tocName form)
+    local strFired = nil
+    local subStr = CE:SubscribeMessage("Event", function(x)
+        strFired = x
+    end, "StringTarget_" .. stamp)
+    report("Subscribe accepts string target as tocName",
+           subStr.message == "StringTarget_" .. stamp .. ".Event")
+    CE:SendMessage("Event", "StringTarget_" .. stamp, "ok")
+    report("SendMessage with string target hits prefixed entry",
+           strFired == "ok")
+    CE:UnsubscribeMessage(subStr)
+
+    -- :OnceMessage one-shot on messages registry
+    local onceCount = 0
+    CE:OnceMessage("OneShot_" .. stamp, function()
+        onceCount = onceCount + 1
+    end)
+    CE:SendMessage("OneShot_" .. stamp, nil)
+    CE:SendMessage("OneShot_" .. stamp, nil)
+    report("OnceMessage fires exactly once",
+           onceCount == 1)
+
+    -- UnsubscribeOwner walks both events and messages registries
+    local ownerToken = { name = "ownerSmoke_" .. stamp }
+    local ev1 = CE:Subscribe("InternalEvent_" .. stamp, function() end, ownerToken)
+    local msg1 = CE:SubscribeMessage("OwnedMsg_" .. stamp, function() end, nil, ownerToken)
+    report("Owner has entries in both registries before unsubscribe",
+           CE.handlers["InternalEvent_" .. stamp] ~= nil
+           and CE._messages["OwnedMsg_" .. stamp] ~= nil)
+    CE:UnsubscribeOwner(ownerToken)
+    report("UnsubscribeOwner cleans events registry",
+           CE.handlers["InternalEvent_" .. stamp] == nil)
+    report("UnsubscribeOwner cleans messages registry",
+           CE._messages["OwnedMsg_" .. stamp] == nil)
+
+    -- Input validation
+    report("SubscribeMessage('', fn) errors",
+           not pcall(function() CE:SubscribeMessage("", function() end) end))
+    report("SubscribeMessage('x', 'notafn') errors",
+           not pcall(function() CE:SubscribeMessage("x", "notafn") end))
+    report("SendMessage('') errors",
+           not pcall(function() CE:SendMessage("") end))
+    report("UnsubscribeMessage with non-message sub errors",
+           not pcall(function() CE:UnsubscribeMessage({}) end))
 end

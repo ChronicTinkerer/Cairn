@@ -31,6 +31,12 @@
 --   CS:GetArgs(str, numargs)        -- parse N args + remaining tail;
 --                                      hyperlink / texture / quote-aware.
 --                                      Decision 2 from the 2026-05-12 walk.
+--   CS:RegisterChatCommand(target, cmd, fn, persist)  -- flat slash registration
+--                                                     -- with per-embed tracking.
+--                                                     -- MINOR 17, Decision 1.
+--   CS:UnregisterChatCommand(target, cmd)
+--   CS:OnEmbedDisable(target)       -- auto-cleanup non-persist slashes
+--   CS:GetChatCommands(target)      -- list of {command, key, persist, fn}
 --
 -- Instance methods (chainable; available on every node — root and subs):
 --   instance:Sub(name, handler, description)   -- leaf:  handler is a function
@@ -38,6 +44,13 @@
 --   instance:Sub(name)                         -- group with no description
 --   instance:Default(handler)                  -- set this node's handler
 --   instance:GetSubs()                         -- { [name] = sub node }
+--   instance:RegisterSubcommand(localeKey, handler, opts)  -- MINOR 16, D3:
+--                                              -- locale-fallback sub
+--                                              -- matching (registers both
+--                                              -- current-locale form and
+--                                              -- English form via Cairn-
+--                                              -- Locale). Case-insensitive
+--                                              -- match on user-typed token.
 --
 -- Dispatch rules:
 --   - Walk the tree as far as msg's leading tokens match nested sub names.
@@ -54,7 +67,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Slash-1.0"
-local LIB_MINOR = 15
+local LIB_MINOR = 17
 
 local Cairn_Slash = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Slash then return end
@@ -157,6 +170,97 @@ function SlashMethods:GetSubs()
 end
 
 
+-- :RegisterSubcommand(localeKey, handler, opts) — Decision 3, MINOR 16
+--
+-- Registers a sub-command that matches BOTH the current-locale form AND
+-- the English fallback form via Cairn-Locale. Non-English-client users
+-- can follow guides / Discord posts using English command names verbatim
+-- while still typing the localized form natively.
+--
+--   slash:RegisterSubcommand("reset", resetFn, "reset the addon")
+--   -- On enUS client: matches "/forge reset"
+--   -- On deDE client (if L["reset"] = "zuruecksetzen"):
+--   --   matches BOTH "/forge zuruecksetzen" AND "/forge reset"
+--
+-- opts.description (string)        — auto-help text (forwarded to :Sub)
+-- opts.strictLocale (bool)         — when true, register ONLY the current-
+--                                    locale form; English fallback skipped.
+--                                    For consumers that explicitly don't
+--                                    want English aliases.
+--
+-- The locale-key arg is treated as the phrase ID looked up in the root
+-- node's `_addonName` (set at `:Register` time). When Cairn-Locale isn't
+-- loaded OR the phrase ID isn't registered, the lib falls back to using
+-- the locale-key string itself as the sub name (matching existing :Sub
+-- semantics — predictable degradation).
+--
+-- Case-insensitive matching is enabled for every sub registered via this
+-- path: the user-typed token is lowercased for lookup against the
+-- registered names' lowercase forms. Locale strings stay in their
+-- consumer-declared case (e.g. German nouns stay capitalized). The
+-- existing `:Sub` continues to do case-sensitive matching for backward-
+-- compat.
+function SlashMethods:RegisterSubcommand(localeKey, handler, opts)
+    if type(localeKey) ~= "string" or localeKey == "" then
+        error("Cairn-Slash :RegisterSubcommand: localeKey must be a non-empty string", 2)
+    end
+    if type(handler) ~= "function" then
+        error("Cairn-Slash :RegisterSubcommand: handler must be a function", 2)
+    end
+    if opts ~= nil and type(opts) ~= "table" then
+        error("Cairn-Slash :RegisterSubcommand: opts must be a table or nil", 2)
+    end
+    opts = opts or {}
+
+    -- Walk up to the root node to read the addonName. The root sets
+    -- _addonName via :Register; child nodes inherit by walking _parent.
+    local root = self
+    while root._parent do root = root._parent end
+    local addonName = rawget(root, "_addonName") or rawget(root, "_name")
+
+    -- Resolve current-locale and English-fallback names through Cairn-
+    -- Locale's phrase API. Both methods return nil on total miss; the
+    -- key string itself is the safe fallback so the consumer still gets
+    -- a working sub even without locale wiring.
+    local Locale = LibStub and LibStub("Cairn-Locale-1.0", true)
+    local currentName, englishName = localeKey, nil
+    if Locale and addonName then
+        local phrase = Locale.GetPhrase and Locale:GetPhrase(addonName, localeKey)
+        if type(phrase) == "string" and phrase ~= "" then
+            currentName = phrase
+        end
+        if not opts.strictLocale then
+            local enUS = Locale.GetEnglishFallback
+                     and Locale:GetEnglishFallback(addonName, localeKey)
+            if type(enUS) == "string" and enUS ~= "" and enUS ~= currentName then
+                englishName = enUS
+            end
+        end
+    end
+
+    -- Register the current-locale form via :Sub.
+    local sub = self:Sub(currentName, handler, opts.description)
+
+    -- Mirror into case-insensitive lookup map so user-typed lowercase
+    -- tokens match the capitalized locale form on dispatch.
+    self._subsLower = self._subsLower or {}
+    self._subsLower[currentName:lower()] = sub
+
+    -- Register English form as an additional route to the same sub, but
+    -- ONLY when different from the current form (avoids duplicate
+    -- registration on enUS clients).
+    if englishName then
+        -- Don't call :Sub a second time — that creates a new node. Instead
+        -- alias the existing sub node into the parent's `_subs` map under
+        -- the English name + lowercase variant.
+        self._subs[englishName] = sub
+        self._subsLower[englishName:lower()] = sub
+    end
+
+    return sub
+end
+
+
 -- ---------------------------------------------------------------------------
 -- Dispatch + auto-help
 -- ---------------------------------------------------------------------------
@@ -219,8 +323,19 @@ local function dispatch(node, msg)
     msg = msg or ""
 
     local subName, rest = msg:match("^(%S+)%s*(.*)$")
-    if subName and node._subs[subName] then
-        return dispatch(node._subs[subName], rest or "")
+    if subName then
+        -- Case-sensitive first (preserves existing :Sub semantics).
+        local target = node._subs[subName]
+        -- MINOR 16 (D3): case-insensitive fallback for subs registered
+        -- via :RegisterSubcommand. The user-typed token is lowercased
+        -- and matched against `_subsLower`; locale strings keep their
+        -- consumer-declared case.
+        if not target and node._subsLower then
+            target = node._subsLower[subName:lower()]
+        end
+        if target then
+            return dispatch(target, rest or "")
+        end
     end
 
     if node._handler then
@@ -269,6 +384,12 @@ function Cairn_Slash:Register(name, slashStr, opts)
 
     local root = setmetatable({
         _name      = name,
+        -- MINOR 16: addonName for Cairn-Locale routing in :RegisterSubcommand
+        -- (D3 locale-fallback). Defaults to the consumer's `name` arg
+        -- which matches the typical Cairn-Locale instance name. The
+        -- `opts.addonName` override exists for consumers whose slash-
+        -- registration name differs from their Cairn-Locale instance.
+        _addonName = (opts and opts.addonName) or name,
         _fullSlash = slashStr,
         _aliases   = aliases,
         _handler   = nil,
@@ -414,6 +535,180 @@ function Cairn_Slash:GetArgs(str, numargs)
     results[numargs + 1] = str:sub(pos)
 
     return unpack(results, 1, numargs + 1)
+end
+
+
+-- ---------------------------------------------------------------------------
+-- :RegisterChatCommand + per-embed registry (MINOR 17, Decision 1)
+-- ---------------------------------------------------------------------------
+-- Parallel API to :Register/:Sub for FLAT slash registration. A consumer
+-- (or "embed" — typically a module within a larger addon) registers a
+-- single slash → handler with a `target` token, and Cairn-Slash tracks
+-- it in a per-target registry. The consumer's `OnEmbedDisable` lifecycle
+-- (or any time they want to clean up) calls `:OnEmbedDisable(target)`
+-- and every non-persist slash for that target unregisters automatically.
+--
+--   Cairn.Slash:RegisterChatCommand(myModule, "myaction",
+--       function(msg) myModule:Action(msg) end)
+--
+--   -- /myaction <msg>  routes to the handler
+--
+--   -- Later, when myModule's parent addon shuts down a sub-module:
+--   Cairn.Slash:OnEmbedDisable(myModule)
+--   -- /myaction now does nothing — the slash is unregistered
+--
+-- `persist = true` keeps the slash alive across `:OnEmbedDisable` calls.
+-- Use for top-level addon commands that should survive Disable/Enable
+-- cycles. Default `persist = false` is the right default for the common
+-- case (module-scoped slashes).
+--
+-- The lib generates a unique `CAIRN_CHATCMD_<counter>` SLASH key per
+-- registration so multiple consumers can never collide on WoW's global
+-- slash registry — no matter what string commands they pick.
+--
+-- Pattern reference: AceConsole-3.0's `:RegisterChatCommand` shape.
+-- Cairn-Slash re-implements the per-embed registry pattern natively.
+
+-- Per-target registry. `_chatCommands[target] = { {command, key, persist, fn}, ... }`
+Cairn_Slash._chatCommands = Cairn_Slash._chatCommands or {}
+
+-- Monotonic counter for unique SLASH_<key>N keys. Survives lib upgrades
+-- via the `or 0` initialization so post-upgrade registrations don't
+-- collide with pre-upgrade ones.
+Cairn_Slash._chatCmdCounter = Cairn_Slash._chatCmdCounter or 0
+
+
+-- Internal: install a SlashCmdList entry for one command. Returns the
+-- SLASH key used so :UnregisterChatCommand can find + remove it.
+local function installChatCommand(command, fn)
+    Cairn_Slash._chatCmdCounter = Cairn_Slash._chatCmdCounter + 1
+    local key = "CAIRN_CHATCMD_" .. Cairn_Slash._chatCmdCounter
+    -- Normalize: accept "foo" or "/foo" as the input, register "/foo".
+    local normalized = command:sub(1, 1) == "/" and command or ("/" .. command)
+    _G["SLASH_" .. key .. "1"] = normalized
+    if _G.SlashCmdList then
+        _G.SlashCmdList[key] = function(msg)
+            Pcall.Call(("Cairn-Slash: chat command %s"):format(normalized), fn, msg)
+        end
+    end
+    return key, normalized
+end
+
+
+-- Internal: remove a SlashCmdList entry.
+local function uninstallChatCommand(key)
+    if _G.SlashCmdList then
+        _G.SlashCmdList[key] = nil
+    end
+    _G["SLASH_" .. key .. "1"] = nil
+end
+
+
+-- :RegisterChatCommand(target, command, fn, persist) — flat slash registration
+--
+-- target  any            — opaque key. Typically the consumer module
+--                          table. Cairn-Slash never inspects it; just
+--                          uses it for registry partitioning.
+-- command string         — slash command name. Leading "/" optional —
+--                          "foo" and "/foo" both register "/foo".
+-- fn      function       — handler called with the chat message after
+--                          the slash (`""` if no args).
+-- persist bool, optional — when true, this slash survives
+--                          `:OnEmbedDisable(target)`. Default false.
+--
+-- Returns the generated SLASH key on success. Errors loudly on bad input.
+function Cairn_Slash:RegisterChatCommand(target, command, fn, persist)
+    if target == nil then
+        error("Cairn-Slash:RegisterChatCommand: target must not be nil", 2)
+    end
+    if type(command) ~= "string" or command == "" then
+        error("Cairn-Slash:RegisterChatCommand: command must be a non-empty string", 2)
+    end
+    if type(fn) ~= "function" then
+        error("Cairn-Slash:RegisterChatCommand: fn must be a function", 2)
+    end
+    if persist ~= nil and type(persist) ~= "boolean" then
+        error("Cairn-Slash:RegisterChatCommand: persist must be a boolean or nil", 2)
+    end
+
+    local key, normalized = installChatCommand(command, fn)
+
+    local bucket = self._chatCommands[target]
+    if not bucket then
+        bucket = {}
+        self._chatCommands[target] = bucket
+    end
+    bucket[#bucket + 1] = {
+        command  = normalized,
+        key      = key,
+        persist  = persist == true,
+        fn       = fn,
+    }
+    return key
+end
+
+
+-- :UnregisterChatCommand(target, command) — remove one specific command
+-- registered for `target`. Walks the target's bucket and removes the
+-- first match by normalized command string. Returns true on success.
+function Cairn_Slash:UnregisterChatCommand(target, command)
+    if target == nil then
+        error("Cairn-Slash:UnregisterChatCommand: target must not be nil", 2)
+    end
+    if type(command) ~= "string" or command == "" then
+        error("Cairn-Slash:UnregisterChatCommand: command must be a non-empty string", 2)
+    end
+    local bucket = self._chatCommands[target]
+    if not bucket then return false end
+
+    local normalized = command:sub(1, 1) == "/" and command or ("/" .. command)
+    for i, entry in ipairs(bucket) do
+        if entry.command == normalized then
+            uninstallChatCommand(entry.key)
+            table.remove(bucket, i)
+            if #bucket == 0 then
+                self._chatCommands[target] = nil
+            end
+            return true
+        end
+    end
+    return false
+end
+
+
+-- :OnEmbedDisable(target) — walk target's chat commands, unregister non-
+-- persist ones. Persist commands stay registered. Returns count of
+-- commands that were unregistered.
+function Cairn_Slash:OnEmbedDisable(target)
+    if target == nil then
+        error("Cairn-Slash:OnEmbedDisable: target must not be nil", 2)
+    end
+    local bucket = self._chatCommands[target]
+    if not bucket then return 0 end
+
+    local removed = 0
+    -- Walk backward so table.remove doesn't shift the iteration index.
+    for i = #bucket, 1, -1 do
+        local entry = bucket[i]
+        if not entry.persist then
+            uninstallChatCommand(entry.key)
+            table.remove(bucket, i)
+            removed = removed + 1
+        end
+    end
+    if #bucket == 0 then
+        self._chatCommands[target] = nil
+    end
+    return removed
+end
+
+
+-- :GetChatCommands(target) — read-only access to a target's registered
+-- chat commands. Returns the live array (consumers walking it mid-
+-- modification should snapshot). Returns nil if the target has no
+-- registered commands. Used by Forge_Registry for introspection.
+function Cairn_Slash:GetChatCommands(target)
+    return self._chatCommands[target]
 end
 
 

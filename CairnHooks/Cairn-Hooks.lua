@@ -39,6 +39,14 @@
 --   CH:HookAlways(frame, script,     callback) -> handle  -- HookScript-style, multi-fire
 --   CH:HookFuncOnce(table, methodName, callback) -> handle -- hooksecurefunc-style, fire-once
 --
+-- AceHook-style family (Cairn-Hooks Decisions 1-4; MINOR 16):
+--   CH:Hook        (target, methodName, fn [, owner]) -> handle  -- non-secure + auto-chain
+--   CH:SecureHook  (target, methodName, fn [, owner]) -> handle  -- hooksecurefunc-style
+--   CH:RawHook     (target, methodName, fn [, owner]) -> handle  -- replacement, no auto-chain
+--   CH:FailsafeHook(target, methodName, fn [, owner]) -> handle  -- xpcall'd; original always fires
+--   CH:UnhookAll   (owner)                                       -- batch soft-unhook
+--   CH.actives     -- { [uid] = bool }; dispatch gates on this (D4)
+--
 -- Semantics:
 --   - Multiple hooks compose. Last-installed wraps outermost. Both Pre and
 --     Post on the same method? Both run. Pre/Post + Wrap? Wrap controls the
@@ -56,7 +64,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Hooks-1.0"
-local LIB_MINOR = 15
+local LIB_MINOR = 16
 
 local Cairn_Hooks = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Hooks then return end
@@ -450,6 +458,309 @@ function Cairn_Hooks:HookFuncOnce(target, methodName, callback)
 
     state.callbacks[#state.callbacks + 1] = callback
     return { _kind = "hookfunconce", target = target, method = methodName, fn = callback }
+end
+
+
+-- ---------------------------------------------------------------------------
+-- AceHook-style API (Cairn-Hooks Decisions 1-4 — locked 2026-05-12)
+-- ---------------------------------------------------------------------------
+-- Parallel API surface alongside Pre/Post/Wrap above. Designed to match the
+-- mental model of consumers porting from AceHook-3.0 or coming from
+-- ecosystem habits where "the hook gates the original" is the canonical
+-- pattern. Both APIs coexist; consumers pick the one that matches their
+-- model.
+--
+--   * :Hook         (D1) — non-secure replacement-style with auto-chain.
+--                          Errors if `target.methodName` is secure.
+--   * :SecureHook   (D1) — hooksecurefunc-style. Side-handler runs AFTER
+--                          the original; original's return value is what
+--                          the caller sees. Required for secure functions
+--                          to avoid taint.
+--   * :RawHook      (D2) — replacement WITHOUT auto-chain. Consumer's fn
+--                          fully replaces the original; caller must invoke
+--                          the original manually if desired (passed as
+--                          first arg, AceHook-style: fn(orig, ...)).
+--   * :FailsafeHook (D3) — replacement with xpcall'd handler + original
+--                          ALWAYS fires regardless of handler outcome.
+--                          For secure-context hooks where chain-break
+--                          corrupts game state.
+--
+-- D4 actives[uid]: every hook installed via this family gets a uid. The
+-- real hook installation stays in place (especially relevant for
+-- :SecureHook which uses hooksecurefunc and cannot be physically removed);
+-- dispatch gates on `Cairn_Hooks.actives[uid]`. `:Unhook(handle)` from
+-- this family sets `actives[uid] = false` so the consumer's fn no-ops on
+-- subsequent fires. Symmetric `:UnhookAll(owner)` walks every uid for
+-- that owner and clears flags in one batch.
+--
+-- The existing Pre/Post/Wrap :Unhook(handle) path continues to work for
+-- those handle shapes — it physically removes the wrapper via
+-- rebuildDispatcher. The two paths are distinguished by handle kind.
+
+Cairn_Hooks._aceHookUidSeq = Cairn_Hooks._aceHookUidSeq or 0
+Cairn_Hooks.actives        = Cairn_Hooks.actives        or {}
+-- Reverse map for batch unhook by owner. `_byOwner[owner] = { uid1, uid2, ... }`
+Cairn_Hooks._byOwner       = Cairn_Hooks._byOwner       or {}
+
+
+local function nextUid()
+    Cairn_Hooks._aceHookUidSeq = Cairn_Hooks._aceHookUidSeq + 1
+    return Cairn_Hooks._aceHookUidSeq
+end
+
+
+local function trackByOwner(owner, uid)
+    if owner == nil then return end
+    local bucket = Cairn_Hooks._byOwner[owner]
+    if not bucket then
+        bucket = {}
+        Cairn_Hooks._byOwner[owner] = bucket
+    end
+    bucket[#bucket + 1] = uid
+end
+
+
+-- Detect whether `target.methodName` is a Blizzard secure function. The
+-- check is "best effort" — `issecurevariable` is available on retail but
+-- absent / unreliable on some Classic flavors. Falls back to "not secure"
+-- when the global isn't present so consumers on those flavors aren't
+-- blocked from :Hook'ing legitimately non-secure functions.
+local function isSecureMethod(target, methodName)
+    if type(_G.issecurevariable) ~= "function" then return false end
+    -- issecurevariable(target, methodName) — Blizzard's signature is
+    -- (table, key) returning bool. Wrap in pcall in case some flavors
+    -- error on non-global tables.
+    local ok, secure = pcall(_G.issecurevariable, target, methodName)
+    return ok and secure == true
+end
+
+
+-- :Hook(target, methodName, fn, owner) — non-secure replacement, auto-chain
+--
+-- Errors if the method is secure (consumer should use :SecureHook). On
+-- a non-secure method, installs a wrapper that calls fn FIRST then calls
+-- the original. fn's signature: `function(self, ...)` matching the
+-- original method.
+function Cairn_Hooks:Hook(target, methodName, fn, owner)
+    if type(target) ~= "table" then
+        error("Cairn-Hooks:Hook: target must be a table", 2)
+    end
+    if type(methodName) ~= "string" or methodName == "" then
+        error("Cairn-Hooks:Hook: methodName must be a non-empty string", 2)
+    end
+    if type(fn) ~= "function" then
+        error("Cairn-Hooks:Hook: fn must be a function", 2)
+    end
+    if isSecureMethod(target, methodName) then
+        error(("Cairn-Hooks:Hook: %s.%s is a secure function — use :SecureHook instead "
+               .. "(plain hooking taints secure dispatch)"):format(
+              tostring(target), methodName), 2)
+    end
+
+    local uid = nextUid()
+    self.actives[uid] = true
+
+    -- Reuse the existing Pre wrapper infrastructure — Pre is exactly
+    -- "fn fires before original, original always runs."
+    local handle = installHook(self, "Pre", target, methodName, function(...)
+        if not self.actives[uid] then return end
+        fn(...)
+    end, owner)
+
+    handle._aceHookKind = "Hook"
+    handle._aceHookUid  = uid
+    trackByOwner(owner, uid)
+    return handle
+end
+
+
+-- :SecureHook(target, methodName, fn, owner) — hooksecurefunc-style.
+--
+-- The consumer's fn fires AFTER the original (Blizzard's hooksecurefunc
+-- semantics). Original return values are what the caller sees; fn's
+-- return is discarded. fn signature: `function(...)` receives the same
+-- args the original received.
+--
+-- Soft-unhook only: hooksecurefunc cannot be physically removed.
+-- `:Unhook(handle)` sets `actives[uid] = false` and the side-handler
+-- no-ops on subsequent fires.
+function Cairn_Hooks:SecureHook(target, methodName, fn, owner)
+    if type(target) ~= "table" then
+        error("Cairn-Hooks:SecureHook: target must be a table", 2)
+    end
+    if type(methodName) ~= "string" or methodName == "" then
+        error("Cairn-Hooks:SecureHook: methodName must be a non-empty string", 2)
+    end
+    if type(fn) ~= "function" then
+        error("Cairn-Hooks:SecureHook: fn must be a function", 2)
+    end
+    if type(target[methodName]) ~= "function" then
+        error(("Cairn-Hooks:SecureHook: target[%q] is not a function"):format(methodName), 2)
+    end
+
+    local uid = nextUid()
+    self.actives[uid] = true
+
+    -- hooksecurefunc installs ONE real side-handler. We can't remove it;
+    -- the actives[uid] gate makes the no-op-after-unhook semantic work.
+    hooksecurefunc(target, methodName, function(...)
+        if not Cairn_Hooks.actives[uid] then return end
+        safeCall("SecureHook (" .. methodName .. ")", fn, ...)
+    end)
+
+    -- Return a handle compatible with the existing :Unhook path. The
+    -- _aceHookKind flag tells :Unhook to use the soft-unhook gate
+    -- rather than rebuilding the dispatcher.
+    local handle = {
+        _aceHookKind = "SecureHook",
+        _aceHookUid  = uid,
+        target       = target,
+        methodName   = methodName,
+        fn           = fn,
+        owner        = owner,
+    }
+    self._registry[#self._registry + 1] = handle
+    trackByOwner(owner, uid)
+    return handle
+end
+
+
+-- :RawHook(target, methodName, fn, owner) — replacement WITHOUT auto-chain.
+--
+-- fn fully replaces the original. The original is passed as the FIRST
+-- arg so fn can invoke it manually if desired:
+--
+--   CH:RawHook(MyAddon, "Save", function(orig, self, data)
+--       if not data then return end  -- skip save when data is nil
+--       return orig(self, data)
+--   end)
+--
+-- Effectively the same wrapper as :Wrap; ships under both names so the
+-- AceHook-style consumer surface stays consistent.
+function Cairn_Hooks:RawHook(target, methodName, fn, owner)
+    if type(target) ~= "table" then
+        error("Cairn-Hooks:RawHook: target must be a table", 2)
+    end
+    if type(methodName) ~= "string" or methodName == "" then
+        error("Cairn-Hooks:RawHook: methodName must be a non-empty string", 2)
+    end
+    if type(fn) ~= "function" then
+        error("Cairn-Hooks:RawHook: fn must be a function", 2)
+    end
+
+    local uid = nextUid()
+    self.actives[uid] = true
+
+    local handle = installHook(self, "Wrap", target, methodName, function(orig, ...)
+        if not self.actives[uid] then
+            -- Soft-unhooked: pass through transparently.
+            return orig(...)
+        end
+        return fn(orig, ...)
+    end, owner)
+
+    handle._aceHookKind = "RawHook"
+    handle._aceHookUid  = uid
+    trackByOwner(owner, uid)
+    return handle
+end
+
+
+-- :FailsafeHook(target, methodName, fn, owner) — xpcall'd handler + original
+-- ALWAYS fires.
+--
+-- For secure-context hooks where chain-break corrupts game state. The
+-- consumer's fn runs in xpcall; if it throws, the error routes via
+-- geterrorhandler and the original still fires. The original's return
+-- values are preserved.
+function Cairn_Hooks:FailsafeHook(target, methodName, fn, owner)
+    if type(target) ~= "table" then
+        error("Cairn-Hooks:FailsafeHook: target must be a table", 2)
+    end
+    if type(methodName) ~= "string" or methodName == "" then
+        error("Cairn-Hooks:FailsafeHook: methodName must be a non-empty string", 2)
+    end
+    if type(fn) ~= "function" then
+        error("Cairn-Hooks:FailsafeHook: fn must be a function", 2)
+    end
+
+    local uid = nextUid()
+    self.actives[uid] = true
+
+    -- Wrap (with auto-chain via consumer-calls-orig) is the closest fit,
+    -- but we want auto-chain by default — install as Pre (fn fires
+    -- before original; original always runs) with xpcall around fn.
+    local handle = installHook(self, "Pre", target, methodName, function(...)
+        if not self.actives[uid] then return end
+        local ok, err = pcall(fn, ...)
+        if not ok then geterrorhandler()(err) end
+    end, owner)
+
+    handle._aceHookKind = "FailsafeHook"
+    handle._aceHookUid  = uid
+    trackByOwner(owner, uid)
+    return handle
+end
+
+
+-- Extend :Unhook to route AceHook-style handles to the soft-unhook gate.
+-- The existing Pre/Post/Wrap handles continue to use the physical-remove
+-- path via rebuildDispatcher. SecureHook handles can only soft-unhook
+-- (hooksecurefunc is immutable). Hook/RawHook/FailsafeHook handles
+-- physically remove their underlying Pre/Wrap wrapper AND set the
+-- actives flag — defensive against any closure that captured the uid
+-- before the handle's installHook target was rebuilt.
+local originalUnhook = Cairn_Hooks.Unhook
+function Cairn_Hooks:Unhook(handle)
+    if type(handle) == "table" and handle._aceHookUid then
+        local uid = handle._aceHookUid
+        self.actives[uid] = false
+
+        if handle._aceHookKind == "SecureHook" then
+            -- No physical removal possible. Just remove from registry.
+            for i = #self._registry, 1, -1 do
+                if self._registry[i] == handle then
+                    table.remove(self._registry, i)
+                    break
+                end
+            end
+            return
+        end
+
+        -- Hook/RawHook/FailsafeHook: also tear down the underlying
+        -- Pre/Wrap wrapper. The actives flag makes the dispatch a no-op
+        -- regardless, but cleaning up the wrapper is the right thing
+        -- to do for memory hygiene.
+        if handle.chain then
+            return originalUnhook(self, handle)
+        end
+        return
+    end
+    return originalUnhook(self, handle)
+end
+
+
+-- :UnhookAll(owner) — D4 batch soft-unhook. Walks every uid associated
+-- with owner via the _byOwner reverse map, clears the actives flag for
+-- each, and physically removes Hook/RawHook/FailsafeHook handles (the
+-- existing UnhookOwner path already handles those — call it last).
+-- SecureHook handles are flag-only; the existing UnhookOwner will not
+-- find them (they're not in the chain-tracked _registry as Pre/Wrap
+-- entries) but our reverse-map walk catches them.
+function Cairn_Hooks:UnhookAll(owner)
+    if owner == nil then
+        error("Cairn-Hooks:UnhookAll: owner must be non-nil", 2)
+    end
+    local bucket = self._byOwner[owner]
+    if bucket then
+        for i = 1, #bucket do
+            self.actives[bucket[i]] = false
+        end
+        self._byOwner[owner] = nil
+    end
+    -- Also physically remove any non-AceHook entries (Pre/Post/Wrap) owned
+    -- by this owner via the existing path.
+    self:UnhookOwner(owner)
 end
 
 

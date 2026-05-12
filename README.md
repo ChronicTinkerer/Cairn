@@ -25,7 +25,7 @@ That's the one-sentence test for every design decision in Cairn. The principle a
 | `Cairn-Timer` | After / Every / Debounce / Stopwatch with ownership tracking | `Cairn-Timer-1.0` |
 | `Cairn-Settings` | Declarative settings schema → Blizzard's native Settings panel | `Cairn-Settings-1.0` |
 | `Cairn-Callback` | CallbackHandler-1.0 compatibility shim | `Cairn-Callback-1.0` |
-| `Cairn-Util` | Small utilities organized into sub-namespaces: Hash (MD5), Pcall (shared error-routed pcall), Table (Snapshot, MergeDefaults) | `Cairn-Util-1.0` |
+| `Cairn-Util` | Small utilities organized into sub-namespaces (Pcall / Table / String / Path / Numbers / Queue / ObjectPool / Bitfield / Array / Frame / Texture / Hash) plus top-level `Memoize`. Single-file lib; vendored `AF_MD5.lua` separate for license attribution. | `Cairn-Util-1.0` |
 | `Cairn-Media` | Two-mode asset registry (private + public via LSM) + icon glyphs | `Cairn-Media-1.0` |
 | `Cairn-Gui-2.0` | Widget framework — Container / Button / Label / Window / Checkbox / ScrollFrame / EditBox / Slider / Dropdown / TabGroup, plus Secure variants | `Cairn-Gui-2.0` |
 
@@ -73,11 +73,8 @@ Minimal embed list for a single-lib consumer:
 ```
 embeds\LibStub\LibStub.lua          (or whatever LibStub you already ship)
 Core.lua                            (Cairn-Core)
-CairnUtil\Cairn-Util.lua            (Cairn-Util main)
-CairnUtil\Cairn-Util-Pcall.lua      (sub-namespace, required by most libs)
-CairnUtil\Cairn-Util-Table.lua      (sub-namespace, required by most libs)
-CairnUtil\AF_MD5.lua                (only if Cairn-Util-Hash is needed)
-CairnUtil\Cairn-Util-Hash.lua       (only if your lib calls Hash.MD5)
+CairnUtil\Cairn-Util.lua            (Cairn-Util — single file, all sub-namespaces)
+CairnUtil\AF_MD5.lua                (only if your lib calls Hash.MD5)
 ... then the lib you actually want
 ```
 

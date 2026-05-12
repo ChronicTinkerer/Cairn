@@ -15,8 +15,13 @@
 --   Pcall   error-isolated function dispatch
 --   Table   Snapshot, MergeDefaults, DeepCopy
 --   String  TitleCase, NormalizeWhitespace
+--   Path    Get, Set (dot-separated nested-table access)
+--   Numbers FormatWithCommas, FormatWithCommasToThousands (K/M)
 --   Frame   NormalizeSetPointArgs (and future Frame helpers)
 --   Hash    MD5 (via vendored AF_MD5), FNV1a32, Combine
+--
+-- Plus the top-level function `Cairn_Util.Memoize(fn, cache?)`
+-- (tree-cache memoization).
 --
 -- Vendored third-party algorithms (AF_MD5) live in separate files for
 -- license attribution and update-path clarity. Cairn-Util-1.0 itself is
@@ -29,7 +34,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Util-1.0"
-local LIB_MINOR = 19
+local LIB_MINOR = 22
 
 local Cairn_Util = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Util then return end
@@ -247,6 +252,227 @@ function Cairn_Util.String.NormalizeWhitespace(s)
         :gsub("^%s+", "")
         :gsub("%s+$", "")
         :gsub("%s+", " "))
+end
+
+
+-- ============================================================================
+-- Path
+-- ============================================================================
+
+Cairn_Util.Path = Cairn_Util.Path or {}
+
+
+-- Path.Get(tbl, path) -> value or nil
+--
+-- Walk a dot-separated string path through nested tables. Returns the
+-- terminal value, or nil if any intermediate is missing or non-table.
+--
+--   Path.Get(t, "window.position.x")
+--
+-- Safe against missing intermediates: walks as deep as it can, returns
+-- nil for the rest. Equivalent to
+-- `t and t.window and t.window.position and t.window.position.x` but
+-- without the long conjunction.
+function Cairn_Util.Path.Get(tbl, path)
+    for key in path:gmatch("[^.]+") do
+        if type(tbl) ~= "table" then return nil end
+        tbl = tbl[key]
+    end
+    return tbl
+end
+
+
+-- Path.Set(tbl, path, value) -> tbl
+--
+-- Walk a dot-separated string path, creating intermediate tables as
+-- needed, and set the terminal key to `value`.
+--
+--   Path.Set(db, "window.position.x", 100)
+--   -- equivalent to:
+--   --   db.window = db.window or {}
+--   --   db.window.position = db.window.position or {}
+--   --   db.window.position.x = 100
+--
+-- Non-table collisions raise an error rather than silently overwriting:
+--   Path.Set({a=5}, "a.b", 10)  -- ERRORS; won't replace `a=5` with
+--                               --   `a={b=10}`.
+-- Loud failure beats silent data loss.
+--
+-- Dot is the only separator. Keys containing literal dots aren't
+-- supported (documented limitation; consumers don't use them in Cairn-
+-- Settings SV paths, the named consumer).
+--
+-- Mutates `tbl` in place; also returns it for chaining.
+function Cairn_Util.Path.Set(tbl, path, value)
+    local keys = {}
+    for key in path:gmatch("[^.]+") do
+        keys[#keys + 1] = key
+    end
+    if #keys == 0 then
+        error("Cairn-Util.Path.Set: empty path", 2)
+    end
+    local cursor = tbl
+    for i = 1, #keys - 1 do
+        local key = keys[i]
+        if cursor[key] == nil then
+            cursor[key] = {}
+        elseif type(cursor[key]) ~= "table" then
+            error(("Cairn-Util.Path.Set: cannot descend through non-table at '%s'"):format(
+                table.concat(keys, ".", 1, i)), 2)
+        end
+        cursor = cursor[key]
+    end
+    cursor[keys[#keys]] = value
+    return tbl
+end
+
+
+-- ============================================================================
+-- Numbers
+-- ============================================================================
+
+Cairn_Util.Numbers = Cairn_Util.Numbers or {}
+
+
+-- Numbers.FormatWithCommas(num) -> string
+--
+-- Insert thousands separators into a number's string representation.
+-- Operates on `tostring(num)`, so fractional parts pass through
+-- untouched:
+--
+--   FormatWithCommas(1234567)        -> "1,234,567"
+--   FormatWithCommas(1234567.89)     -> "1,234,567.89"
+--   FormatWithCommas(-1234567)       -> "-1,234,567"
+--
+-- The anchored gsub `^(-?%d+)(%d%d%d)` is iterated to fixed point:
+-- each pass inserts one comma three digits from the right end of the
+-- leading integer run. The loop terminates when the integer run has
+-- fewer than four digits remaining (the pattern stops matching).
+function Cairn_Util.Numbers.FormatWithCommas(num)
+    local s = tostring(num)
+    while true do
+        local replaced
+        s, replaced = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
+        if replaced == 0 then break end
+    end
+    return s
+end
+
+
+-- Numbers.FormatWithCommasToThousands(num) -> string
+--
+-- Compact human-readable display of large numbers with K / M unit
+-- suffixes:
+--
+--   FormatWithCommasToThousands(999)            -> "999"
+--   FormatWithCommasToThousands(12500)          -> "12.50K"
+--   FormatWithCommasToThousands(1234567)        -> "1.23M"
+--   FormatWithCommasToThousands(1500000000)     -> "1,500.00M"
+--   FormatWithCommasToThousands(-1500000)       -> "-1.50M"
+--
+-- Branches on `math.abs(num)` so negatives format correctly. Values
+-- >= 1B render as `"<int>.00M"` with commas in the integer part —
+-- there's no B/T variant in v1 (add when a named consumer asks).
+--
+-- Known quirk: values just under 1M (like 999999) format as
+-- `"1000.00K"` because `%.2f` rounds 999.999 up to 1000.00. Technically
+-- correct (1000K = 1M) but cosmetically odd. Sub-pixel issue; document
+-- but don't engineer around.
+function Cairn_Util.Numbers.FormatWithCommasToThousands(num)
+    local abs = math.abs(num)
+    if abs < 1000 then
+        return tostring(num)
+    elseif abs < 1000000 then
+        return string.format("%.2fK", num / 1000)
+    else
+        local s = string.format("%.2f", num / 1000000)
+        local intPart, fracPart = s:match("^(-?%d+)(%.%d+)$")
+        if intPart then
+            intPart = Cairn_Util.Numbers.FormatWithCommas(tonumber(intPart))
+            return intPart .. fracPart .. "M"
+        end
+        return s .. "M"
+    end
+end
+
+
+-- ============================================================================
+-- Memoize
+-- ============================================================================
+-- Top-level function (not a sub-namespace), per the API shape locked in
+-- OBJECTIVES.md: consumer calls `Cairn.Util.Memoize(fn)` directly.
+
+-- Sentinel keys. NIL_KEY substitutes for nil args (Lua tables can't
+-- have nil keys). CACHED_RESULT is a unique-table subkey so the
+-- cached return packet can't collide with any user-supplied argument.
+local NIL_KEY = {}
+local CACHED_RESULT = {}
+
+-- Pack ... into a table with `.n` count, preserving embedded nils.
+-- Equivalent to Lua 5.2's `table.pack`; backfilled for the 5.1 the
+-- WoW client runs.
+local function pack(...)
+    return { n = select("#", ...), ... }
+end
+
+
+-- Cairn_Util.Memoize(fn, cache?) -> closure
+--
+-- Tree-cache memoization for arbitrary-arity functions. Returns a
+-- closure wrapping `fn`; the closure walks a tree of cache nodes
+-- keyed by each argument in sequence (handles arbitrary arity
+-- without flat-key serialization).
+--
+-- Optional `cache` lets consumers manage lifetime themselves, e.g.
+-- a weak-keyed table for GC-friendly storage:
+--
+--   local cache = setmetatable({}, { __mode = "v" })
+--   local memoized = Cairn.Util.Memoize(expensiveFn, cache)
+--
+-- Callable tables (tables with a `__call` metamethod) are accepted as
+-- `fn`.
+--
+-- Caveats:
+--   * Table-typed args compared by REFERENCE, not value.
+--     `memoized({}, {})` with two NEW empty tables misses;
+--     `memoized(t, t)` with the same `t` reference hits.
+--   * Cache grows unbounded — no LRU eviction. Consumers needing
+--     bounded caches pass their own cache table and lifecycle it.
+--   * Multiple return values are preserved (count-tracked via `n`),
+--     including embedded nils.
+function Cairn_Util.Memoize(fn, cache)
+    cache = cache or {}
+
+    local fnType = type(fn)
+    local callable = fnType == "function"
+    if not callable and fnType == "table" then
+        local mt = getmetatable(fn)
+        callable = mt and type(mt.__call) == "function"
+    end
+    if not callable then
+        error("Cairn-Util.Memoize: fn must be a function or callable table", 2)
+    end
+
+    return function(...)
+        local node = cache
+        local nargs = select("#", ...)
+        for i = 1, nargs do
+            local arg = select(i, ...)
+            local key = (arg == nil) and NIL_KEY or arg
+            local child = node[key]
+            if child == nil then
+                child = {}
+                node[key] = child
+            end
+            node = child
+        end
+        local cached = node[CACHED_RESULT]
+        if cached == nil then
+            cached = pack(fn(...))
+            node[CACHED_RESULT] = cached
+        end
+        return unpack(cached, 1, cached.n)
+    end
 end
 
 

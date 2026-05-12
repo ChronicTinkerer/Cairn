@@ -14,7 +14,8 @@
 -- Sub-namespaces today:
 --   Pcall   error-isolated function dispatch
 --   Table   Snapshot, MergeDefaults, DeepCopy
---   String  TitleCase, NormalizeWhitespace, ParseVersion, NormalizeVersion
+--   String  TitleCase, NormalizeWhitespace, ParseVersion, NormalizeVersion,
+--           Colorize, ColorizeRGB
 --   Path    Get, Set (dot-separated nested-table access)
 --   Numbers FormatWithCommas, FormatWithCommasToThousands (K/M)
 --   Queue   FIFO with shrink-on-pop
@@ -41,7 +42,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Util-1.0"
-local LIB_MINOR = 31
+local LIB_MINOR = 32
 
 local Cairn_Util = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Util then return end
@@ -341,6 +342,47 @@ function Cairn_Util.String.NormalizeVersion(s)
 end
 
 
+-- String.Colorize(text, hex) -> string
+--
+-- Wraps `text` in WoW's color escape:
+--   "|c" .. hex .. text .. "|r"
+--
+-- `hex` is the 8-char `AARRGGBB` form Blizzard uses (matches `ITEM_QUALITY_
+-- COLORS[i].hex` shape). The function does NOT validate hex format — caller
+-- is responsible. Passing a 6-char hex without alpha gets full-opacity by
+-- WoW's color-parser default but renders one shade darker than expected.
+--
+-- Decision 4 from the Cairn-Media walk (locked 2026-05-12): color-prefix
+-- utilities live in Cairn-Util's String sub-namespace because the operation
+-- is purely string-mangling and doesn't depend on Cairn-Media's color
+-- registry. Consumers using a single raw hex don't have to pull in the
+-- media lib.
+function Cairn_Util.String.Colorize(text, hex)
+    return "|c" .. hex .. tostring(text) .. "|r"
+end
+
+
+-- String.ColorizeRGB(text, r, g, b)
+-- String.ColorizeRGB(text, colorTable)
+--
+-- Same as Colorize but accepts either three (r, g, b) floats in [0, 1] OR a
+-- single color table with `r`, `g`, `b` fields (matching `RAID_CLASS_COLORS`
+-- and `FACTION_COLORS` shapes). Always emits at full opacity (FF prefix).
+-- The colorTable form is the more common consumer call site — passing a
+-- Blizzard global color table verbatim.
+function Cairn_Util.String.ColorizeRGB(text, r, g, b)
+    if type(r) == "table" then
+        local t = r
+        r, g, b = t.r, t.g, t.b
+    end
+    local hex = string.format("FF%02X%02X%02X",
+        math.floor((r or 1) * 255 + 0.5),
+        math.floor((g or 1) * 255 + 0.5),
+        math.floor((b or 1) * 255 + 0.5))
+    return "|c" .. hex .. tostring(text) .. "|r"
+end
+
+
 -- ============================================================================
 -- Path
 -- ============================================================================
@@ -620,6 +662,58 @@ function Cairn_Util.ResolveProviderMethod(addon, providerField, methodName)
     end
 
     return function(...) return method(provider, ...) end
+end
+
+
+-- ============================================================================
+-- SafeMixin
+-- ============================================================================
+-- Non-overwriting `Mixin` + taint blocklist. Per Cairn-Settings Decision 7.
+--
+-- Blizzard's stock `Mixin(target, ...)` overwrites existing keys, which
+-- silently replaces consumer-defined methods when a Blizzard mixin happens
+-- to share a method name (the canonical case is consumer `:Update` getting
+-- silently replaced by a mixin's `:Update`). `SafeMixin` only sets MISSING
+-- keys + skips a documented blocklist of names known to spread taint when
+-- copied across mixins.
+--
+-- Initial blocklist: `AddSnappedFrame` (from the original EditModeExpanded
+-- lift). The list grows as new taint sources surface in the wild.
+
+local SAFEMIXIN_TAINT_BLOCKLIST = {
+    AddSnappedFrame = true,
+}
+
+-- Exposed so consumers can audit + dev-tools (Forge_BugCatcher) can list.
+-- Direct mutation is supported — drop entries to disable the skip, or add
+-- entries for additional taint vectors. Cairn-Util doesn't lock the list.
+Cairn_Util.SafeMixinBlocklist = SAFEMIXIN_TAINT_BLOCKLIST
+
+
+-- Cairn_Util.SafeMixin(target, ...) -> target
+--
+-- Walks every mixin in `...` and copies its key/value pairs onto `target`
+-- ONLY when:
+--   1. `target` doesn't already have a value at that key (rawget check;
+--      metatable __index defaults don't count as "already set"), AND
+--   2. The key isn't in the taint blocklist.
+--
+-- Returns `target` for fluent-chain ergonomics.
+function Cairn_Util.SafeMixin(target, ...)
+    if type(target) ~= "table" then
+        error("Cairn-Util.SafeMixin: target must be a table", 2)
+    end
+    for i = 1, select("#", ...) do
+        local mixin = select(i, ...)
+        if type(mixin) == "table" then
+            for k, v in pairs(mixin) do
+                if rawget(target, k) == nil and not SAFEMIXIN_TAINT_BLOCKLIST[k] then
+                    rawset(target, k, v)
+                end
+            end
+        end
+    end
+    return target
 end
 
 

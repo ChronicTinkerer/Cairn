@@ -157,6 +157,45 @@ _G.CairnDemo.Smokes["Cairn-Locale"] = function(report)
            not pcall(function() L:Set("enUS", "notatable") end))
 
 
+    -- =====================================================================
+    -- GetPhrase + GetEnglishFallback (added at Cairn-Locale MINOR 15)
+    -- =====================================================================
+
+    report("CL:GetPhrase is a function",
+           type(CL.GetPhrase) == "function")
+    report("CL:GetEnglishFallback is a function",
+           type(CL.GetEnglishFallback) == "function")
+
+    if type(CL.GetPhrase) == "function" then
+        -- Reuse the existing instance L (NAME) which already has enUS + deDE.
+        -- L was set up earlier in this smoke; assume its strings persist.
+        CL:SetOverride("deDE")
+        report("GetPhrase returns deDE value when current locale is deDE",
+               CL:GetPhrase(NAME, "greeting") == "Hallo")
+        report("GetPhrase falls back to enUS for keys missing in current",
+               CL:GetPhrase(NAME, "farewell") == "Goodbye")
+        report("GetPhrase returns nil on total miss (NOT the key)",
+               CL:GetPhrase(NAME, "nonexistent_phrase") == nil)
+        report("GetPhrase on unknown addon name returns nil",
+               CL:GetPhrase("UnknownAddon_XYZ", "any") == nil)
+        report("GetPhrase with non-string args returns nil",
+               CL:GetPhrase(NAME, 42) == nil)
+        CL:SetOverride(nil)
+    end
+
+    if type(CL.GetEnglishFallback) == "function" then
+        -- Should ALWAYS read enUS regardless of current locale.
+        CL:SetOverride("deDE")
+        report("GetEnglishFallback reads enUS even when current is deDE",
+               CL:GetEnglishFallback(NAME, "greeting") == "Hello")
+        report("GetEnglishFallback returns nil for keys missing in enUS",
+               CL:GetEnglishFallback(NAME, "german_only_key") == nil)
+        report("GetEnglishFallback on unknown addon returns nil",
+               CL:GetEnglishFallback("UnknownAddon_XYZ", "any") == nil)
+        CL:SetOverride(nil)
+    end
+
+
     -- Cleanup
     CL:SetOverride(nil)
     CL.registry[NAME]  = nil

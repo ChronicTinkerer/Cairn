@@ -174,6 +174,69 @@ _G.CairnDemo.Smokes["Cairn-Slash"] = function(report)
            not pcall(function() slash:Default("notafunc") end))
 
 
+    -- =====================================================================
+    -- :GetArgs(str, numargs) parser (Cairn-Slash Decision 2, MINOR 15)
+    -- =====================================================================
+
+    report("CS:GetArgs is a function",
+           type(CS.GetArgs) == "function")
+
+    if type(CS.GetArgs) == "function" then
+        local GA = function(...) return CS:GetArgs(...) end
+
+        -- Plain split
+        local a, b, rest = GA("foo bar baz", 2)
+        report("GetArgs plain split: arg1=foo",  a == "foo")
+        report("GetArgs plain split: arg2=bar",  b == "bar")
+        report("GetArgs plain split: rest=baz",  rest == "baz")
+
+        -- Quoted strings preserved
+        local q1, q2, qrest = GA('hi "Cathedral Square" rest', 2)
+        report("GetArgs quoted: arg1=hi",                       q1 == "hi")
+        report("GetArgs quoted: arg2 preserved with space",     q2 == "Cathedral Square")
+        report("GetArgs quoted: rest=rest",                     qrest == "rest")
+
+        -- Hyperlink preserved as one unit
+        local h1, h2, hrest = GA('show |Hitem:9351|h[Twill Belt]|h details', 2)
+        report("GetArgs hyperlink: arg1=show",  h1 == "show")
+        report("GetArgs hyperlink: arg2 preserved as full link",
+               h2 == "|Hitem:9351|h[Twill Belt]|h",
+               ("got " .. tostring(h2)))
+        report("GetArgs hyperlink: rest=details", hrest == "details")
+
+        -- Texture escape preserved as one unit
+        local t1, t2, trest = GA("see |TInterface/Icons/Foo:0|t after", 2)
+        report("GetArgs texture: arg1=see",                t1 == "see")
+        report("GetArgs texture: arg2 preserved as |T...|t",
+               t2 == "|TInterface/Icons/Foo:0|t",
+               ("got " .. tostring(t2)))
+        report("GetArgs texture: rest=after",              trest == "after")
+
+        -- Leading + trailing whitespace tolerated
+        local w1, wrest = GA("   leading  ", 1)
+        report("GetArgs leading whitespace stripped",  w1 == "leading")
+        report("GetArgs trailing whitespace stripped", wrest == "")
+
+        -- Args beyond available are nil
+        local x1, x2, x3, xrest = GA("only", 3)
+        report("GetArgs more numargs than tokens: arg1=only", x1 == "only")
+        report("GetArgs more numargs than tokens: arg2=nil",  x2 == nil)
+        report("GetArgs more numargs than tokens: arg3=nil",  x3 == nil)
+        report("GetArgs more numargs than tokens: rest=''",   xrest == "")
+
+        -- Unmatched quote: consumes rest as the token
+        local u1, urest = GA('"unmatched here', 1)
+        report("GetArgs unmatched quote consumes tail",
+               u1 == "unmatched here" and urest == "")
+
+        -- Bad input rejected
+        report("GetArgs non-string str errors",
+               not pcall(function() CS:GetArgs(42, 1) end))
+        report("GetArgs zero numargs errors",
+               not pcall(function() CS:GetArgs("x", 0) end))
+    end
+
+
     -- Cleanup
     CS.registry[NAME]  = nil
     CS.registry[NAME2] = nil

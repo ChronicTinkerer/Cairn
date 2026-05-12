@@ -27,14 +27,33 @@
 --   unsub()                                       -- cancel the subscription
 --
 -- Schema entry fields (common):
---   key      string  required, unique within this addon's schema
---   type     string  required, one of:
---                    toggle | range | dropdown | header           (rendered)
---                    text | color | keybind                       (storage-only)
---   label    string  required, user-facing display label
---   default  any     required EXCEPT for type="header"; seeded into db.profile
---   tooltip  string  optional, hover text on the rendered control
---   onChange function optional, called as fn(newValue, oldValue) after change
+--   key            string   required, unique within this addon's schema
+--   type           string   required, one of:
+--                           toggle | range | dropdown | header   (rendered)
+--                           text | color | keybind               (storage-only)
+--   label          string   required, user-facing display label
+--   default        any      required EXCEPT for type="header"; seeded into db.profile
+--   tooltip        string   optional, hover text on the rendered control
+--   onChange       function optional, called as fn(newValue, oldValue) after change
+--
+-- Cluster A additions (locked 2026-05-12):
+--   disableif      function optional, fn(get) → bool. Re-evaluated after every
+--                           setValue. `get(siblingKey)` reads current sibling
+--                           values. Truthy return disables the widget visually
+--                           (Blizzard panel best-effort) and fires the
+--                           :OnDisableStateChanged callback for renderers that
+--                           handle visual disable themselves.
+--   disabled       bool     optional static-disable shorthand for the truly-
+--                           constant case (a setting that's always disabled).
+--   tags           {string} optional array of search tags. Each tag is added
+--                           to the widget via initializer:AddSearchTags so the
+--                           Blizzard panel search bar finds the widget by tag.
+--                           The widget's `label` is also auto-added as a tag.
+--   namePhraseId   string   optional Cairn-Locale phrase ID. When set AND
+--                           Cairn-Locale is loaded, the resolved phrase WINS
+--                           over `label` at panel-build time.
+--   descPhraseId   string   optional Cairn-Locale phrase ID. Same as above
+--                           for `tooltip`.
 --
 -- Type-specific fields:
 --   range:    min, max, step                       (defaults: 0, 1, 0.1)
@@ -65,15 +84,24 @@
 -- Instance API:
 --   s:Get(key)                                    -- read current value
 --   s:Set(key, value)                             -- write (fires callbacks)
---   s:OnChange(key, fn, owner) -> unsub fn        -- subscribe
+--   s:OnChange(key, fn, owner) -> unsub fn        -- subscribe to value change
 --   s:Open()                                      -- open Blizzard panel
+--   s:OpenStandalone()                            -- open Cairn-SettingsPanel-2.0 renderer
 --   s:GetCategory()                               -- Blizzard category object (or nil)
 --   s:GetCategoryID()                             -- Blizzard category ID (or nil)
+--   s:GetWidgetsByType(kind)                      -- array of {entry, setting,
+--                                                    initializer} for entries
+--                                                    matching kind. Cluster A
+--                                                    Decision 4.
+--   s:OnDisableStateChanged(fn) -> unsub fn       -- subscribe to disableif
+--                                                    state transitions. Cluster
+--                                                    A Decision 1 supporting
+--                                                    surface.
 --
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Settings-1.0"
-local LIB_MINOR = 14
+local LIB_MINOR = 15
 
 local Cairn_Settings = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Settings then return end
@@ -96,6 +124,47 @@ local function getLogger()
         Cairn_Settings._log = Log:New("Cairn.Settings")
     end
     return Cairn_Settings._log
+end
+
+
+-- Cairn-Locale is a SOFT dependency for the phrase-ID resolution path
+-- (Cluster A Decision 3). When loaded, entry.namePhraseId / descPhraseId
+-- resolve through it at panel-build time so locale-bank updates pick up
+-- on next panel-open without consumers rebuilding. When absent, the
+-- direct label/tooltip fields are used unchanged.
+local function getLocale()
+    local L = LibStub and LibStub("Cairn-Locale-1.0", true)
+    return L
+end
+
+
+-- resolvePhrase(entry, addonName, fieldDirect, fieldId)
+--
+-- Returns the display string for `entry`:
+--   * if `entry[fieldId]` is set AND Cairn-Locale is loaded AND
+--     `Cairn-Locale:GetPhrase(addonName, phraseId)` returns a string →
+--     use the locale-bank value.
+--   * else fall back to `entry[fieldDirect]`.
+--   * else return nil (caller decides what to do with nil).
+--
+-- Per Decision 3: phrase IDs win when both are present. Direct strings
+-- stay for English-only consumers and quick prototypes.
+--
+-- Note: `Cairn-Locale:GetPhrase` (NOT the instance-level `L:Get`) is the
+-- right entry point — the lib-level method returns nil on total miss so
+-- we can fall through to the direct field, whereas the instance method
+-- returns the key itself defensively (good for direct UI use, bad for
+-- detect-miss-and-fall-through callers like this one).
+local function resolvePhrase(entry, addonName, fieldDirect, fieldId)
+    local phraseId = entry[fieldId]
+    if type(phraseId) == "string" then
+        local L = getLocale()
+        if L and type(L.GetPhrase) == "function" then
+            local ok, value = pcall(L.GetPhrase, L, addonName, phraseId)
+            if ok and type(value) == "string" then return value end
+        end
+    end
+    return entry[fieldDirect]
 end
 
 
@@ -182,6 +251,37 @@ local function validateSchema(schema)
             error("Cairn-Settings:New: keybind entry '" .. entry.key ..
                   "' requires a string 'default' (e.g. \"CTRL-SHIFT-X\" or \"\")", 3)
         end
+
+        -- Cluster A additions (locked 2026-05-12). All optional; type-checked
+        -- here so a typo'd shape surfaces at :New() rather than at panel-build.
+        if entry.disableif ~= nil and type(entry.disableif) ~= "function" then
+            error("Cairn-Settings:New: entry '" .. entry.key ..
+                  "' has non-function 'disableif' (must be function or nil)", 3)
+        end
+        if entry.disabled ~= nil and type(entry.disabled) ~= "boolean" then
+            error("Cairn-Settings:New: entry '" .. entry.key ..
+                  "' has non-boolean 'disabled' (must be boolean or nil)", 3)
+        end
+        if entry.tags ~= nil then
+            if type(entry.tags) ~= "table" then
+                error("Cairn-Settings:New: entry '" .. entry.key ..
+                      "' has non-array 'tags' (must be array of strings)", 3)
+            end
+            for ti, tag in ipairs(entry.tags) do
+                if type(tag) ~= "string" then
+                    error("Cairn-Settings:New: entry '" .. entry.key ..
+                          "' tag #" .. ti .. " must be a string", 3)
+                end
+            end
+        end
+        if entry.namePhraseId ~= nil and type(entry.namePhraseId) ~= "string" then
+            error("Cairn-Settings:New: entry '" .. entry.key ..
+                  "' has non-string 'namePhraseId'", 3)
+        end
+        if entry.descPhraseId ~= nil and type(entry.descPhraseId) ~= "string" then
+            error("Cairn-Settings:New: entry '" .. entry.key ..
+                  "' has non-string 'descPhraseId'", 3)
+        end
     end
 end
 
@@ -216,6 +316,63 @@ local function fireSubscribers(self, key, newValue, oldValue)
 end
 
 
+-- Build a `get(siblingKey)` closure for disableif callbacks. Same `self`
+-- captured; each call reads the current value via the existing :Get path
+-- so callers always see the freshest data including in-flight writes.
+local function makeGetter(self)
+    return function(siblingKey) return self._db.profile[siblingKey] end
+end
+
+
+-- Cluster A Decision 1 — refresh disableif state for every entry that
+-- declared a disableif callback. Called after each setValue (so changes
+-- to one key can re-enable / re-disable any sibling). Pushes state into
+-- two places:
+--   1. Blizzard's initializer via :SetParentInitializer best-effort —
+--      modern Settings panels respect the isModifiable callback to gray
+--      controls out. Wrapped in pcall because not every Blizzard widget
+--      template supports the call on every game version.
+--   2. self._disableState[key] + fires _disableListeners — for
+--      renderers (Cairn-SettingsPanel-2.0) that handle visual disable
+--      themselves. Only fires on TRANSITIONS so listeners aren't spammed.
+local function refreshDisableIf(self)
+    local getter = makeGetter(self)
+    local listeners = self._disableListeners
+    for _, entry in ipairs(self._schema) do
+        local fn = entry.disableif
+        if type(fn) == "function" then
+            local ok, disabled = pcall(fn, getter)
+            if not ok then geterrorhandler()(disabled) end
+            disabled = not not disabled  -- normalize to bool
+
+            local prev = self._disableState[entry.key]
+            if prev ~= disabled then
+                self._disableState[entry.key] = disabled
+
+                -- Best-effort Blizzard initializer state push. Different
+                -- panel templates expose this differently; pcall so a
+                -- template without :SetParentInitializer doesn't break the
+                -- refresh loop for the rest.
+                local init = self._initializers[entry.key]
+                if init and type(init.SetParentInitializer) == "function" then
+                    pcall(init.SetParentInitializer, init, nil, function() return not disabled end)
+                end
+
+                if listeners then
+                    for i = 1, #listeners do
+                        local sub = listeners[i]
+                        if sub and not sub.removed then
+                            local cbOk, cbErr = pcall(sub.fn, entry.key, disabled)
+                            if not cbOk then geterrorhandler()(cbErr) end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+
 local function setValue(self, key, value)
     local oldValue = self._db.profile[key]
     if oldValue == value then return end
@@ -227,6 +384,9 @@ local function setValue(self, key, value)
         if not ok then geterrorhandler()(err) end
     end
     fireSubscribers(self, key, value, oldValue)
+    -- After every write, re-evaluate disableif callbacks so siblings can
+    -- react to the change (Cluster A Decision 1). Cheap — typical N < 50.
+    refreshDisableIf(self)
 end
 
 
@@ -297,6 +457,57 @@ end
 stubProto.OpenStandalone = proto.OpenStandalone
 
 
+-- :GetWidgetsByType(kind) -> array
+--
+-- Cluster A Decision 4. Returns an array of {entry, setting, initializer}
+-- tables for every schema entry whose type matches `kind`. Use cases:
+--   * "reset all sliders to default" → walk, call :Set(entry.key, entry.default)
+--   * "disable all toggles on combat enter" → walk, flip _disableState
+--   * "highlight newly-added widgets" → walk, attach a glow to .initializer
+--
+-- stubProto returns entry refs only — setting and initializer are nil in
+-- stub mode (no Blizzard panel). Consumers introspecting in stub mode
+-- still get the schema-level info for non-render-dependent operations.
+--
+-- Returns an empty array (not nil) when no entries match — callers can
+-- iterate unconditionally.
+local function getWidgetsByType(self, kind)
+    local out = {}
+    for _, entry in ipairs(self._schema) do
+        if entry.type == kind then
+            out[#out + 1] = {
+                entry       = entry,
+                setting     = self._settings     and self._settings[entry.key]     or nil,
+                initializer = self._initializers and self._initializers[entry.key] or nil,
+            }
+        end
+    end
+    return out
+end
+proto.GetWidgetsByType     = getWidgetsByType
+stubProto.GetWidgetsByType = getWidgetsByType
+
+
+-- :OnDisableStateChanged(fn) -> unsub
+--
+-- Cluster A Decision 1 supporting surface. Subscribes a renderer (typically
+-- Cairn-SettingsPanel-2.0 once it implements disableif visual support) to
+-- per-widget disable-state changes. Callback shape: fn(key, isDisabled).
+-- Fired by refreshDisableIf whenever a tracked disableif transitions.
+-- Returns an unsub closure.
+local function onDisableStateChanged(self, fn)
+    if type(fn) ~= "function" then
+        error("Cairn-Settings:OnDisableStateChanged: 'fn' must be a function", 2)
+    end
+    self._disableListeners = self._disableListeners or {}
+    local sub = { fn = fn }
+    self._disableListeners[#self._disableListeners + 1] = sub
+    return function() sub.removed = true end
+end
+proto.OnDisableStateChanged     = onDisableStateChanged
+stubProto.OnDisableStateChanged = onDisableStateChanged
+
+
 -- Shared :OnChange. Returns an unsub closure rather than requiring the
 -- consumer to track tokens — easier to use in addon-shutdown paths where
 -- you just want to clean up everything at once via a list of closures.
@@ -327,13 +538,42 @@ stubProto.OnChange = onChange
 -- mode is "consumer typo'd a dropdown choices value" rather than an
 -- across-the-board breakage.
 
+-- Apply Cluster A enhancements (tags, post-create hooks) to a freshly-
+-- created initializer. Decision 2 + Decision 36 — explicit `entry.tags`
+-- contribute searchTags; if `entry.tags` is absent the label itself is
+-- auto-added so the search bar finds the widget by its visible name.
+-- Decision 36's auto-add applies regardless of explicit tags (consumers
+-- get both).
+local function applySearchTags(initializer, entry, displayLabel)
+    if type(initializer) ~= "table" then return end
+    if type(initializer.AddSearchTags) ~= "function" then return end
+
+    if type(displayLabel) == "string" and displayLabel ~= "" then
+        initializer:AddSearchTags(displayLabel)
+    end
+
+    if type(entry.tags) == "table" then
+        for _, tag in ipairs(entry.tags) do
+            if type(tag) == "string" and tag ~= "" then
+                initializer:AddSearchTags(tag)
+            end
+        end
+    end
+end
+
+
 local function registerEntry(self, entry)
     local key = entry.key
+    local label   = resolvePhrase(entry, self._addonName, "label",   "namePhraseId")
+                 or key
+    local tooltip = resolvePhrase(entry, self._addonName, "tooltip", "descPhraseId")
 
     if entry.type == "header" then
         if CreateSettingsListSectionHeaderInitializer and self._layout then
-            local init = CreateSettingsListSectionHeaderInitializer(entry.label or key)
+            local init = CreateSettingsListSectionHeaderInitializer(label)
             self._layout:AddInitializer(init)
+            self._initializers[key] = init
+            applySearchTags(init, entry, label)
         end
         return
     end
@@ -361,33 +601,40 @@ local function registerEntry(self, entry)
     end
 
     local setting = Settings.RegisterProxySetting(
-        self._category, variableName, varType, entry.label or key, entry.default,
+        self._category, variableName, varType, label, entry.default,
         function() return self._db.profile[key] end,
         function(_, value) setValue(self, key, value) end
     )
+    self._settings[key] = setting
 
+    -- Each Settings.Create* call returns the initializer; we capture it so
+    -- :GetWidgetsByType + refreshDisableIf can reach it later.
+    local init
     if entry.type == "toggle" then
-        Settings.CreateCheckbox(self._category, setting, entry.tooltip)
+        init = Settings.CreateCheckbox(self._category, setting, tooltip)
     elseif entry.type == "range" then
         local opts = Settings.CreateSliderOptions(entry.min or 0, entry.max or 1, entry.step or 0.1)
         if MinimalSliderWithSteppersMixin and opts.SetLabelFormatter then
             opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
         end
-        Settings.CreateSlider(self._category, setting, opts, entry.tooltip)
+        init = Settings.CreateSlider(self._category, setting, opts, tooltip)
     elseif entry.type == "dropdown" then
-        Settings.CreateDropdown(self._category, setting, function()
+        init = Settings.CreateDropdown(self._category, setting, function()
             local container = Settings.CreateControlTextContainer()
             -- Sort labels deterministically so the dropdown doesn't shuffle
             -- across runs (pairs() order isn't stable).
             local items = {}
-            for value, label in pairs(entry.choices) do
-                items[#items + 1] = { value = value, label = label }
+            for value, lbl in pairs(entry.choices) do
+                items[#items + 1] = { value = value, label = lbl }
             end
             table.sort(items, function(a, b) return tostring(a.label) < tostring(b.label) end)
             for _, p in ipairs(items) do container:Add(p.value, p.label) end
             return container:GetData()
-        end, entry.tooltip)
+        end, tooltip)
     end
+
+    self._initializers[key] = init
+    applySearchTags(init, entry, label)
 end
 
 
@@ -416,11 +663,21 @@ function Cairn_Settings:New(addonName, db, schema)
     end
 
     local self = {
-        _addonName = addonName,
-        _db        = db,
-        _schema    = schema,
-        _byKey     = byKey,
-        _subs      = {},
+        _addonName        = addonName,
+        _db               = db,
+        _schema           = schema,
+        _byKey            = byKey,
+        _subs             = {},
+        -- Initializer / setting refs captured in registerEntry. Used by
+        -- :GetWidgetsByType (Cluster A Decision 4) and refreshDisableIf
+        -- (Cluster A Decision 1).
+        _initializers     = {},
+        _settings         = {},
+        -- disableif state map for renderers that handle visual disable
+        -- themselves (Cairn-SettingsPanel-2.0). Mirrors what's pushed to
+        -- Blizzard's initializers via SetParentInitializer best-effort.
+        _disableState     = {},
+        _disableListeners = {},
     }
 
     Cairn_Settings.instances[self] = addonName
@@ -457,6 +714,11 @@ function Cairn_Settings:New(addonName, db, schema)
     end
 
     Settings.RegisterAddOnCategory(category)
+
+    -- Seed initial disableif state so first-paint reflects the right
+    -- disabled set. Wrapped via the normal refresh path (same code that
+    -- fires on every subsequent setValue) so semantics stay consistent.
+    refreshDisableIf(self)
 
     local log = getLogger()
     if log then

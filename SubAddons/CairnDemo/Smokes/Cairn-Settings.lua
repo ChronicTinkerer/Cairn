@@ -181,7 +181,141 @@ _G.CairnDemo.Smokes["Cairn-Settings"] = function(report)
            not pcall(function() s:OnChange("scale", "not-a-func") end))
 
 
+    -- =====================================================================
+    -- Cluster A additions (locked 2026-05-12) — disableif, tags, phraseId,
+    -- :GetWidgetsByType, :OnDisableStateChanged
+    -- =====================================================================
+
+    -- :GetWidgetsByType returns matching schema entries
+    report("GetWidgetsByType is a function",
+           type(s.GetWidgetsByType) == "function")
+
+    local toggles = s:GetWidgetsByType("toggle")
+    report("GetWidgetsByType('toggle') returns a table",
+           type(toggles) == "table")
+    report("GetWidgetsByType('toggle') has one entry (enabled)",
+           #toggles == 1 and toggles[1].entry.key == "enabled")
+
+    local headers = s:GetWidgetsByType("header")
+    report("GetWidgetsByType('header') has one entry (header1)",
+           #headers == 1 and headers[1].entry.key == "header1")
+
+    local sliders = s:GetWidgetsByType("range")
+    report("GetWidgetsByType('range') has one entry (scale)",
+           #sliders == 1 and sliders[1].entry.key == "scale")
+
+    local missing = s:GetWidgetsByType("nonexistent_kind")
+    report("GetWidgetsByType('nonexistent_kind') returns empty array",
+           type(missing) == "table" and #missing == 0)
+
+
+    -- Schema validation rejects bad Cluster-A field types
+    local SV2 = SV .. "_ClusterA"
+    _G[SV2] = nil
+    CDB.instances[SV2] = nil
+    local db2 = CDB:New(SV2, { profile = {} })
+
+    report("disableif must be function (string rejected)",
+           not pcall(function()
+               CS:New("ClusterA_BadDisableif_" .. stamp, db2, {
+                   { key = "t", type = "toggle", default = true,
+                     label = "t", disableif = "not a function" },
+               })
+           end))
+
+    report("disabled must be bool (string rejected)",
+           not pcall(function()
+               CS:New("ClusterA_BadDisabled_" .. stamp, db2, {
+                   { key = "t", type = "toggle", default = true,
+                     label = "t", disabled = "not a bool" },
+               })
+           end))
+
+    report("tags must be a table (string rejected)",
+           not pcall(function()
+               CS:New("ClusterA_BadTags1_" .. stamp, db2, {
+                   { key = "t", type = "toggle", default = true,
+                     label = "t", tags = "not a table" },
+               })
+           end))
+
+    report("tags must contain only strings (numeric tag rejected)",
+           not pcall(function()
+               CS:New("ClusterA_BadTags2_" .. stamp, db2, {
+                   { key = "t", type = "toggle", default = true,
+                     label = "t", tags = { "a", 42, "b" } },
+               })
+           end))
+
+    report("namePhraseId must be string (number rejected)",
+           not pcall(function()
+               CS:New("ClusterA_BadPhrase_" .. stamp, db2, {
+                   { key = "t", type = "toggle", default = true,
+                     label = "t", namePhraseId = 42 },
+               })
+           end))
+
+
+    -- disableif: build a schema where one toggle depends on another, and
+    -- verify the disable state transitions correctly + the change-listener
+    -- fires.
+    local SV3 = SV .. "_DisableIf"
+    _G[SV3] = nil
+    CDB.instances[SV3] = nil
+    local db3 = CDB:New(SV3, { profile = {} })
+
+    local seenTransitions = {}
+    local sd = CS:New("ClusterA_DisableIf_" .. stamp, db3, {
+        { key = "master",  type = "toggle", default = true,  label = "Master" },
+        { key = "slave",   type = "toggle", default = false, label = "Slave",
+          disableif = function(get) return not get("master") end },
+        { key = "always",  type = "toggle", default = false, label = "Always Off",
+          disableif = function() return true end },
+    })
+
+    local unsub = sd:OnDisableStateChanged(function(key, disabled)
+        seenTransitions[#seenTransitions + 1] = { key = key, disabled = disabled }
+    end)
+
+    -- Initial state: master=true so slave's disableif returns false (NOT disabled).
+    -- "always" is unconditionally true (disabled).
+    -- The initial refreshDisableIf in :New fired transitions; those land in
+    -- seenTransitions only for entries that transitioned from the "not-yet-
+    -- seen" prior state — which is nil for both. So both registered listeners
+    -- saw the initial transition.
+
+    -- Flip master off → slave should transition to disabled=true.
+    sd:Set("master", false)
+
+    local slaveTrans
+    for _, t in ipairs(seenTransitions) do
+        if t.key == "slave" then slaveTrans = t end
+    end
+    report("disableif change-listener fired for slave on master flip",
+           slaveTrans ~= nil and slaveTrans.disabled == true,
+           ("got " .. tostring(slaveTrans and slaveTrans.disabled)))
+
+    -- Flip master back on → slave should transition to disabled=false.
+    seenTransitions = {}
+    sd:Set("master", true)
+    local slaveReenable
+    for _, t in ipairs(seenTransitions) do
+        if t.key == "slave" then slaveReenable = t end
+    end
+    report("disableif change-listener fired re-enable for slave",
+           slaveReenable ~= nil and slaveReenable.disabled == false,
+           ("got " .. tostring(slaveReenable and slaveReenable.disabled)))
+
+    -- Unsub stops further notifications.
+    unsub()
+    seenTransitions = {}
+    sd:Set("master", false)
+    report("OnDisableStateChanged unsub stops further fires",
+           #seenTransitions == 0)
+
+
     -- Cleanup
-    CDB.instances[SV] = nil
-    _G[SV] = nil
+    CDB.instances[SV]  = nil; _G[SV]  = nil
+    CDB.instances[SV2] = nil; _G[SV2] = nil
+    CDB.instances[SV3] = nil; _G[SV3] = nil
 end

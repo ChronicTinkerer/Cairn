@@ -327,6 +327,36 @@ _G.CairnDemo.Smokes["Cairn-Addon"] = function(report)
     CA.registry[autoWireToc]    = nil
 
 
+    -- opts.Log = true is the special-case attach (Cairn-Addon MINOR 16 +
+    -- Cairn-Log Decision 9). Instead of `Addon.Log = lib`, it calls
+    -- `Cairn.Log:Embed(addon, tocName)` so log methods land directly on
+    -- the addon namespace.
+    local logToc = "CairnAddonSmoke_LogWire_" .. tostring(time and time() or 0)
+    local logAddon = {}
+    _G.Cairn.Register(logToc, logAddon, { Log = true })
+
+    local Log = LibStub("Cairn-Log-1.0", true)
+    if Log and type(Log.Embed) == "function" then
+        -- After Embed, the addon should have log methods directly on it.
+        -- Check for at least one of the canonical method names.
+        report("opts.Log = true attaches log methods via :Embed",
+               type(logAddon.Info) == "function"
+               or type(logAddon.Debug) == "function"
+               or type(logAddon.Log) == "function",  -- fallback if Embed uses Log.X pattern
+               ("got Info=" .. type(logAddon.Info) ..
+                " Debug=" .. type(logAddon.Debug) ..
+                " Log=" .. type(logAddon.Log)))
+    elseif Log then
+        -- Embed not yet shipped — defensive fallback sets addon.Log = lib.
+        report("opts.Log = true defensive fallback sets Addon.Log",
+               logAddon.Log == Log)
+    end
+
+    -- Cleanup the Log auto-wire entry
+    CA.tocRegistry[logToc] = nil
+    CA.registry[logToc]    = nil
+
+
     -- =====================================================================
     -- Cairn-Util helpers landed in this lib's release
     -- =====================================================================

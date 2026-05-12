@@ -97,4 +97,59 @@ _G.CairnDemo.Smokes["Cairn-Util-Memoize"] = function(report)
     local d2 = CU.Memoize(doubled, sharedCache)
     d2(5)
     report("Shared cache: second closure hits cache", calls == 1)
+
+
+    -- =====================================================================
+    -- SafeMixin (Cairn-Settings Decision 7 — landed at Cairn-Util MINOR 32)
+    -- =====================================================================
+
+    report("CU.SafeMixin is a function",
+           type(CU.SafeMixin) == "function")
+    report("CU.SafeMixinBlocklist is a table",
+           type(CU.SafeMixinBlocklist) == "table")
+
+    if type(CU.SafeMixin) == "function" then
+        local SM = CU.SafeMixin
+
+        -- 10. Missing keys land on target
+        local t = {}
+        SM(t, { foo = 1, bar = 2 })
+        report("SafeMixin copies missing keys",
+               t.foo == 1 and t.bar == 2)
+
+        -- 11. Existing keys DO NOT overwrite
+        local t2 = { foo = "consumer" }
+        SM(t2, { foo = "mixin", bar = 2 })
+        report("SafeMixin preserves existing keys",
+               t2.foo == "consumer" and t2.bar == 2)
+
+        -- 12. Multiple mixins, first-write-wins
+        local t3 = {}
+        SM(t3, { x = 1 }, { x = 2, y = 3 })
+        report("SafeMixin first-mixin wins on collision",
+               t3.x == 1 and t3.y == 3)
+
+        -- 13. Taint blocklist skips AddSnappedFrame
+        local t4 = {}
+        SM(t4, { AddSnappedFrame = function() end, safeMethod = function() end })
+        report("SafeMixin skips AddSnappedFrame blocklist entry",
+               t4.AddSnappedFrame == nil)
+        report("SafeMixin still copies non-blocklisted keys",
+               type(t4.safeMethod) == "function")
+
+        -- 14. Returns target for chain ergonomics
+        local t5 = {}
+        local ret = SM(t5, { a = 1 })
+        report("SafeMixin returns target", ret == t5)
+
+        -- 15. Bad target errors
+        report("SafeMixin on non-table target errors",
+               not pcall(SM, 42, {}))
+
+        -- 16. Non-table mixin args silently skipped
+        local t6 = {}
+        SM(t6, nil, "string", {a=1}, false)
+        report("SafeMixin skips non-table mixin args",
+               t6.a == 1)
+    end
 end

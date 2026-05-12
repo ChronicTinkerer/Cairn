@@ -48,4 +48,33 @@ _G.CairnDemo.Smokes["Cairn-Util-String"] = function(report)
     report("NormalizeWhitespace whitespace-only",   NW(" ") == "")
     report("NormalizeWhitespace already-normal",    NW("hello world") == "hello world")
     report("NormalizeWhitespace tabs collapse",     NW("a\tb") == "a b")
+
+
+    -- 4. Colorize / ColorizeRGB (Cairn-Media Decision 4 — landed in Util at MINOR 32)
+    report("CU.String.Colorize is a function",
+           type(CU.String.Colorize) == "function")
+    report("CU.String.ColorizeRGB is a function",
+           type(CU.String.ColorizeRGB) == "function")
+
+    if type(CU.String.Colorize) == "function" then
+        local C = CU.String.Colorize
+        report("Colorize wraps with |c...|r",
+               C("Hi", "FFFF0000") == "|cFFFF0000Hi|r")
+        report("Colorize stringifies non-string text",
+               C(42, "FF00FF00") == "|cFF00FF00" .. "42" .. "|r")
+    end
+
+    if type(CU.String.ColorizeRGB) == "function" then
+        local CR = CU.String.ColorizeRGB
+        -- Three-float form
+        report("ColorizeRGB three floats produces FF-prefix hex",
+               CR("Hi", 1, 0, 0) == "|cFFFF0000Hi|r")
+        report("ColorizeRGB rounds via floor(v*255 + 0.5)",
+               CR("X", 0.5, 0.5, 0.5) == "|cFF808080X|r")
+        -- Table form
+        report("ColorizeRGB accepts {r,g,b} table",
+               CR("Y", {r=0, g=1, b=0}) == "|cFF00FF00Y|r")
+        report("ColorizeRGB table missing fields uses default 1 (white)",
+               CR("Z", {}) == "|cFFFFFFFFZ|r")
+    end
 end

@@ -62,6 +62,13 @@
 --                                              instances at lookup time
 --                                              and fires Cairn-Locale:Changed
 --                                              when effective changes
+--   CL:GetPhrase(name, key)                 -- lib-level lookup; returns nil
+--                                              on total miss (vs instance
+--                                              :Get which returns the key)
+--   CL:GetEnglishFallback(name, key)        -- reads ONLY from enUS bank
+--                                              regardless of current locale.
+--                                              Surfaced by Cairn-Slash
+--                                              Decision 3.
 --
 -- Instance API:
 --   L:Set(locale, strings)                  -- merge strings into locale
@@ -71,7 +78,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Locale-1.0"
-local LIB_MINOR = 14
+local LIB_MINOR = 15
 
 local Cairn_Locale = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Locale then return end
@@ -218,6 +225,56 @@ end
 -- Cairn_Locale:Get(name)
 function Cairn_Locale:Get(name)
     return self.registry[name]
+end
+
+
+-- Cairn_Locale:GetPhrase(name, key) -> string or nil
+--
+-- Lib-level resolution helper for "looks up a phrase but returns nil on
+-- total miss" semantics. The instance-level `L:Get(key)` returns the key
+-- itself on miss (defensive against nil-propagation in consumer code),
+-- which is good for direct UI use but bad for callers who need to detect
+-- "is this translation actually present?" — e.g. Cairn-Settings's
+-- `resolvePhrase` helper (Cluster A Decision 3) needs the miss-as-nil
+-- shape so it can fall through to the direct `label` / `tooltip` field.
+--
+-- Resolution order: current locale → enUS → nil. Same fallback chain
+-- as `L:Get(key)` minus the "return the key on total miss" final step.
+function Cairn_Locale:GetPhrase(name, key)
+    if type(name) ~= "string" or type(key) ~= "string" then return nil end
+    local inst = self.registry[name]
+    if not inst then return nil end
+
+    local current = self:GetLocale()
+    local bucket  = inst._locales[current]
+    if bucket and bucket[key] ~= nil then return bucket[key] end
+
+    local enUS = inst._locales["enUS"]
+    if enUS and enUS[key] ~= nil then return enUS[key] end
+
+    return nil
+end
+
+
+-- Cairn_Locale:GetEnglishFallback(name, key) -> string or nil
+--
+-- Reads ONLY from the addon's enUS bank, regardless of the current
+-- effective locale. Surfaced by Cairn-Slash Decision 3 — sub-command
+-- locale-fallback matching needs to compare a typed token against the
+-- ENGLISH form of a registered sub-command, even when the user's client
+-- is German / French / etc. Returns nil on miss so the slash router can
+-- decide what to do.
+--
+-- Caveat documented in Cairn-Locale Decision 6: addons whose default
+-- locale isn't enUS won't have an English bank populated; this returns
+-- nil and Cairn-Slash falls through to current-locale-only matching.
+function Cairn_Locale:GetEnglishFallback(name, key)
+    if type(name) ~= "string" or type(key) ~= "string" then return nil end
+    local inst = self.registry[name]
+    if not inst then return nil end
+    local enUS = inst._locales["enUS"]
+    if not enUS then return nil end
+    return enUS[key]
 end
 
 

@@ -28,6 +28,9 @@
 --   CS:Register(name, slash, opts)  -> root instance
 --   CS:Get(name)                    -- registered lookup
 --   CS.registry                     -- { [name] = root instance }
+--   CS:GetArgs(str, numargs)        -- parse N args + remaining tail;
+--                                      hyperlink / texture / quote-aware.
+--                                      Decision 2 from the 2026-05-12 walk.
 --
 -- Instance methods (chainable; available on every node — root and subs):
 --   instance:Sub(name, handler, description)   -- leaf:  handler is a function
@@ -51,7 +54,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Slash-1.0"
-local LIB_MINOR = 14
+local LIB_MINOR = 15
 
 local Cairn_Slash = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Slash then return end
@@ -288,6 +291,129 @@ end
 -- Cairn_Slash:Get(name)
 function Cairn_Slash:Get(name)
     return self.registry[name]
+end
+
+
+-- ---------------------------------------------------------------------------
+-- :GetArgs(str, numargs) — hyperlink / texture / quote-aware arg parser
+-- ---------------------------------------------------------------------------
+-- Cairn-Slash Decision 2 (locked 2026-05-12).
+--
+-- Splits `str` into `numargs` args plus a remaining tail. Handles three
+-- non-trivial cases that naive `strsplit(" ", ...)` corrupts:
+--
+--   1. "quoted strings"
+--   2. Blizzard hyperlinks  |H...|h[Display Text]|h
+--      (item, quest, achievement, spell, encounter, glyph, faction,
+--       talent, currency, etc. — they all share the |H...|h[...]|h
+--       envelope)
+--   3. Texture escapes  |T...|t
+--
+-- Returns `(arg1, arg2, ..., argN, remaining)`. `remaining` is the
+-- unparsed tail with leading whitespace stripped. Args beyond what `str`
+-- contains are returned as nil.
+--
+-- Examples:
+--
+--   :GetArgs("foo bar baz", 2)
+--     -> "foo", "bar", "baz"
+--
+--   :GetArgs('waypoint "Cathedral Square"', 2)
+--     -> "waypoint", "Cathedral Square", ""
+--
+--   :GetArgs('show |Hitem:9351|h[Twill Belt]|h details', 2)
+--     -> "show", "|Hitem:9351|h[Twill Belt]|h", "details"
+--
+-- Snippet "Hyperlink + texture-aware string arg parser" captured in
+-- WOW_SNIPPETS.md (this implementation is the canonical Cairn version).
+function Cairn_Slash:GetArgs(str, numargs)
+    if type(str) ~= "string" then
+        error("Cairn-Slash:GetArgs: str must be a string", 2)
+    end
+    numargs = numargs or 1
+    if type(numargs) ~= "number" or numargs < 1 then
+        error("Cairn-Slash:GetArgs: numargs must be a positive integer", 2)
+    end
+
+    local results = {}
+    local pos = 1
+    local len = #str
+
+    for i = 1, numargs do
+        -- Skip leading whitespace.
+        while pos <= len and str:sub(pos, pos):match("%s") do
+            pos = pos + 1
+        end
+
+        if pos > len then
+            results[i] = nil
+        else
+            local startChar    = str:sub(pos, pos)
+            local startTwoChar = str:sub(pos, pos + 1)
+            local token
+
+            if startChar == '"' then
+                -- Quoted: extract until the next unescaped quote. No quote
+                -- escape syntax is supported; "\\\"" inside a quoted string
+                -- would terminate it. Documented limitation.
+                local closingPos = str:find('"', pos + 1, true)
+                if closingPos then
+                    token = str:sub(pos + 1, closingPos - 1)
+                    pos = closingPos + 1
+                else
+                    -- Unmatched quote — consume rest of string as the token.
+                    token = str:sub(pos + 1)
+                    pos = len + 1
+                end
+            elseif startTwoChar == "|H" then
+                -- Hyperlink. Structure: |H<metadata>|h[<display>]|h
+                -- Two `|h` occurrences inside the link. Find both; the
+                -- token ends at the second one's end.
+                local firstH = str:find("|h", pos + 2, true)
+                if firstH then
+                    local secondH = str:find("|h", firstH + 2, true)
+                    if secondH then
+                        token = str:sub(pos, secondH + 1)
+                        pos = secondH + 2
+                    end
+                end
+                if not token then
+                    -- Malformed hyperlink — fall back to whitespace-split.
+                    local nextWs = str:find("%s", pos)
+                    token = str:sub(pos, (nextWs or len + 1) - 1)
+                    pos = (nextWs or len + 1)
+                end
+            elseif startTwoChar == "|T" then
+                -- Texture escape: |T<path>|t
+                local closeT = str:find("|t", pos + 2, true)
+                if closeT then
+                    token = str:sub(pos, closeT + 1)
+                    pos = closeT + 2
+                else
+                    -- Malformed texture — whitespace-split fallback.
+                    local nextWs = str:find("%s", pos)
+                    token = str:sub(pos, (nextWs or len + 1) - 1)
+                    pos = (nextWs or len + 1)
+                end
+            else
+                -- Plain token: until next whitespace.
+                local nextWs = str:find("%s", pos)
+                token = str:sub(pos, (nextWs or len + 1) - 1)
+                pos = (nextWs or len + 1)
+            end
+
+            results[i] = token
+        end
+    end
+
+    -- Trim leading whitespace from the remaining tail so consumers
+    -- don't have to.
+    while pos <= len and str:sub(pos, pos):match("%s") do
+        pos = pos + 1
+    end
+    results[numargs + 1] = str:sub(pos)
+
+    return unpack(results, 1, numargs + 1)
 end
 
 

@@ -79,7 +79,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Addon-1.0"
-local LIB_MINOR = 15
+local LIB_MINOR = 16
 
 local Cairn_Addon = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Addon then return end  -- already loaded at this MINOR or newer
@@ -310,22 +310,42 @@ end
 -- Auto-wiring flags (Decision 13)
 -- ---------------------------------------------------------------------------
 
--- Map of `opts` flag -> companion-lib lookup. Cairn-Settings is intentionally
--- excluded — `Addon.Settings` is reserved for the Metadata return value
--- (Decision 4) to avoid the name collision.
+-- Map of `opts` flag -> companion-lib spec. Each spec has:
+--   lookup(): returns the lib (or nil if not loaded)
+--   attach(addon, lib, tocName): optional. Default behavior is
+--      `addon[flag] = lib`. Override for libs that need different
+--      attach semantics (e.g. Cairn-Log injects methods directly via
+--      `:Embed` instead of stashing a reference).
 --
--- Gui is the odd one out: it uses the `-2.0` MAJOR family and isn't resolved
--- through the `_G.Cairn` namespace (Core.lua hardcodes `Cairn-<k>-1.0`). We
--- look it up explicitly via LibStub.
+-- Cairn-Settings is intentionally excluded — `Addon.Settings` is reserved
+-- for the Metadata return value (Decision 4) to avoid the name collision.
+--
+-- Gui is the odd one out among lookups: it uses the `-2.0` MAJOR family
+-- and isn't resolved through the `_G.Cairn` namespace (Core.lua hardcodes
+-- `Cairn-<k>-1.0`). We look it up explicitly via LibStub.
 local AUTO_WIRE_FLAGS = {
-    Gui    = function() return LibStub("Cairn-Gui-2.0",     true) end,
-    Slash  = function() return LibStub("Cairn-Slash-1.0",   true) end,
-    Events = function() return LibStub("Cairn-Events-1.0",  true) end,
-    Hooks  = function() return LibStub("Cairn-Hooks-1.0",   true) end,
-    Timer  = function() return LibStub("Cairn-Timer-1.0",   true) end,
-    Locale = function() return LibStub("Cairn-Locale-1.0",  true) end,
-    DB     = function() return LibStub("Cairn-DB-1.0",      true) end,
-    Media  = function() return LibStub("Cairn-Media-1.0",   true) end,
+    Gui    = { lookup = function() return LibStub("Cairn-Gui-2.0",     true) end },
+    Slash  = { lookup = function() return LibStub("Cairn-Slash-1.0",   true) end },
+    Events = { lookup = function() return LibStub("Cairn-Events-1.0",  true) end },
+    Hooks  = { lookup = function() return LibStub("Cairn-Hooks-1.0",   true) end },
+    Timer  = { lookup = function() return LibStub("Cairn-Timer-1.0",   true) end },
+    Locale = { lookup = function() return LibStub("Cairn-Locale-1.0",  true) end },
+    DB     = { lookup = function() return LibStub("Cairn-DB-1.0",      true) end },
+    Media  = { lookup = function() return LibStub("Cairn-Media-1.0",   true) end },
+    -- Cairn-Log (Cairn-Log Decision 9 dep): injects log methods directly
+    -- onto the addon namespace via `:Embed` rather than stashing a lib
+    -- reference. Consumer gets `addon:Info(...)` style call sites instead
+    -- of `addon.Log:Info(...)`.
+    Log    = {
+        lookup = function() return LibStub("Cairn-Log-1.0", true) end,
+        attach = function(addon, lib, tocName)
+            if type(lib.Embed) == "function" then
+                lib:Embed(addon, tocName)
+            else
+                addon.Log = lib  -- defensive fallback if Embed isn't shipped yet
+            end
+        end,
+    },
 }
 
 
@@ -333,11 +353,17 @@ local AUTO_WIRE_FLAGS = {
 -- truthy `opts.<Flag>` entries. Silently skips flags whose underlying
 -- lib isn't loaded — keeps `Cairn.Register` working in degraded
 -- environments (e.g. consumer embeds only a subset of Cairn).
-local function applyAutoWiring(addon, opts)
-    for flag, lookup in pairs(AUTO_WIRE_FLAGS) do
+local function applyAutoWiring(addon, opts, tocName)
+    for flag, spec in pairs(AUTO_WIRE_FLAGS) do
         if opts[flag] then
-            local lib = lookup()
-            if lib then addon[flag] = lib end
+            local lib = spec.lookup()
+            if lib then
+                if spec.attach then
+                    spec.attach(addon, lib, tocName)
+                else
+                    addon[flag] = lib
+                end
+            end
         end
     end
 end
@@ -435,7 +461,7 @@ local function registerAddon(tocName, addon, opts)
             entry.settings = CS:New(metadata.AddonName, entry.db, schema)
         end
 
-        applyAutoWiring(addon, opts)
+        applyAutoWiring(addon, opts, tocName)
     end
 
     return metadata

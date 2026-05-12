@@ -14,7 +14,7 @@
 -- Sub-namespaces today:
 --   Pcall   error-isolated function dispatch
 --   Table   Snapshot, MergeDefaults, DeepCopy
---   String  TitleCase, NormalizeWhitespace
+--   String  TitleCase, NormalizeWhitespace, ParseVersion, NormalizeVersion
 --   Path    Get, Set (dot-separated nested-table access)
 --   Numbers FormatWithCommas, FormatWithCommasToThousands (K/M)
 --   Queue   FIFO with shrink-on-pop
@@ -25,8 +25,10 @@
 --   Texture AnimateSpriteSheet (sprite-sheet UV animation wrapper)
 --   Hash    MD5 (via vendored AF_MD5), FNV1a32, Combine
 --
--- Plus the top-level function `Cairn_Util.Memoize(fn, cache?)`
--- (tree-cache memoization).
+-- Plus the top-level functions:
+--   Cairn_Util.Memoize(fn, cache?)              tree-cache memoization
+--   Cairn_Util.ResolveProviderMethod(...)       string -> bound-closure resolver
+--                                               for declarative config tables
 --
 -- Vendored third-party algorithms (AF_MD5) live in separate files for
 -- license attribution and update-path clarity. Cairn-Util-1.0 itself is
@@ -39,7 +41,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Util-1.0"
-local LIB_MINOR = 30
+local LIB_MINOR = 31
 
 local Cairn_Util = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Util then return end
@@ -271,6 +273,74 @@ function Cairn_Util.String.NormalizeWhitespace(s)
 end
 
 
+-- String.ParseVersion(s) -> integer or nil
+--
+-- Extract the first integer found in a version-shaped value. Accepts both
+-- strings and numbers (`tostring` is applied so callers don't have to
+-- pre-coerce). Returns nil when no digit run is found; callers choose the
+-- fallback (typically 0 or 1).
+--
+--   ParseVersion("2.4.1")    -->  2
+--   ParseVersion("v3-beta")  -->  3
+--   ParseVersion(2)          -->  2
+--   ParseVersion("none")     -->  nil
+--
+-- Intended for the narrow case where a Cairn-internal lib writes
+-- `## Version: 2.2` in its TOC and wants to reuse the same string as its
+-- LibStub MINOR. Cairn's collection-wide convention is that per-lib
+-- LIB_MINORs evolve INDEPENDENTLY of per-addon TOC Version (see memory
+-- `cairn_lib_minor_convention`); this helper exists for the rare
+-- one-source-of-truth case, NOT as a mandate to couple them.
+function Cairn_Util.String.ParseVersion(s)
+    if s == nil then return nil end
+    return tonumber(string.match(tostring(s), "%d+"))
+end
+
+
+-- String.NormalizeVersion(s) -> string
+--
+-- Display-friendly version-string normalization. Handles three input shapes:
+--
+--   1. Clean version strings pass through unchanged.
+--          "2.4.1" -> "2.4.1"
+--
+--   2. BigWigs packager unsubstituted placeholders -> "Developer Build".
+--          "@project-revision@" -> "Developer Build"
+--      The load-bearing rule: `version:gsub("@.+", "Developer Build")`.
+--      Cairn ships via BigWigs packager (memory `cairn_distribution`); dev
+--      checkouts that haven't been tagged yet contain raw placeholders.
+--
+--   3. SVN keyword expansion: `$Revision: 123 $` -> "123".
+--      Mostly legacy; costs nothing to handle and lets the same code work
+--      for occasional SVN-hosted dependencies.
+--
+-- nil / empty input returns "Unknown" so consumer code can safely chain
+-- this into UI without nil-guarding.
+--
+-- Used by `Cairn.Register`'s metadata extraction before assigning
+-- `Settings.Version`. Reference: LibAboutPanel-2.0 (inspected 2026-05-11).
+function Cairn_Util.String.NormalizeVersion(s)
+    if s == nil or s == "" then return "Unknown" end
+    s = tostring(s)
+
+    -- SVN keyword first: "$Revision: 123 $" -> "123".
+    -- Pattern is anchored on the literal "$" delimiters so a stray "$" in
+    -- a normal version string won't trigger spurious replacement.
+    local svn = s:match("^%$Revision:%s*(%d+)%s*%$$")
+    if svn then return svn end
+
+    -- BigWigs unsubstituted placeholder: any "@...@" run.
+    -- We replace the entire string (not just the placeholder) because
+    -- a partially-substituted version like "1.0-@project-revision@" is
+    -- meaningless and reading "Developer Build" is more useful.
+    if s:find("@", 1, true) then
+        return "Developer Build"
+    end
+
+    return s
+end
+
+
 -- ============================================================================
 -- Path
 -- ============================================================================
@@ -489,6 +559,67 @@ function Cairn_Util.Memoize(fn, cache)
         end
         return unpack(cached, 1, cached.n)
     end
+end
+
+
+-- ============================================================================
+-- ResolveProviderMethod
+-- ============================================================================
+-- Top-level helper for declarative config tables that reference handler
+-- methods by string name rather than by direct function reference.
+--
+-- Usage:
+--   Cairn.Register("MyAddon", Addon, {
+--     minimap = {
+--       provider = "TooltipProvider",
+--       onClick  = "OnIconClick",
+--     },
+--   })
+--
+--   -- Cairn-Addon internally:
+--   local handler = Cairn.Util.ResolveProviderMethod(
+--       Addon, "TooltipProvider", "OnIconClick")
+--   handler(button, "LeftButton")
+--   -- equivalent to: Addon.TooltipProvider:OnIconClick(button, "LeftButton")
+--
+-- Why string-based: declarative config tables can be defined in any file
+-- load order. A direct function reference forces the function to exist
+-- BEFORE the config is built. String lookup defers the binding to use
+-- time, when all files have loaded.
+--
+-- Returns a self-bound closure: `fn(...)` is equivalent to
+-- `addon[providerField]:method(...)`. The provider table is captured by
+-- closure, so if the consumer reassigns `addon.TooltipProvider` later
+-- the original closure still calls the original provider — matches "the
+-- binding was the answer at resolve time."
+--
+-- Loud errors on miss (typo protection): if the provider field or the
+-- method name doesn't resolve, raises with a clear message.
+
+function Cairn_Util.ResolveProviderMethod(addon, providerField, methodName)
+    if type(addon) ~= "table" then
+        error("Cairn-Util.ResolveProviderMethod: addon must be a table", 2)
+    end
+    if type(providerField) ~= "string" or providerField == "" then
+        error("Cairn-Util.ResolveProviderMethod: providerField must be a non-empty string", 2)
+    end
+    if type(methodName) ~= "string" or methodName == "" then
+        error("Cairn-Util.ResolveProviderMethod: methodName must be a non-empty string", 2)
+    end
+
+    local provider = addon[providerField]
+    if type(provider) ~= "table" then
+        error(("Cairn-Util.ResolveProviderMethod: addon.%s is not a table (got %s)")
+            :format(providerField, type(provider)), 2)
+    end
+
+    local method = provider[methodName]
+    if type(method) ~= "function" then
+        error(("Cairn-Util.ResolveProviderMethod: addon.%s.%s is not a function (got %s)")
+            :format(providerField, methodName, type(method)), 2)
+    end
+
+    return function(...) return method(provider, ...) end
 end
 
 

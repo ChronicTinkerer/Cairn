@@ -1012,10 +1012,23 @@ local function registerEntry(self, entry)
     -- MINOR 18: closures dispatch through readEntry/writeEntry so
     -- the registered Blizzard setting talks to whatever backend the entry
     -- is configured for.
+    --
+    -- Defensive nil-coerce on the set closure. Blizzard's dropdown
+    -- Decrement / Increment can produce nil when the underlying value
+    -- list is iterated past either end. Writing nil through to the DB
+    -- leaves the setting in an unrenderable state ("Missing value for
+    -- setting 'X'" thrown from InitDropdown on the next refresh). For
+    -- entries with a declared `default`, coerce nil back to that default
+    -- rather than persisting it.
     local setting = Settings.RegisterProxySetting(
         self._category, variableName, varType, label, entry.default,
         function() return readEntry(self, entry) end,
-        function(_, value) setValue(self, key, value) end
+        function(_, value)
+            if value == nil and entry.default ~= nil then
+                value = entry.default
+            end
+            setValue(self, key, value)
+        end
     )
     self._settings[key] = setting
 

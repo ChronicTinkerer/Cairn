@@ -37,6 +37,9 @@ Smokes\Cairn-Settings.lua
 Smokes\Cairn-Slash.lua
 Smokes\Cairn-Timer.lua
 Smokes\Cairn-Flow-Sequencer.lua
+Smokes\Cairn-Flow-Decision.lua
+Smokes\Cairn-Flow-FSM.lua
+Smokes\Cairn-Flow-Behavior.lua
 
 # Smoke runner window. Loads last so it sees every registered smoke.
 CairnDemo_SmokeRunner.lua

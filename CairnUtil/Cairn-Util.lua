@@ -33,7 +33,7 @@
 -- of a Cairn lib must include BOTH Core.lua AND Cairn-Util.
 
 local LIB_MAJOR = "Cairn-Util-1.0"
-local LIB_MINOR = 14
+local LIB_MINOR = 15
 
 local Cairn_Util = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Util then return end

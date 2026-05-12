@@ -29,7 +29,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Core-1.0"
-local LIB_MINOR = 14
+local LIB_MINOR = 1
 
 local Cairn_Core = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Core then return end

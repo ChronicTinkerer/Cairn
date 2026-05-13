@@ -128,9 +128,17 @@ Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	   on Forge_Tables: eagerly walking _G at MAX_BUILD_DEPTH 2 did
 	   500k+ ops and froze the client. Lazy expansion via this flag
 	   keeps the initial build to just root keys.
+	16: Dropdown rows now discriminate left vs right click. Right-click
+	   on an option row fires a dropdown-level "RowRightClick" event
+	   (args: value, label, rowFrame) instead of selecting and closing.
+	   Left-click behavior unchanged. Lets consumers attach a per-row
+	   context menu (lock/unlock, delete, rename, etc.) without forking
+	   the widget. Previously, right-click was silently treated as
+	   selection because the row "Click" handler ignored the button arg.
+	   Hit on Forge_Console snippet picker 2026-05-13.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 15
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 16
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

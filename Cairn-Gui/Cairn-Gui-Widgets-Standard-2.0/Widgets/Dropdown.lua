@@ -30,9 +30,10 @@ Public API:
 	dd.Cairn:Close()
 	dd.Cairn:IsOpen()
 
-	dd.Cairn:On("Changed", function(w, value, label) ... end)
-	dd.Cairn:On("Opened",  function(w) ... end)
-	dd.Cairn:On("Closed",  function(w) ... end)
+	dd.Cairn:On("Changed",       function(w, value, label) ... end)
+	dd.Cairn:On("Opened",        function(w) ... end)
+	dd.Cairn:On("Closed",        function(w) ... end)
+	dd.Cairn:On("RowRightClick", function(w, value, label, rowFrame) ... end)
 
 Outside-click behavior
 
@@ -200,7 +201,15 @@ local function rebuildRows(self)
 		row:SetPoint("TOPLEFT",  content, "TOPLEFT",  4, -((i - 1) * rowH))
 		row:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, -((i - 1) * rowH))
 
-		row.Cairn:On("Click", function()
+		row.Cairn:On("Click", function(_, button)
+			-- Right-click on a row fires a dropdown-level event instead of
+			-- selecting. Lets consumers attach a per-row context menu
+			-- (lock/unlock, delete, etc.) without forking Dropdown. The
+			-- popup stays open so the menu can anchor relative to the row.
+			if button == "RightButton" then
+				self:Fire("RowRightClick", opt.value, opt.label, row)
+				return
+			end
 			self:_selectOption(opt)
 		end, "__rowClick")
 

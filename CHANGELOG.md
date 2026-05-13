@@ -9,6 +9,31 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 ## [Unreleased]
 
 
+## [47] - 2026-05-13
+
+Bug-fix release. Five fixes across Cairn-Gui-2.0 Core, Cairn-Gui-Widgets-Standard-2.0, Cairn-DB, and Cairn-Addon, all surfaced while building Forge_AddonManager. Most-impactful: Cairn-Gui-2.0's `SetPrimitiveShown(false)` now survives state transitions (icons hidden at OnAcquire stayed hidden after the first hover instead of reappearing), and Cairn-DB now rebinds stale `_sv` references on `ADDON_LOADED` so file-scope `DB:New` calls survive WoW's SavedVariables restore.
+
+### Fixed
+
+**`Cairn-Gui-2.0`** (Core MINOR 20 -> 21)
+
+- `SetPrimitiveShown(false)` now persists across state transitions. Before this fix, `applyTextureSource` (called on every hover / press / leave) ended with an unconditional `texture:Show()`, re-revealing any icon that had been hidden via `SetPrimitiveShown(false)` at OnAcquire. Symptom: Cairn-Gui Checkbox's check glyph reappeared on first hover, looking like an automatic "preview on hover" feature but actually a bug. Now `SetPrimitiveShown` sets `rec._userHidden` and `applyRecord` for icons calls `Hide()` after `applyTextureSource` when the flag is set. Any consumer using `DrawIcon` + `SetPrimitiveShown(false)` benefits, not just Checkbox.
+
+**`Cairn-Gui-Widgets-Standard-2.0`** (MINOR 11 -> 12)
+
+- `Checkbox.OnAcquire` now calls `frame:RegisterForClicks("AnyUp")`, matching the Button MINOR=4 fix. Without this, the Primitives layer's `OnMouseDown` / `OnMouseUp` HookScripts swallow `OnClick` on Interface 120005 and the checkbox never toggles. Consumers saw the row hover background tint the empty box and assumed it was a visual quirk; the actual problem was clicks never reaching the handler.
+- `TabGroup.OnAcquire` explicitly clears `pane.Cairn._builtOnce` after acquiring each per-tab content Container. Pooled Containers can carry consumer-set fields from a previous owner; without the clear, a recycled pane carried a stale `_builtOnce = true` and the new consumer's first-time-build gate fell through.
+
+**`Cairn-DB`**
+
+- File-scope `DB:New` calls now survive WoW's SavedVariables restore timing. Previously a DB instance created at file scope (before `ADDON_LOADED`) bound to an empty pre-emptive table that WoW later orphaned when restoring `_G[svName]`. Persisted data appeared to not survive `/reload`. Added an `ADDON_LOADED` + `PLAYER_LOGIN` listener that walks `Cairn_DB.instances` and rebinds stale `_sv` references in place. Consumer-captured references stay valid; the rebind touches the lib-internal pointer set.
+- `:New` stale-cache check drops a cached instance whose `_sv` no longer matches `_G[name]`, covering the `/reload`-restored-SV path.
+
+**`Cairn-Addon`**
+
+- `AddonDBName` now derives from `tocName` (folder name) instead of TOC `Title`. Titles often contain spaces or different casing than the `## SavedVariables:` declaration; deriving from folder name lines up reliably. `opts.dbName` override is available when the SV name diverges from the folder name on purpose.
+
+
 ## [46] - 2026-05-12
 
 Large feature pass across every rewritten lib. New Cairn-Settings surface for EditMode-managed frames (declarative `:Add(frame, schema)`), Blizzard-frame override family, spec-aware-profile API, three storage backends, sub-settings, more. Cairn-Locale gains an AceLocale-style `:NewLocale` write-proxy with auto-key-as-value. Cairn-Hooks adds an AceHook-style API surface alongside the existing Pre/Post/Wrap. Cairn-Timer gains string-method dispatch, fps-drift compensation, variadic args, and caller-id profiling. Cairn-Slash adds `:RegisterChatCommand` per-embed registry + locale-fallback subcommand matching. Cairn-Events grows a separate messages registry with auto-namespace by addon tag. Cairn-DB auto-shrinks SavedVariables on logout.

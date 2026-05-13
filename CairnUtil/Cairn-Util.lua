@@ -13,9 +13,9 @@
 --
 -- Sub-namespaces today:
 --   Pcall   error-isolated function dispatch
---   Table   Snapshot, MergeDefaults, DeepCopy
+--   Table   Snapshot, MergeDefaults, DeepCopy, SafeKeys, SafeCount
 --   String  TitleCase, NormalizeWhitespace, ParseVersion, NormalizeVersion,
---           Colorize, ColorizeRGB
+--           Colorize, ColorizeRGB, SafePreview
 --   Path    Get, Set (dot-separated nested-table access)
 --   Numbers FormatWithCommas, FormatWithCommasToThousands (K/M)
 --   Queue   FIFO with shrink-on-pop
@@ -42,7 +42,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Util-1.0"
-local LIB_MINOR = 32
+local LIB_MINOR = 35
 
 local Cairn_Util = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Util then return end
@@ -217,6 +217,57 @@ function Cairn_Util.Table.DeepCopy(t, memo)
 end
 
 
+-- Table.SafeKeys(t, sortFn?) -> array or nil
+--
+-- Returns an array of keys from `t`. Wraps the pairs() iteration in
+-- pcall so tables that are protected by WoW's taint system (some
+-- Blizzard internals, secure frames, etc.) don't throw and taint the
+-- caller. Returns nil when `t` is not iterable from addon code;
+-- consumers should fall back to their own handling (skip the row,
+-- show a placeholder, etc.).
+--
+-- sortFn is optional; defaults to case-insensitive tostring compare,
+-- which is the common-case for displaying keys in a UI.
+--
+-- Why: inspector tools (Forge_Tables, future Forge_Console) walk
+-- arbitrary tables provided by the user. Some of those will be
+-- protected. A raw `for k in pairs(t) do` throws on those and taints
+-- the addon for the rest of the session. SafeKeys consolidates the
+-- pcall pattern so consumers don't have to repeat it.
+function Cairn_Util.Table.SafeKeys(t, sortFn)
+    if type(t) ~= "table" then return nil end
+    local keys = {}
+    local ok = pcall(function()
+        for k in pairs(t) do
+            keys[#keys + 1] = k
+        end
+    end)
+    if not ok then return nil end
+    table.sort(keys, sortFn or function(a, b)
+        return tostring(a):lower() < tostring(b):lower()
+    end)
+    return keys
+end
+
+
+-- Table.SafeCount(t) -> number or nil
+--
+-- Returns the number of keys in `t` without allocating a key array.
+-- Returns nil when `t` is protected and cannot be iterated. Same
+-- pcall-around-pairs safety net as SafeKeys; pick SafeCount when you
+-- only need the cardinality (e.g. rendering "table (N)" labels), it
+-- skips the array build that SafeKeys does.
+function Cairn_Util.Table.SafeCount(t)
+    if type(t) ~= "table" then return nil end
+    local n = 0
+    local ok = pcall(function()
+        for _ in pairs(t) do n = n + 1 end
+    end)
+    if not ok then return nil end
+    return n
+end
+
+
 -- ============================================================================
 -- String
 -- ============================================================================
@@ -380,6 +431,34 @@ function Cairn_Util.String.ColorizeRGB(text, r, g, b)
         math.floor((g or 1) * 255 + 0.5),
         math.floor((b or 1) * 255 + 0.5))
     return "|c" .. hex .. tostring(text) .. "|r"
+end
+
+
+-- String.SafePreview(s, maxLen) -> string or nil
+--
+-- Produces a display-safe, length-limited preview of `s`. Returns nil
+-- when `s` is a WoW "secret string" (locale entries, protected globals).
+-- Consumers should fall back to their own placeholder rendering on nil.
+--
+-- Why: WoW silently marks some _G string values as protected. Calling
+-- any string method on them (:gsub, :sub, :format, :find, ...) THROWS
+-- and taints the addon for the rest of the session. Inspector tools
+-- that walk _G or unknown tables (Forge_Tables, Forge_Console eventual)
+-- hit this routinely. Wrapping the call in pcall isolates the throw
+-- and lets the caller render a placeholder instead of dying.
+--
+-- maxLen defaults to 80. \r \n \t are collapsed to spaces so the
+-- preview reads on a single line. Truncation appends "..." (ASCII).
+function Cairn_Util.String.SafePreview(s, maxLen)
+    if type(s) ~= "string" then return nil end
+    maxLen = maxLen or 80
+    local ok, cleaned = pcall(function()
+        local c = s:gsub("[\r\n\t]", " ")
+        if #c > maxLen then c = c:sub(1, maxLen) .. "..." end
+        return c
+    end)
+    if not ok then return nil end
+    return cleaned
 end
 
 

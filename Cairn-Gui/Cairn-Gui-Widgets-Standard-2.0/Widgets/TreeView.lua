@@ -100,17 +100,27 @@ local AUX_WIDTH          = 120
 -- Walk the tree depth-first. Emit visible entries (parent expanded all
 -- the way up). Recurse into children only when the current node is
 -- expanded.
+--
+-- A node is "expandable" when:
+--   - it has a populated children array (#children > 0), OR
+--   - node.expandable is truthy (lazy mode: consumer will populate
+--     children on the Toggle event before the next render)
 
 local function flattenVisible(nodes, expanded, depth, out)
 	out = out or {}
 	for _, node in ipairs(nodes or {}) do
-		local hasChildren = node.children and #node.children > 0
+		local hasChildren = (node.children and #node.children > 0)
+		                    or node.expandable
 		out[#out + 1] = {
 			node        = node,
 			depth       = depth,
 			hasChildren = hasChildren,
 		}
-		if hasChildren and expanded[node.id] then
+		-- Only recurse when a populated children array is present.
+		-- If node.expandable is set but children is nil/empty, render
+		-- the indicator but skip the recurse (nothing to flatten yet).
+		if expanded[node.id]
+		   and node.children and #node.children > 0 then
 			flattenVisible(node.children, expanded, depth + 1, out)
 		end
 	end

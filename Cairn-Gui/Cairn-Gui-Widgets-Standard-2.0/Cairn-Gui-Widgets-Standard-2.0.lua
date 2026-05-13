@@ -121,9 +121,16 @@ Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	   "Click" event fires on every click with the original node, so
 	   consumers can still do click-to-select. Frame height auto-grows
 	   to fit visible rows; wrap in a ScrollFrame for tall trees.
+	15: TreeView honors a `node.expandable` flag so consumers can mark
+	   a branch expandable without pre-building children. The consumer
+	   populates children on the "Toggle" event and calls Refresh, so
+	   walking large trees becomes pay-as-you-go instead of eager. Hit
+	   on Forge_Tables: eagerly walking _G at MAX_BUILD_DEPTH 2 did
+	   500k+ ops and froze the client. Lazy expansion via this flag
+	   keeps the initial build to just root keys.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 14
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 15
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

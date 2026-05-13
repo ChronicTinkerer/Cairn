@@ -93,9 +93,17 @@ Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	   THEN fires "Moved (dx, dy, 'CENTER', 'UIParent', 'CENTER')". The
 	   contract for consumers becomes: "(x, y) is the offset from UIParent
 	   center". Vellum's `db.profile.panel.x/y` round-trips without changes.
+	12: Checkbox.OnAcquire now calls frame:RegisterForClicks("AnyUp"),
+	   matching the Button MINOR=4 fix. Without this, the Primitives
+	   layer's OnMouseDown / OnMouseUp HookScripts swallow OnClick on
+	   Interface 120005, and clicking a Checkbox never toggles its
+	   state. Symptom: hover bg tinting the box made it look like the
+	   check appeared on mouseover, but Toggled never fired and the
+	   consumer's checked state was never updated. Hit on Forge_AddonManager
+	   row checkboxes 2026-05-13.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 6
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 12
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

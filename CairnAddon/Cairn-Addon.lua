@@ -79,7 +79,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Addon-1.0"
-local LIB_MINOR = 16
+local LIB_MINOR = 20
 
 local Cairn_Addon = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Addon then return end  -- already loaded at this MINOR or newer
@@ -298,7 +298,13 @@ local function extractMetadata(tocName, opts)
         OptionalDeps             = readTocList(tocName, "OptionalDeps"),
         IconTexture              = iconTexture,
         AccentColor              = accentColor,
-        AddonDBName              = addonName .. "DB",
+        -- AddonDBName uses the FOLDER NAME (tocName), not the Title.
+        -- WoW's `## SavedVariables:` line conventionally uses the folder
+        -- name + "DB". If we used Title-based naming, any addon with a
+        -- spaced/decorated Title would silently fail to persist (Cairn-DB
+        -- writes to the wrong global). Caller can override via opts.dbName
+        -- if their TOC explicitly declares a non-default SV name.
+        AddonDBName              = opts.dbName or (tocName .. "DB"),
         AddonOptionsSlashCommand = "/" .. addonName:lower(),
         AddonTooltipName         = addonName .. "Tooltip",
         AddonNameWithIcon        = nameWithIcon,
@@ -370,7 +376,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Cairn.Register orchestrator (Decisions 3, 6, 7, 8, 9, 13)
+-- Cairn.Register orchestrator
 -- ---------------------------------------------------------------------------
 
 -- Auto-generated default Cairn-Settings schema. Minimal panel:
@@ -469,7 +475,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- Library-author shape (Decisions 10, 11, 12, 15)
+-- Library-author shape
 -- ---------------------------------------------------------------------------
 
 -- NewSubmodule installed onto libs returned by Cairn.NewLibrary. Does TWO

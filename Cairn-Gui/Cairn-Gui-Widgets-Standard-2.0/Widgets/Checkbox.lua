@@ -189,6 +189,13 @@ function mixin:OnAcquire(opts)
 	self._checked = opts.checked and true or false
 	self:SetPrimitiveShown("check", self._checked)
 
+	-- Register for clicks BEFORE wiring OnClick. The Primitives layer's
+	-- OnMouseDown / OnMouseUp HookScripts swallow OnClick on Interface
+	-- 120005 unless the Button frame is registered for the click type
+	-- explicitly. Same fix Button got at Standard MINOR=4. "AnyUp" covers
+	-- left/right/middle so consumers see the button arg.
+	frame:RegisterForClicks("AnyUp")
+
 	-- Bridge Blizzard OnClick to a Cairn semantic event AND toggle.
 	-- HookScript would chain, but we want to control toggle order here:
 	-- toggle first so handlers see the new value via IsChecked.

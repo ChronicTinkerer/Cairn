@@ -148,6 +148,13 @@ function mixin:OnAcquire(opts)
 		btn.Cairn:SetLayoutManual(true)
 
 		local pane = Core:Acquire("Container", frame)
+		-- Container's pool recycles the Cairn namespace without clearing
+		-- consumer-set fields. Sub-addons' OnTabShow gates first-time
+		-- build via `pane.Cairn._builtOnce`; a recycled pane carries that
+		-- flag from a PREVIOUS owner, so the consumer skips build, calls
+		-- refresh, and the pane renders empty. Explicitly clear here so
+		-- every fresh tab pane starts unbuilt for its owner.
+		pane.Cairn._builtOnce = nil
 		pane.Cairn:SetLayoutManual(true)
 		pane:ClearAllPoints()
 		pane:SetPoint("TOPLEFT",     frame, "TOPLEFT",     0,  -self._tabHeight)

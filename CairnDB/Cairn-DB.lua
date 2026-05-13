@@ -99,7 +99,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-DB-1.0"
-local LIB_MINOR = 16
+local LIB_MINOR = 20
 
 local Cairn_DB = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_DB then return end
@@ -297,8 +297,18 @@ function Cairn_DB:New(name, defaults)
         error("Cairn-DB:New: savedVarName must be a non-empty string", 2)
     end
 
+    -- Staleness check: across /reload, WoW replaces `_G[name]` with a
+    -- freshly-restored table. Cached instance's `_sv` upvalue points at
+    -- the previous-session table — now orphaned. Drop the cache and
+    -- rebuild against the live SV. The ADDON_LOADED rebind listener
+    -- (below) handles the related case where DB:New ran at file scope
+    -- before WoW restored the SV (so we created an empty pre-emptive
+    -- table that WoW later overwrote).
     local existing = self.instances[name]
-    if existing then return existing end
+    if existing then
+        if existing._sv == _G[name] then return existing end
+        self.instances[name] = nil
+    end
 
     if defaults ~= nil then
         if type(defaults) ~= "table" then
@@ -385,6 +395,103 @@ function Cairn_DB:New(name, defaults)
 
     return db
 end
+
+
+-- ---------------------------------------------------------------------------
+-- ADDON_LOADED rebind (the file-scope-DB:New fix)
+-- ---------------------------------------------------------------------------
+-- Cairn.Register typically calls DB:New at the consumer addon's file
+-- scope. But WoW restores the consumer's SavedVariables AFTER the addon's
+-- Lua chunk finishes — so at DB:New time `_G[name]` is nil. We create
+-- a fresh empty `{}` and bind `_sv` to it. Then WoW assigns
+-- `_G[name] = restored_table`, orphaning our pre-emptive table.
+--
+-- This listener walks `instances` on every ADDON_LOADED + PLAYER_LOGIN
+-- event and re-binds any instance whose `_sv` differs from the current
+-- `_G[name]`. After re-binding, `db.profile / db.global / db.char /
+-- db.realm / db.class / db.race / db.faction / db.factionrealm` all
+-- point at the live SV table.
+--
+-- IDENTITY is captured at file load; UnitName etc. may have been "?"
+-- back then. On PLAYER_LOGIN we re-resolve identity for the per-X
+-- buckets that depend on it.
+
+local function rebindInstance(instance)
+    local name = instance._name
+    local sv = _G[name]
+    if type(sv) ~= "table" then return end
+
+    -- Shape setup (mirror DB:New). All `or {}` so we never wipe restored data.
+    sv.global         = sv.global         or {}
+    sv.profiles       = sv.profiles       or {}
+    sv.currentProfile = sv.currentProfile or DEFAULT_PROFILE
+    sv.profiles[sv.currentProfile] = sv.profiles[sv.currentProfile] or {}
+    sv.char         = sv.char         or {}
+    sv.realm        = sv.realm        or {}
+    sv.class        = sv.class        or {}
+    sv.race         = sv.race         or {}
+    sv.faction      = sv.faction      or {}
+    sv.factionrealm = sv.factionrealm or {}
+    sv.char[IDENTITY.char]                 = sv.char[IDENTITY.char]                 or {}
+    sv.realm[IDENTITY.realm]               = sv.realm[IDENTITY.realm]               or {}
+    sv.class[IDENTITY.class]               = sv.class[IDENTITY.class]               or {}
+    sv.race[IDENTITY.race]                 = sv.race[IDENTITY.race]                 or {}
+    sv.faction[IDENTITY.faction]           = sv.faction[IDENTITY.faction]           or {}
+    sv.factionrealm[IDENTITY.factionrealm] = sv.factionrealm[IDENTITY.factionrealm] or {}
+    sv.internalVersion = sv.internalVersion or 0
+    sv.__namespaces    = sv.__namespaces    or {}
+
+    -- Re-apply defaults non-destructively.
+    local defaults = instance._defaults
+    if defaults then
+        if defaults.global       then wildcardMerge(sv.global,                                  defaults.global)       end
+        if defaults.profile      then wildcardMerge(sv.profiles[sv.currentProfile],             defaults.profile)      end
+        if defaults.char         then wildcardMerge(sv.char[IDENTITY.char],                     defaults.char)         end
+        if defaults.realm        then wildcardMerge(sv.realm[IDENTITY.realm],                   defaults.realm)        end
+        if defaults.class        then wildcardMerge(sv.class[IDENTITY.class],                   defaults.class)        end
+        if defaults.race         then wildcardMerge(sv.race[IDENTITY.race],                     defaults.race)         end
+        if defaults.faction      then wildcardMerge(sv.faction[IDENTITY.faction],               defaults.faction)      end
+        if defaults.factionrealm then wildcardMerge(sv.factionrealm[IDENTITY.factionrealm],     defaults.factionrealm) end
+    end
+
+    -- Re-bind in-place. Consumer-captured references to `instance` stay
+    -- valid; the bucket fields now point at the live SV tables.
+    instance._sv          = sv
+    instance.global       = sv.global
+    instance.profile      = sv.profiles[sv.currentProfile]
+    instance.char         = sv.char[IDENTITY.char]
+    instance.realm        = sv.realm[IDENTITY.realm]
+    instance.class        = sv.class[IDENTITY.class]
+    instance.race         = sv.race[IDENTITY.race]
+    instance.faction      = sv.faction[IDENTITY.faction]
+    instance.factionrealm = sv.factionrealm[IDENTITY.factionrealm]
+end
+
+
+function Cairn_DB._ensureRebindListener()
+    if Cairn_DB._rebindFrame then return end
+    if type(CreateFrame) ~= "function" then return end
+
+    local frame = CreateFrame("Frame")
+    Cairn_DB._rebindFrame = frame
+    frame:RegisterEvent("ADDON_LOADED")
+    frame:RegisterEvent("PLAYER_LOGIN")
+    frame:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_LOGIN" then
+            -- Refresh IDENTITY for per-character/realm buckets — at file
+            -- load time UnitName/etc. return placeholder values.
+            IDENTITY = resolveIdentity()
+        end
+        if not Cairn_DB.instances then return end
+        for _, instance in pairs(Cairn_DB.instances) do
+            if instance._sv ~= _G[instance._name] then
+                rebindInstance(instance)
+            end
+        end
+    end)
+end
+
+Cairn_DB._ensureRebindListener()
 
 
 -- ---------------------------------------------------------------------------

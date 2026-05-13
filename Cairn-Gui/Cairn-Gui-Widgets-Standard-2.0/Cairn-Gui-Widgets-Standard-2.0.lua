@@ -101,9 +101,19 @@ Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	   check appeared on mouseover, but Toggled never fired and the
 	   consumer's checked state was never updated. Hit on Forge_AddonManager
 	   row checkboxes 2026-05-13.
+	13: TabGroup wraps to multiple rows when tabs overflow the strip
+	   width. Previously the tabs extended past the right edge of the
+	   TabGroup frame (visible on Forge with 18 tabs at default window
+	   width). relayoutTabs now tracks current x, wraps to a new row
+	   when the next button won't fit, and grows the strip height to
+	   fit all rows. Content panes re-anchor to the new strip bottom.
+	   A HookScript("OnSizeChanged") re-runs relayout when the
+	   container resizes, so widening the window repacks tabs into
+	   fewer rows live. Hit on Forge after adding Profiler + Events
+	   tabs 2026-05-13.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 12
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 13
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

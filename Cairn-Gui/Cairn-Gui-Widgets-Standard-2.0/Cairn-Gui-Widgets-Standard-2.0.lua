@@ -111,9 +111,19 @@ Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	   container resizes, so widening the window repacks tabs into
 	   fewer rows live. Hit on Forge after adding Profiler + Events
 	   tabs 2026-05-13.
+	14: TreeView widget. Generic expand/collapse hierarchical list.
+	   Consumer provides a tree of nodes ({ id, label, aux, children });
+	   the widget renders one row per visible node with indicator + depth
+	   indent. Collapsed branches contribute one row regardless of how
+	   many descendants they have, so the widget naturally handles large
+	   data sets (Forge_APIBrowser has ~3000+ entries) that overwhelm a
+	   flat list. Single-click toggles expansion on branches; the
+	   "Click" event fires on every click with the original node, so
+	   consumers can still do click-to-select. Frame height auto-grows
+	   to fit visible rows; wrap in a ScrollFrame for tall trees.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 13
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 14
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

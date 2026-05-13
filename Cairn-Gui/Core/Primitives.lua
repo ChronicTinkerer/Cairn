@@ -290,6 +290,12 @@ local function applyRecord(self, slot, rec, state, options)
 		-- when the colorSpec carries a transition.
 		local source = resolveTextureSpec(self, rec.spec, state)
 		applyTextureSource(rec.textures[1], source)
+		-- applyTextureSource unconditionally calls texture:Show(). If the
+		-- caller hid this icon via SetPrimitiveShown(false), restore the
+		-- hidden state so state transitions don't re-reveal it.
+		if rec._userHidden and rec.textures[1].Hide then
+			rec.textures[1]:Hide()
+		end
 		if rec.colorSpec then
 			local color = resolveSpec(self, rec.colorSpec, state)
 			if canAnimate and type(color) == "table" then
@@ -911,6 +917,14 @@ function Base:SetPrimitiveShown(slot, shown)
 	local rec = self._primitives and self._primitives[slot]
 	if not rec then return end
 	local visible = shown and true or false
+	-- Track user intent so the state machine doesn't override us. Without
+	-- this, applyTextureSource (called on every state transition) calls
+	-- texture:Show() unconditionally and re-reveals a hidden primitive.
+	-- Symptom hit on Cairn-Gui Checkbox: the check glyph was hidden via
+	-- SetPrimitiveShown(false) at OnAcquire, then re-shown the first time
+	-- the user hovered over the widget because hover triggered an icon
+	-- re-apply pass.
+	rec._userHidden = not visible
 	for _, t in ipairs(rec.textures) do
 		if t.SetShown then t:SetShown(visible) end
 	end

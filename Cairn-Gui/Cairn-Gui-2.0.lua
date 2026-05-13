@@ -247,7 +247,17 @@ Verification (Day 1 success criterion):
 --      docstring on Release explaining the raw-children-don't-cascade
 --      gotcha and pointing at Button.lua's `_label` as the canonical
 --      stash-and-reuse pattern.
-local MAJOR, MINOR = "Cairn-Gui-2.0", 20
+--  21: Primitives.SetPrimitiveShown(false) now persists across state
+--      transitions. Previously applyTextureSource called texture:Show()
+--      unconditionally after each state transition, so any icon hidden
+--      via SetPrimitiveShown(false) was re-revealed the first time the
+--      widget changed visual state (hover / press / leave). Symptom:
+--      Cairn-Gui Checkbox's check glyph (hidden at OnAcquire when
+--      opts.checked=false) appeared the first time the user moved the
+--      cursor over the row, looking like an automatic check on hover.
+--      Now SetPrimitiveShown sets rec._userHidden and applyRecord for
+--      icons calls Hide() after applyTextureSource when the flag is set.
+local MAJOR, MINOR = "Cairn-Gui-2.0", 21
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

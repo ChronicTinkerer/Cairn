@@ -144,9 +144,27 @@ Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	   horizontal layout). opts.label is independent of options[i].label
 	   (the per-option display text) -- different scope. Hit on
 	   Forge_Logs unlabeled filter dropdowns 2026-05-14.
+	18: Window gets an opts.resizable = true mode. Adds a Blizzard
+	   bottom-right size grabber, calls SetResizable + SetResizeBounds
+	   (min defaults 200x150, max 0/0 == no cap), and hooks
+	   OnSizeChanged to RelayoutNow the content's Stack so children
+	   reflow against the new viewport. Fires a "Resized" event
+	   continuously during drag plus once on mouse-up with the final
+	   size. Consumers persisting to disk should debounce or just
+	   write on mouse-up. Backwards-compatible: default opts.resizable
+	   is false, so existing Acquire calls behave exactly as before.
+	   First consumer: Forge main /forge window 2026-05-14.
+	   Companion fix in TabGroup: OnSizeChanged + SetSelected both
+	   now RelayoutNow the active pane so each tab's Stack-laid
+	   content tracks the new viewport when the parent Window is
+	   resized. Without this, only the actively-visible tab's pane
+	   FRAME grows via its TOPLEFT/BOTTOMRIGHT anchors, but the
+	   computed positions inside its layout don't update -- and
+	   hidden panes don't get a layout pass when the user later
+	   clicks them.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 17
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 18
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

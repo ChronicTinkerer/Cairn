@@ -176,6 +176,26 @@ function mixin:OnAcquire(opts)
 		self._sizeHookInstalled = true
 		frame:HookScript("OnSizeChanged", function()
 			if self._tabs then relayoutTabs(self) end
+
+			-- When a resizable Window grows, each tab pane is anchored
+			-- TOPLEFT/BOTTOMRIGHT to our frame and so grows
+			-- automatically -- but the Stack/etc layout the consumer
+			-- set on the pane positions its children by computed
+			-- coordinates, not by anchor inheritance. Force a reflow on
+			-- the active pane so its content tracks the new viewport.
+			-- Inactive panes are hidden; their layout will recompute
+			-- next time they're shown.
+			if self._tabs and self._selected then
+				for _, t in ipairs(self._tabs) do
+					if t.id == self._selected
+					   and t._content
+					   and t._content.Cairn
+					   and t._content.Cairn.RelayoutNow then
+						t._content.Cairn:RelayoutNow()
+						break
+					end
+				end
+			end
 		end)
 	end
 
@@ -273,6 +293,16 @@ function mixin:SetSelected(tabId, _silentInitial)
 	local prev = self._selected
 	self._selected = tabId
 	applyVisibility(self)
+
+	-- If the window was resized while this pane was hidden, its layout
+	-- state is stale relative to the current frame size. Forcing a
+	-- RelayoutNow on activation guarantees the content reflows to the
+	-- current viewport on the next paint. Cheap when nothing changed
+	-- (RelayoutNow short-circuits if the layout isn't dirty).
+	if found._content and found._content.Cairn and found._content.Cairn.RelayoutNow then
+		found._content.Cairn:RelayoutNow()
+	end
+
 	if not _silentInitial then
 		self:Fire("Changed", tabId, prev)
 	end

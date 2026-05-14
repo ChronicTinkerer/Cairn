@@ -8,12 +8,24 @@ by default from the title bar.
 Public API:
 
 	win = Cairn.Gui:Acquire("Window", UIParent, {
-		title    = "Settings",
-		width    = 400,
-		height   = 300,
-		closable = true,        -- show close button (default true)
-		movable  = true,        -- title bar drag-to-move (default true)
+		title     = "Settings",
+		width     = 400,
+		height    = 300,
+		closable  = true,       -- show close button (default true)
+		movable   = true,       -- title bar drag-to-move (default true)
+		resizable = false,      -- bottom-right resize grip (default false)
+		minWidth  = 200,        -- only honored when resizable = true
+		minHeight = 150,
+		maxWidth  = 0,          -- 0 = no upper bound (capped at screen)
+		maxHeight = 0,
 	})
+
+	-- When resizable, the Window fires "Resized" continuously during
+	-- drag and once more on grip release. Hook the event to persist
+	-- new dimensions or react in real time:
+	win.Cairn:On("Resized", function(widget, w, h)
+		-- e.g. db.profile.window.w = w
+	end)
 
 	local content = win.Cairn:GetContent()  -- Cairn-aware Container frame
 	content.Cairn:SetLayout("Stack", { direction = "vertical", gap = 4, padding = 8 })
@@ -72,9 +84,13 @@ Internal sub-widgets:
 	_closeBtn    Button, ghost variant, right side of title bar (if closable)
 	_content     Container, anchored below title bar with 1px inset
 
-Status: Day 13. No resize handle yet; window is a fixed size at acquire
-time (consumer can SetSize after if desired). No modal mode. No focus
-ring. No keyboard escape-to-close. All deferrable.
+Status: Day 14. resizable opt added (Standard MINOR=18). The internal
+title bar and content area are anchored TOPLEFT/TOPRIGHT and
+TOPLEFT/BOTTOMRIGHT respectively to the frame, so they grow with it
+automatically; the only thing the resize hook does explicitly is force
+a RelayoutNow on the content's Stack/etc so children reflow against the
+new size. No modal mode. No focus ring. No keyboard escape-to-close.
+All deferrable.
 ]]
 
 local Bundle = LibStub("Cairn-Gui-Widgets-Standard-2.0", true)
@@ -226,6 +242,82 @@ function mixin:OnAcquire(opts)
 	self._content:SetPoint("TOPLEFT",     frame, "TOPLEFT",     1, -(TITLE_BAR_HEIGHT + 1))
 	self._content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
 	self._content:Show()
+
+	-- ----- Resize grip (optional) ------------------------------------
+	-- Opt-in via opts.resizable = true. Min/max bounds default to
+	-- (200x150) / (0x0). WoW treats max=0 as "no cap" (effectively
+	-- screen-limited). The Blizzard size-grabber texture is the
+	-- conventional bottom-right resize affordance for WoW UI.
+	--
+	-- During drag we fire Resized on every frame (OnSizeChanged is
+	-- called continuously while StartSizing runs), then once more on
+	-- mouse-up with the final size. Consumers persisting to disk should
+	-- ignore the high-frequency events and just react to the final
+	-- value -- or throttle their own writes.
+	local resizable = opts.resizable == true
+	frame:SetResizable(resizable)
+
+	if resizable then
+		local minW = opts.minWidth  or 200
+		local minH = opts.minHeight or 150
+		local maxW = opts.maxWidth  or 0
+		local maxH = opts.maxHeight or 0
+		-- SetResizeBounds replaced SetMinResize / SetMaxResize on 10.0+.
+		if frame.SetResizeBounds then
+			frame:SetResizeBounds(minW, minH, maxW, maxH)
+		else
+			-- Pre-Dragonflight fallback. Harmless on modern Retail.
+			if frame.SetMinResize then frame:SetMinResize(minW, minH) end
+			if maxW > 0 and maxH > 0 and frame.SetMaxResize then
+				frame:SetMaxResize(maxW, maxH)
+			end
+		end
+
+		if not self._resizeGrip then
+			local grip = CreateFrame("Button", nil, frame)
+			grip:SetSize(16, 16)
+			grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
+			grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+			grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+			grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+			-- Lift the grip above whatever content the consumer draws so
+			-- a Stack-laid widget at the bottom-right corner doesn't eat
+			-- the grip's clicks.
+			grip:SetFrameLevel(frame:GetFrameLevel() + 10)
+			grip:SetScript("OnMouseDown", function()
+				frame:StartSizing("BOTTOMRIGHT")
+			end)
+			grip:SetScript("OnMouseUp", function()
+				frame:StopMovingOrSizing()
+				self:Fire("Resized", frame:GetWidth(), frame:GetHeight())
+			end)
+			self._resizeGrip = grip
+		end
+		self._resizeGrip:Show()
+
+		-- Hook OnSizeChanged ONCE per Window. Subsequent Acquires of a
+		-- not-pooled Window re-enter OnAcquire but reuse self._frame,
+		-- so the hook persists across Acquire cycles -- we just don't
+		-- want to re-hook and stack callbacks.
+		if not self._resizeSizeHooked then
+			frame:HookScript("OnSizeChanged", function(_, w, h)
+				-- Force the content's layout to reflow against the new
+				-- size. Cairn-Gui's Stack/etc layouts position children
+				-- by computed coordinates, not by anchor inheritance, so
+				-- they need an explicit RelayoutNow when the parent's
+				-- size changes. The content frame itself IS anchored
+				-- TOPLEFT/BOTTOMRIGHT to the window frame and so resizes
+				-- automatically.
+				if self._content and self._content.Cairn and self._content.Cairn.RelayoutNow then
+					self._content.Cairn:RelayoutNow()
+				end
+				self:Fire("Resized", w, h)
+			end)
+			self._resizeSizeHooked = true
+		end
+	elseif self._resizeGrip then
+		self._resizeGrip:Hide()
+	end
 
 	-- Default Close handler: hide the frame. Consumers can override by
 	-- subscribing their own handler; both will fire (multi-subscriber).

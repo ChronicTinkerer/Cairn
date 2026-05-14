@@ -136,9 +136,17 @@ Cairn-Gui-Widgets-Standard-2.0 MINOR bumps:
 	   the widget. Previously, right-click was silently treated as
 	   selection because the row "Click" handler ignored the button arg.
 	   Hit on Forge_Console snippet picker 2026-05-13.
+	17: Dropdown gets an opts.label field-label. Renders a muted-color
+	   FontString inside the dropdown frame, left side, before the
+	   selected-value display. Visual: "[ Source  All v ]". Lets
+	   consumers self-document filter dropdowns in dense toolbars
+	   without acquiring separate sibling Label widgets (which bloat
+	   horizontal layout). opts.label is independent of options[i].label
+	   (the per-option display text) -- different scope. Hit on
+	   Forge_Logs unlabeled filter dropdowns 2026-05-14.
 ]]
 
-local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 16
+local MAJOR, MINOR = "Cairn-Gui-Widgets-Standard-2.0", 17
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 

@@ -11,6 +11,9 @@ Public API:
 	dd = Cairn.Gui:Acquire("Dropdown", parent, {
 		width          = 200,
 		height         = 24,
+		label          = "Size",         -- optional field label rendered
+		                                 -- inside the frame, muted color,
+		                                 -- left of the selected value
 		options        = {
 			{ value = "small",  label = "Small"  },
 			{ value = "medium", label = "Medium" },
@@ -295,15 +298,50 @@ function mixin:OnAcquire(opts)
 	})
 	self:DrawBorder("frame", "color.border.default", { width = 1 })
 
-	-- Header label.
+	local font = self:ResolveToken("font.body")
+
+	-- Field label (opts.label) -- a muted-color form-field marker
+	-- rendered inside the frame, left side, BEFORE the value text.
+	-- Independent of options[i].label (the per-option display text).
+	-- When set, the value display shifts right to make room. The label's
+	-- width is its natural rendered string width (no SetWidth) so anchor-
+	-- to-RIGHT-of-fieldLabel positions the value correctly.
+	if opts.label and opts.label ~= "" then
+		if not self._fieldLabel then
+			self._fieldLabel = frame:CreateFontString(nil, "OVERLAY")
+			self._fieldLabel:SetJustifyH("LEFT")
+			self._fieldLabel:SetWordWrap(false)
+		end
+		self._fieldLabel:ClearAllPoints()
+		self._fieldLabel:SetPoint("LEFT", frame, "LEFT", 8, 0)
+		if font then
+			self._fieldLabel:SetFont(font.face, font.size, font.flags or "")
+		end
+		local fr, fg, fb, fa = color(self, "color.fg.text.muted")
+		self._fieldLabel:SetTextColor(fr, fg, fb, fa)
+		self._fieldLabel:SetText(opts.label)
+		self._fieldLabel:Show()
+		self._hasFieldLabel = true
+	else
+		if self._fieldLabel then self._fieldLabel:Hide() end
+		self._hasFieldLabel = false
+	end
+
+	-- Header (selected-value) label. Position depends on whether a field
+	-- label is present: anchor LEFT to the field label's RIGHT with a
+	-- small gap, or to the frame's LEFT if no field label.
 	if not self._label then
 		self._label = frame:CreateFontString(nil, "OVERLAY")
-		self._label:SetPoint("LEFT",  frame, "LEFT",  8, 0)
-		self._label:SetPoint("RIGHT", frame, "RIGHT", -(CARET_W + 4), 0)
 		self._label:SetJustifyH("LEFT")
 		self._label:SetWordWrap(false)
 	end
-	local font = self:ResolveToken("font.body")
+	self._label:ClearAllPoints()
+	if self._hasFieldLabel then
+		self._label:SetPoint("LEFT",  self._fieldLabel, "RIGHT", 6, 0)
+	else
+		self._label:SetPoint("LEFT",  frame, "LEFT",  8, 0)
+	end
+	self._label:SetPoint("RIGHT", frame, "RIGHT", -(CARET_W + 4), 0)
 	if font then self._label:SetFont(font.face, font.size, font.flags or "") end
 
 	-- Caret on the right side: a tiny down-pointing triangle made of two

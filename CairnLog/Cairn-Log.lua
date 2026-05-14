@@ -65,6 +65,10 @@
 --   CL:Clear()
 --   CL:SetChatEchoLevel(level_or_nil)
 --   CL:SetCapacity(n)
+--   CL:OnAppend(fn) -> id                     -- listener fires after each
+--                                                pushEntry. Returns opaque
+--                                                int id for :OffAppend.
+--   CL:OffAppend(id)                          -- silent no-op on unknown id
 --   CL:SetDatabase(svTable_or_nil)            -- opt-in persistence
 --   CL:SetPerformanceMode(threshold_or_nil)   -- nils method slots
 --   CL:Embed(target, name) -> target          -- mixin
@@ -91,7 +95,7 @@
 -- License: MIT. Author: ChronicTinkerer.
 
 local LIB_MAJOR = "Cairn-Log-1.0"
-local LIB_MINOR = 15
+local LIB_MINOR = 16
 
 local Cairn_Log = LibStub:NewLibrary(LIB_MAJOR, LIB_MINOR)
 if not Cairn_Log then return end
@@ -104,6 +108,12 @@ Cairn_Log._capacity   = Cairn_Log._capacity   or 1000
 Cairn_Log._head       = Cairn_Log._head       or 1
 Cairn_Log._count      = Cairn_Log._count      or 0
 Cairn_Log._echoLevel  = Cairn_Log._echoLevel  -- nil unless SetChatEchoLevel'd
+
+-- Append-listener registry (MINOR 16). Keyed by integer ID so consumers
+-- can unregister opaque anonymous closures. Preserved across MINOR upgrades
+-- so a Forge_Logs live-tail subscription survives a lib refresh.
+Cairn_Log._appendListeners = Cairn_Log._appendListeners or {}
+Cairn_Log._nextListenerID  = Cairn_Log._nextListenerID  or 1
 
 -- Severity scheme. Python-style
 -- numeric values with gaps so consumers can register custom intermediate
@@ -217,6 +227,18 @@ local function pushEntry(source, category, level, message, force)
             source,
             category and ("/" .. category) or "",
             message))
+    end
+
+    -- Append-listener dispatch (MINOR 16). pcall-wrapped so a buggy
+    -- listener can never break the log path itself. Order is pairs()-
+    -- nondeterministic, which is fine — append listeners shouldn't depend
+    -- on each other. Consumers MUST NOT call log methods from inside a
+    -- listener (would recurse infinitely on their own entry).
+    local listeners = Cairn_Log._appendListeners
+    if next(listeners) then
+        for _, fn in pairs(listeners) do
+            pcall(fn, entry)
+        end
     end
 end
 
@@ -504,6 +526,39 @@ function Cairn_Log:SetChatEchoLevel(level)
         end
     end
     self._echoLevel = level
+end
+
+
+-- Append-listener subscription (MINOR 16). The provided `fn(entry)` is
+-- called after each pushEntry, pcall-wrapped at the dispatch site so a
+-- listener throwing can't break logging.
+--
+-- Returns an opaque integer ID for later :OffAppend(id). IDs are
+-- monotonically increasing; never reused.
+--
+-- The `entry` arg is the same compact-aliased table consumers see in
+-- :GetEntries — full {timestamp, source, category, level, message} with
+-- t/s/m aliases via metatable. Read-only convention (don't mutate).
+--
+-- CAVEAT: listeners must NOT call log methods on their own entry —
+-- you'll recurse into a self-feeding loop. Set a flag, schedule
+-- C_Timer.After, etc.
+function Cairn_Log:OnAppend(fn)
+    if type(fn) ~= "function" then
+        error("Cairn-Log:OnAppend: fn must be a function", 2)
+    end
+    local id = self._nextListenerID
+    self._nextListenerID = id + 1
+    self._appendListeners[id] = fn
+    return id
+end
+
+
+-- Unregister an :OnAppend listener. Silent no-op if the id is unknown
+-- (so double-unregister is harmless).
+function Cairn_Log:OffAppend(id)
+    if id == nil then return end
+    self._appendListeners[id] = nil
 end
 
 
